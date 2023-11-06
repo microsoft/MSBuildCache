@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Condition="('$(TargetFramework)' == 'net472') and ('$(Configuration)' == 'Release')">
+    <ILRepackEnabled>true</ILRepackEnabled>
+  </PropertyGroup>
+
+  <ItemGroup Condition=" '$(ILRepackEnabled)' == 'true' ">
+    <!-- Make sure the types of the API between plug-in and MsBuild in in `Exclude`. CODESYNC[DO_NOT_ILMERGE_ASSEMBLIES] -->
+    <PluginAssemblies Include="System.Collections.Immutable.dll" />
+    <PluginAssemblies Include="Microsoft.Build.dll" />
+    <PluginAssemblies Include="Microsoft.Build.Framework.dll" />
+    <PluginAssemblies Include="Microsoft.Build.Utilities.Core.dll" />
+  </ItemGroup>
+
+  <ItemGroup Condition=" '$(ILRepackEnabled)' == 'true' ">
+    <PackageReference Include="ILRepack.Lib.MSBuild.Task"/>
+
+    <!-- BuildXL.Cache.ContentStore.Distributed.dll depends on this but doesn't list it-->
+    <PackageReference Include="System.Private.ServiceModel"/>
+    <PackageReference Include="protobuf-net"/>
+    <PackageReference Include="protobuf-net.Core"/>
+    <PackageReference Include="protobuf-net.Grpc"/>
+  </ItemGroup>
+</Project>

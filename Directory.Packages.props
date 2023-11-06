@@ -8,6 +8,7 @@
   <ItemGroup>
     <PackageVersion Include="coverlet.collector" Version="3.1.2" />
     <PackageVersion Include="DotNet.Glob" Version="2.0.3" />
+    <PackageVersion Include="ILRepack.Lib.MSBuild.Task" Version="2.0.18.2" />
     <PackageVersion Include="Microsoft.Bcl.AsyncInterfaces" Version="7.0.0" />
     <PackageVersion Include="Microsoft.Bcl.HashCode" Version="1.1.1" />
     <PackageVersion Include="Microsoft.Build" Version="$(MSBuildPackageVersion)" />
@@ -35,8 +36,12 @@
     -->
     <PackageVersion Include="NETStandard.Library" Version="2.0.3"/>
     <PackageVersion Include="morelinq" Version="3.4.2" />
+    <PackageVersion Include="protobuf-net" Version="3.2.26" />
+    <PackageVersion Include="protobuf-net.Core" Version="3.2.26" />
+    <PackageVersion Include="protobuf-net.Grpc" Version="1.1.1" />
     <PackageVersion Include="System.Collections.Immutable" Version="7.0.0" />
     <PackageVersion Include="System.Memory" Version="4.5.5" />
+    <PackageVersion Include="System.Private.ServiceModel" Version="4.10.3" />
     <PackageVersion Include="System.Reflection.Metadata" Version="7.0.0" />
     <PackageVersion Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
     <PackageVersion Include="System.Text.Json" Version="7.0.3" />
