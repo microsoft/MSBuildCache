@@ -4,35 +4,8 @@ parameters:
 - name: MSBuildPath 
   type: string
   default: ""
-- name: AdditionalTestParams 
-  type: string
-  default: ""
 
 steps:
-- task: UseDotNet@2
-  displayName: 'Install .NET $(DotNetVersion)'
-  inputs:
-    version: '$(DotNetVersion)'
-    includePreviewVersions: true
-
-- task: NuGetAuthenticate@1
-  displayName: NuGet Authenticate
-
-- task: DotNetCoreCLI@2
-  displayName: Restore
-  inputs:
-    command: restore
-    projects: ${{ parameters.RepoRoot }}/MSBuildCache.sln
-    feedsToUse: 'config'
-    nugetConfigPath: '${{ parameters.RepoRoot }}/nuget.config'
-
-- task: DotNetCoreCLI@2
-  displayName: Build
-  inputs:
-    command: build
-    projects: ${{ parameters.RepoRoot }}/MSBuildCache.sln
-    arguments: -restore:false --configuration $(BuildConfiguration) -BinaryLogger:$(LogDirectory)/msbuild.binlog
-
 - task: DotNetCoreCLI@2
   displayName: Run Unit Tests
   inputs:

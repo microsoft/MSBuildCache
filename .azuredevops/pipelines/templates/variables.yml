@@ -1,0 +1,7 @@
+variables:
+  BuildConfiguration: Release
+  DotNetVersion: '8.x'
+  LogDirectory: $(Build.ArtifactStagingDirectory)\logs
+  ArtifactsDirectory: $(Build.ArtifactStagingDirectory)\artifacts
+  # https://github.com/microsoft/azure-pipelines-agent/pull/4077
+  VSO_DEDUP_REDIRECT_TIMEOUT_IN_SEC: 5
