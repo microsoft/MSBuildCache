@@ -1,0 +1,5 @@
+<Project>
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)build\Attributes\*.cs" Visible="false" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <PropertyGroup>
+    <ArtifactsPackageVersion>19.230.34229-buildid23092045</ArtifactsPackageVersion>
+
+    <!-- see https://www.nuget.org/packages/Microsoft.VisualStudio.Services.PipelineCache.WebApi/19.230.34229-buildid23092045 -->
+    <BuildXLPackageVersion>0.1.0-20230922.1</BuildXLPackageVersion>
+
+    <MSBuildPackageVersion>17.8.3</MSBuildPackageVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include="coverlet.collector" Version="3.1.2" />
+    <PackageVersion Include="DotNet.Glob" Version="2.0.3" />
+    <PackageVersion Include="Microsoft.Bcl.AsyncInterfaces" Version="7.0.0" />
+    <PackageVersion Include="Microsoft.Bcl.HashCode" Version="1.1.1" />
+    <PackageVersion Include="Microsoft.Build" Version="$(MSBuildPackageVersion)" />
+    <PackageVersion Include="Microsoft.Build.Framework" Version="$(MSBuildPackageVersion)" />
+    <PackageVersion Include="Microsoft.Build.Prediction" Version="1.1.0" />
+    <PackageVersion Include="Microsoft.Build.Utilities.Core" Version="$(MSBuildPackageVersion)" />
+    <PackageVersion Include="Microsoft.BuildXL.Cache.Hashing" Version="$(BuildXLPackageVersion)" />
+    <PackageVersion Include="Microsoft.BuildXL.Cache.Interfaces" Version="$(BuildXLPackageVersion)" />
+    <PackageVersion Include="Microsoft.BuildXL.Cache.Libraries" Version="$(BuildXLPackageVersion)" />
+    <PackageVersion Include="Microsoft.BuildXL.Native" Version="$(BuildXLPackageVersion)" />
+    <PackageVersion Include="Microsoft.BuildXL.Processes" Version="$(BuildXLPackageVersion)" />
+    <PackageVersion Include="Microsoft.BuildXL.Utilities" Version="$(BuildXLPackageVersion)" />
+    <PackageVersion Include="Microsoft.BuildXL.Utilities.Core" Version="$(BuildXLPackageVersion)" />
+    <PackageVersion Include="Microsoft.CodeAnalysis" Version="3.8.0" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="6.0.3" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.3.2" />
+    <PackageVersion Include="Microsoft.VisualStudio.Services.BlobStore.Client" Version="$(ArtifactsPackageVersion)" />
+    <PackageVersion Include="Microsoft.VisualStudio.Services.BlobStore.Client.Cache" Version="$(ArtifactsPackageVersion)" />
+    <PackageVersion Include="Microsoft.VisualStudio.Services.PipelineCache.WebApi" Version="$(ArtifactsPackageVersion)" />
+    <PackageVersion Include="MSTest.TestAdapter" Version="2.2.10" />
+    <PackageVersion Include="MSTest.TestFramework" Version="2.2.10" />
+    <!--
+      An indirect dependency of BXL (Minimatch) depends on a very old and non-existing version of NETStandard.Library (>= 1.0.0-rc2-23910).
+      This forces a good version of NETStandard.Library to mitigate.
+    -->
+    <PackageVersion Include="NETStandard.Library" Version="2.0.3"/>
+    <PackageVersion Include="morelinq" Version="3.4.2" />
+    <PackageVersion Include="System.Collections.Immutable" Version="7.0.0" />
+    <PackageVersion Include="System.Memory" Version="4.5.5" />
+    <PackageVersion Include="System.Reflection.Metadata" Version="7.0.0" />
+    <PackageVersion Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
+    <PackageVersion Include="System.Text.Json" Version="7.0.3" />
+    <PackageVersion Include="System.Threading.Channels" Version="7.0.0" />
+    <PackageVersion Include="System.Threading.Tasks.Dataflow" Version="7.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" />
+    <GlobalPackageReference Include="Nerdbank.GitVersioning" Version="3.5.113" />
+  </ItemGroup>
+</Project>

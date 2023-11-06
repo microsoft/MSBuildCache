@@ -1,0 +1,3 @@
+<Project>
+    <!-- Prevent the test projects from being affected by the root files -->
+</Project>

@@ -1,0 +1,70 @@
+parameters:
+- name: RepoRoot
+  type: string
+- name: MSBuildPath 
+  type: string
+  default: ""
+- name: AdditionalTestParams 
+  type: string
+  default: ""
+
+steps:
+- task: UseDotNet@2
+  displayName: 'Install .NET $(DotNetVersion)'
+  inputs:
+    version: '$(DotNetVersion)'
+    includePreviewVersions: true
+
+- task: NuGetAuthenticate@1
+  displayName: NuGet Authenticate
+
+- task: DotNetCoreCLI@2
+  displayName: Restore
+  inputs:
+    command: restore
+    projects: ${{ parameters.RepoRoot }}/MSBuildCache.sln
+    feedsToUse: 'config'
+    nugetConfigPath: '${{ parameters.RepoRoot }}/nuget.config'
+
+- task: DotNetCoreCLI@2
+  displayName: Build
+  inputs:
+    command: build
+    projects: ${{ parameters.RepoRoot }}/MSBuildCache.sln
+    arguments: -restore:false --configuration $(BuildConfiguration) -BinaryLogger:$(LogDirectory)/msbuild.binlog
+
+- task: DotNetCoreCLI@2
+  displayName: Run Unit Tests
+  inputs:
+    command: test
+    projects: ${{ parameters.RepoRoot }}/MSBuildCache.sln
+    arguments: -restore:false --no-build --configuration $(BuildConfiguration)
+
+- task: PowerShell@2
+  displayName: "E2E Test: Microsoft.MSBuildCache.Local"
+  inputs:
+    filePath: ${{ parameters.RepoRoot }}\tests\test.ps1
+    arguments: -MSBuildPath "${{ parameters.MSBuildPath }}" -Configuration $(BuildConfiguration) -LogDirectory "$(LogDirectory)\Tests\LocalOnly" -ArtifactsDirectory "$(ArtifactsDirectory)" -CachePackage Microsoft.MSBuildCache.Local
+    pwsh: true
+
+- task: PowerShell@2
+  displayName: "E2E Test: Microsoft.MSBuildCache.AzurePipelines"
+  inputs:
+    filePath: ${{ parameters.RepoRoot }}\tests\test.ps1
+    arguments: -MSBuildPath "${{ parameters.MSBuildPath }}" -Configuration $(BuildConfiguration) -LogDirectory "$(LogDirectory)\Tests\LocalOnly" -ArtifactsDirectory "$(ArtifactsDirectory)" -CachePackage Microsoft.MSBuildCache.AzurePipelines
+    pwsh: true
+  env:
+    SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+- task: PublishBuildArtifacts@1
+  displayName: Publish Logs
+  inputs:
+    PathtoPublish: $(LogDirectory)
+    ArtifactName: logs
+  condition: always()
+
+- task: PublishBuildArtifacts@1
+  displayName: Publish Artifacts
+  inputs:
+    PathtoPublish: $(ArtifactsDirectory)
+    ArtifactName: artifacts

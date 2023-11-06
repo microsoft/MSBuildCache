@@ -1,0 +1,42 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Only supports x64 due to the RocksDB dependency -->
+    <Platform>x64</Platform>
+    <Platforms>$(Platform)</Platforms>
+    <TargetFrameworks>net472;net8.0</TargetFrameworks>
+    <RootNamespace>Microsoft.MSBuildCache</RootNamespace>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="DotNet.Glob" />
+    <PackageReference Include="Microsoft.Bcl.HashCode" />
+    <PackageReference Include="Microsoft.Build.Prediction" />
+    <PackageReference Include="Microsoft.BuildXL.Cache.Hashing" />
+    <PackageReference Include="Microsoft.BuildXL.Cache.Interfaces"  />
+    <PackageReference Include="Microsoft.BuildXL.Cache.Libraries" />
+    <!-- Microsoft.Extensions.Logging.Abstractions is an undeclared dependency of BuildXL.Cache.Libraries. TODO: Remove once BuildXL.Cache.Libraries fixes this -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="System.Threading.Channels" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- TODO: Inlcude these in the package to automatically include them for depending projects -->
+    <None Include="build\*" />
+    <None Include="buildMultiTargeting\*" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Microsoft.MSBuildCache.Common.Tests" />
+  </ItemGroup>
+
+  <!--
+    Set `MSBuildLibraries` to test against locally built MSBuild, 
+    for example for regression testing pre-release versions of MSBuild.
+  -->
+  <ItemGroup Condition="'$(MSBuildLibraries)' != '' ">
+    <Reference Include="$(MSBuildLibraries)\Microsoft.Build.dll" />
+    <Reference Include="$(MSBuildLibraries)\Microsoft.Build.Framework.dll" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(MSBuildLibraries)' == '' ">
+    <PackageReference Include="Microsoft.Build" />
+    <PackageReference Include="Microsoft.Build.Framework" />
+  </ItemGroup>
+</Project>

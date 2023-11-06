@@ -1,0 +1,117 @@
+variables:
+  BuildConfiguration: Release
+  DotNetVersion: '8.x'
+  LogDirectory: $(Build.ArtifactStagingDirectory)\logs
+  ArtifactsDirectory: $(Build.ArtifactStagingDirectory)\artifacts
+  # https://github.com/microsoft/azure-pipelines-agent/pull/4077
+  VSO_DEDUP_REDIRECT_TIMEOUT_IN_SEC: 5
+
+schedules:
+- cron: '0 0 * * *'
+  displayName: Daily midnight build
+  branches:
+    include:
+    - main
+
+trigger:
+  batch: true
+  branches:
+    include:
+    - main
+
+pool:
+  vmImage: windows-latest
+
+resources:
+  repositories:
+  - repository: msbuild
+    type: github
+    endpoint: 'MSBuild Github'
+    name: dotnet/msbuild
+    ref: main
+
+jobs:
+- job: BuildRelease
+  displayName: Build using release bits
+  variables:
+    VsInstallDir: $(Build.ArtifactStagingDirectory)/vs
+  steps:
+  - checkout: self
+    # The repo name currently doesn't match, so override.
+    # Note: this path is relative to $(Pipeline.Workspace).
+    path: s/MSBuildCache
+    submodules: true
+    # Fetch all history for versioning
+    fetchDepth: 0
+
+  - task: Cache@2
+    displayName: Cache Visual Studio
+    inputs:
+      key: '"vs" | "$(Agent.OS)"'
+      path: $(VsInstallDir)
+
+  - script: |
+      del %TEMP%\vs_buildtools.exe
+      
+      curl.exe -L https://aka.ms/vs/17/pre/vs_buildtools.exe -o %TEMP%\vs_buildtools.exe
+      
+      %TEMP%\vs_buildtools.exe ^
+        --config "$(Build.SourcesDirectory)\.vsconfig" ^
+        --installPath "$(VsInstallDir)" ^
+        --passive ^
+        --norestart ^
+        --wait
+      echo VS installer exit code: %ERRORLEVEL%
+
+      del %TEMP%\vs_buildtools.exe
+
+      echo Current MSBuild version:
+      "$(VsInstallDir)\MSBuild\Current\Bin\amd64\MSBuild.exe" --version
+    displayName: 'Install VS Preview'
+
+  - template: build-and-test.yml
+    parameters:
+      RepoRoot: $(Build.SourcesDirectory)
+      MSBuildPath: $(VsInstallDir)\MSBuild\Current\Bin\amd64\MSBuild.exe
+
+# TODO
+# - task: DotNetCoreCLI@2
+#   displayName: Push packages
+#   # Avoid pushing packages in the cron build since the package version will end up conflicting
+#   condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), ne(variables['Build.CronSchedule.DisplayName'], 'Daily midnight build'))
+#   inputs:
+#     command: 'push'
+#     packagesToPush: '$(ArtifactsDirectory)/**/*.nupkg'
+#     nuGetFeedType: 'internal'
+
+- job: BuildLatest
+  displayName: Build using latest MSBuild
+  variables:
+    # Used as an env var as well
+    MSBuildLibraries: $(Build.SourcesDirectory)\msbuild\artifacts\bin\bootstrap\net472\MSBuild\Current\Bin\amd64
+  steps:
+  - checkout: self
+    # The repo name currently doesn't match, so override.
+    # Note: this path is relative to $(Pipeline.Workspace).
+    path: s/MSBuildCache
+    submodules: true
+    # Fetch all history for versioning
+    fetchDepth: 0
+  - checkout: msbuild
+
+  - task: Cache@2
+    displayName: Cache MSBuild
+    inputs:
+      key: '"msbuild" | "$(Agent.OS)" | "$(BuildConfiguration)" | ./msbuild/.git/HEAD'
+      path: msbuild/artifacts
+      cacheHitVar: MSBUILD_RESTORED
+
+  - script: |
+      .\msbuild\build.cmd /p:CreateBootstrap=true /p:Configuration=$(BuildConfiguration)
+    displayName: Build MSBuild
+    condition: ne(variables.MSBUILD_RESTORED, 'true')
+
+  - template: build-and-test.yml
+    parameters:
+      RepoRoot: $(Build.SourcesDirectory)/MSBuildCache
+      MSBuildPath: $(MSBuildLibraries)\MSBuild.exe

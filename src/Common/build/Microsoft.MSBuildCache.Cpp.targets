@@ -1,0 +1,9 @@
+<Project>
+    <!--
+      mspdbsrv by default wants to act as a machine-wide PDB server for linkers. This causes problems with the ability
+      to properly track file accesses, so redirect the endpoint to a unique string to isolate it per project.
+    -->
+    <Target Name="IsolateMspdbsrv" BeforeTargets="ClCompile">
+      <SetEnv Name="_MSPDBSRV_ENDPOINT_" Value="$([System.Guid]::NewGuid().ToString('N'))" Prefix="false" />    
+    </Target>
+  </Project>

@@ -1,0 +1,10 @@
+{
+  "version": "1.0",
+  "components": [
+    "Microsoft.Component.MSBuild",
+    "Microsoft.Net.Component.4.7.2.TargetingPack",
+    "Microsoft.NetCore.Component.SDK",
+    "Microsoft.VisualStudio.Component.NuGet.BuildTools",
+    "Microsoft.VisualStudio.Component.Roslyn.Compiler"
+  ]
+}

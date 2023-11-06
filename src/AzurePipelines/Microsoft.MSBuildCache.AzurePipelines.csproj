@@ -1,0 +1,61 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Only supports x64 due to the RocksDB dependency -->
+    <Platform>x64</Platform>
+    <Platforms>$(Platform)</Platforms>
+    <TargetFrameworks>net472;net8.0</TargetFrameworks>
+    <BuildOutputTargetFolder>build\</BuildOutputTargetFolder>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <!-- This package contains MSBuild tasks only, so avoid dependencies. -->
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Common\Microsoft.MSBuildCache.Common.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.VisualStudio.Services.PipelineCache.WebApi" />
+    <PackageReference Include="Microsoft.VisualStudio.Services.BlobStore.Client" />
+    <PackageReference Include="Microsoft.VisualStudio.Services.BlobStore.Client.Cache" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="build\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+      <PackagePath>build\</PackagePath>
+    </None>
+    <None Include="..\Common\build\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+      <PackagePath>build\</PackagePath>
+    </None>
+    <None Include="buildMultiTargeting\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+      <PackagePath>buildMultiTargeting\</PackagePath>
+    </None>
+  </ItemGroup>
+
+  <!--
+    By default, NuGet includes "framework references" so that packages can import CLR assemblies, but this kind of package does not need them added to
+    projects that reference this package
+  -->
+  <Target Name="RemovePackageFrameworkReferences" AfterTargets="_WalkEachTargetPerFramework">
+    <ItemGroup>
+      <_FrameworkAssemblyReferences Remove="@(_FrameworkAssemblyReferences)" />
+    </ItemGroup>
+  </Target>
+
+  <!-- Since this is an MSBuild cache plugin, we need to repackage our ProjectReferences and PackageReferences -->
+  <Target Name="IncludeReferenceCopyLocalPathsInBuildOutputInPackage" BeforeTargets="_GetBuildOutputFilesWithTfm" DependsOnTargets="ResolveReferences;ResolvePackageDependenciesForBuild;ResolveProjectReferences">
+    <ItemGroup>
+      <BuildOutputInPackage Include="@(_ResolvedProjectReferencePaths)" TargetPath="%(RuntimeCopyLocalItems.DestinationSubDirectory)%(Filename)%(Extension)" />
+
+      <BuildOutputInPackage Include="@(RuntimeCopyLocalItems-&gt;WithMetadataValue('AssetType', 'runtime'))" TargetPath="%(RuntimeCopyLocalItems.DestinationSubDirectory)%(Filename)%(Extension)" />
+      <BuildOutputInPackage Include="@(RuntimeCopyLocalItems-&gt;WithMetadataValue('CopyLocal', 'true'))" TargetPath="%(RuntimeCopyLocalItems.DestinationSubDirectory)%(Filename)%(Extension)" />
+      
+      <!-- Somewhat hard-code this as there isn't a good way to identify it -->
+      <BuildOutputInPackage Include="@(None-&gt;WithMetadataValue('Link', 'native\amd64\rocksdb.dll'))" TargetPath="%(None.Link)" />
+    </ItemGroup>
+  </Target>
+</Project>

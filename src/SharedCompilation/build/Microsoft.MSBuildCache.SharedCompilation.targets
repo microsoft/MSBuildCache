@@ -1,0 +1,58 @@
+<Project>
+  <PropertyGroup>
+    <!-- Ensure that Csc/Vbc tasks return command line arguments for VBCSCompilerReporter to resolve file accesses. -->
+    <ProvideCommandLineArgs Condition="'$(UseSharedCompilation)' != 'false'">true</ProvideCommandLineArgs>
+  </PropertyGroup>
+  <UsingTask TaskName="ResolveFileAccesses" AssemblyFile="$(MSBuildCacheSharedCompilationAssembly)" />
+
+  <Target Name="ResolveCoreCompileFileAccesses" AfterTargets="CoreCompile" Condition="'$(DesignTimeBuild)' != 'true' and '$(UseSharedCompilation)' != 'false'">
+    <ResolveFileAccesses Condition="'@(CscCommandLineArgs)' != ''"
+                         Language="C#"
+                         CommandLineArguments="@(CscCommandLineArgs)"
+                         ProjectFile="$(MSBuildProjectFullPath)" />
+    <ResolveFileAccesses Condition="'@(VbcCommandLineArgs)' != ''"
+                         Language="Visual Basic"
+                         CommandLineArguments="@(VbcCommandLineArgs)"
+                         ProjectFile="$(MSBuildProjectFullPath)" />
+
+    <!-- Clear the collection since it's been consumed -->
+    <ItemGroup>
+      <CscCommandLineArgs Remove="@(CscCommandLineArgs)" />
+      <VbcCommandLineArgs Remove="@(VbcCommandLineArgs)" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="ResolveRazorCoreCompileFileAccesses" AfterTargets="RazorCoreCompile" Condition="'$(DesignTimeBuild)' != 'true' and '$(UseSharedCompilation)' != 'false'">
+    <ResolveFileAccesses Condition="'@(CscCommandLineArgs)' != ''"
+                         Language="C#"
+                         CommandLineArguments="@(CscCommandLineArgs)"
+                         ProjectFile="$(MSBuildProjectFullPath)" />
+    <ResolveFileAccesses Condition="'@(VbcCommandLineArgs)' != ''"
+                         Language="Visual Basic"
+                         CommandLineArguments="@(VbcCommandLineArgs)"
+                         ProjectFile="$(MSBuildProjectFullPath)" />
+
+    <!-- Clear the collection since it's been consumed -->
+    <ItemGroup>
+      <CscCommandLineArgs Remove="@(CscCommandLineArgs)" />
+      <VbcCommandLineArgs Remove="@(VbcCommandLineArgs)" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="ResolveRazorCompileComponentDeclarationFileAccesses" AfterTargets="RazorCompileComponentDeclaration" Condition="'$(DesignTimeBuild)' != 'true' and '$(UseSharedCompilation)' != 'false'">
+    <ResolveFileAccesses Condition="'@(CscCommandLineArgs)' != ''"
+                         Language="C#"
+                         CommandLineArguments="@(CscCommandLineArgs)"
+                         ProjectFile="$(MSBuildProjectFullPath)" />
+    <ResolveFileAccesses Condition="'@(VbcCommandLineArgs)' != ''"
+                         Language="Visual Basic"
+                         CommandLineArguments="@(VbcCommandLineArgs)"
+                         ProjectFile="$(MSBuildProjectFullPath)" />
+
+    <!-- Clear the collection since it's been consumed -->
+    <ItemGroup>
+      <CscCommandLineArgs Remove="@(CscCommandLineArgs)" />
+      <VbcCommandLineArgs Remove="@(VbcCommandLineArgs)" />
+    </ItemGroup>
+  </Target>
+</Project>

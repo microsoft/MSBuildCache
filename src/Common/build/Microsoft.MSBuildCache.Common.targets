@@ -1,0 +1,48 @@
+<Project>
+  <!--
+    Ignore MSBuildCache settings when they're passed in as global properties if they don't change build behavior or if they contribute to the fingerprint directly.
+    This helps facilitate treating providing settings either via global properties or MSBuild files the same.
+  -->
+  <PropertyGroup Condition="'$(MSBuildCacheEnabled)' != 'false'">
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheEnabled</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheLogDirectory</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheCacheUniverse</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheMaxConcurrentCacheContentOperations</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheLocalCacheRootPath</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheLocalCacheSizeInMegabytes</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheIgnoredInputPatterns</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheIgnoredOutputPatterns</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheIdenticalDuplicateOutputPatterns</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheRemoteCacheIsReadOnly</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheAsyncCachePublishing</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheAsyncCacheMaterialization</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheAllowFileAccessAfterProjectFinishProcessPatterns</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheAllowFileAccessAfterProjectFinishFilePatterns</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheAllowProcessCloseAfterProjectFinishProcessPatterns</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheGlobalPropertiesToIgnore</MSBuildCacheGlobalPropertiesToIgnore>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(MSBuildCacheEnabled)' != 'false'">
+    <ProjectCachePlugin Include="$(MSBuildCacheAssembly)">
+      <LogDirectory>$(MSBuildCacheLogDirectory)</LogDirectory>
+      <CacheUniverse>$(MSBuildCacheCacheUniverse)</CacheUniverse>
+      <MaxConcurrentCacheContentOperations>$(MSBuildCacheMaxConcurrentCacheContentOperations)</MaxConcurrentCacheContentOperations>
+      <LocalCacheRootPath>$(MSBuildCacheLocalCacheRootPath)</LocalCacheRootPath>
+      <LocalCacheSizeInMegabytes>$(MSBuildCacheLocalCacheSizeInMegabytes)</LocalCacheSizeInMegabytes>
+      <IgnoredInputPatterns>$(MSBuildCacheIgnoredInputPatterns)</IgnoredInputPatterns>
+      <IgnoredOutputPatterns>$(MSBuildCacheIgnoredOutputPatterns)</IgnoredOutputPatterns>
+      <IdenticalDuplicateOutputPatterns>$(MSBuildCacheIdenticalDuplicateOutputPatterns)</IdenticalDuplicateOutputPatterns>
+      <RemoteCacheIsReadOnly>$(MSBuildCacheRemoteCacheIsReadOnly)</RemoteCacheIsReadOnly>
+      <AsyncCachePublishing>$(MSBuildCacheAsyncCachePublishing)</AsyncCachePublishing>
+      <AsyncCacheMaterialization>$(MSBuildCacheAsyncCacheMaterialization)</AsyncCacheMaterialization>
+      <AllowFileAccessAfterProjectFinishProcessPatterns>$(MSBuildCacheAllowFileAccessAfterProjectFinishProcessPatterns)</AllowFileAccessAfterProjectFinishProcessPatterns>
+      <AllowFileAccessAfterProjectFinishFilePatterns>$(MSBuildCacheAllowFileAccessAfterProjectFinishFilePatterns)</AllowFileAccessAfterProjectFinishFilePatterns>
+      <AllowProcessCloseAfterProjectFinishProcessPatterns>$(MSBuildCacheAllowProcessCloseAfterProjectFinishProcessPatterns)</AllowProcessCloseAfterProjectFinishProcessPatterns>
+      <GlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore)</GlobalPropertiesToIgnore>
+    </ProjectCachePlugin>
+  </ItemGroup>
+
+  <ImportGroup Condition="'$(MSBuildCacheEnabled)' != 'false'">
+    <Import Project="Microsoft.MSBuildCache.Cpp.targets" Condition="'$(MSBuildProjectExtension)' == '.vcxproj'" />
+  </ImportGroup>
+</Project>

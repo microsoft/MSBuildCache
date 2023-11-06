@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <MSBuildCacheAssembly Condition="'$(MSBuildRuntimeType)' != 'Core'">$(MSBuildThisFileDirectory)net472\Microsoft.MSBuildCache.AzureBlobStorage.dll</MSBuildCacheAssembly>
+    <MSBuildCacheAssembly Condition="'$(MSBuildRuntimeType)' == 'Core'">$(MSBuildThisFileDirectory)net8.0\Microsoft.MSBuildCache.AzureBlobStorage.dll</MSBuildCacheAssembly>
+  </PropertyGroup>
+
+  <Import Project="Microsoft.MSBuildCache.Common.props" />
+</Project>

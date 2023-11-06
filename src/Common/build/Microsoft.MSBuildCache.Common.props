@@ -1,0 +1,54 @@
+<Project>
+  <!--
+    Defaults for well-known files which should be ignored. These are generally intermediate files used for incremental builds and can be safely ignored.
+    The reason to ignore these files is if a referencing project can trigger one of these files to be written, usually to cache some expensive computation in that project.
+  -->
+  <PropertyGroup Condition="'$(MSBuildCacheIgnoredOutputPatterns)' == ''">
+    <!-- Project assets cache file -->
+    <MSBuildCacheIgnoredOutputPatterns>$(MSBuildCacheIgnoredOutputPatterns);*.assets.cache</MSBuildCacheIgnoredOutputPatterns>
+
+    <!-- RAR cache file -->
+    <MSBuildCacheIgnoredOutputPatterns>$(MSBuildCacheIgnoredOutputPatterns);*assemblyreference.cache</MSBuildCacheIgnoredOutputPatterns>
+  </PropertyGroup>
+  
+  <!--
+    Defaults for well-known files and processes that should be ignored.
+  -->
+  <PropertyGroup Condition="'$(MSBuildCacheAllowFileAccessAfterProjectFinishProcessPatterns)' == ''">
+    <!-- C++ telemetry -->
+    <MSBuildCacheAllowFileAccessAfterProjectFinishProcessPatterns>\**\vctip.exe</MSBuildCacheAllowFileAccessAfterProjectFinishProcessPatterns>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(MSBuildCacheAllowProcessCloseAfterProjectFinishProcessPatterns)' == ''">
+    <!-- C++ PDB server hangs around -->
+    <MSBuildCacheAllowProcessCloseAfterProjectFinishProcessPatterns>\**\mspdbsrv.exe</MSBuildCacheAllowProcessCloseAfterProjectFinishProcessPatterns>
+  </PropertyGroup>
+
+  <!--
+    Defaults for MSBuild Global Properties to safely ignore
+  -->
+  <PropertyGroup Condition="'$(MSBuildCacheGlobalPropertiesToIgnore)' == ''">
+    <!--
+      Ignore the sln contents to allow a projects built in two different solutions to get cache hits.
+      Relatedly, ignore how unresolved projects (projects not in the sln) are handled.
+      These do impact the build, but they only impact how Configuration and Platform are resolved for
+      references and get translated to global properties which are *not* ignored.
+    -->
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);CurrentSolutionConfigurationContents</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);ShouldUnsetParentConfigurationAndPlatform</MSBuildCacheGlobalPropertiesToIgnore>
+
+    <!--
+      Also ignore other related sln-based build properties. These *could* impact the build, but if it
+      does so in a meaningful way it would be unlikely to work outside the sln or from other slns anyway.
+    -->
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);BuildingInsideVisualStudio</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);BuildingSolutionFile</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);SolutionDir</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);SolutionExt</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);SolutionFileName</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);SolutionName</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);SolutionPath</MSBuildCacheGlobalPropertiesToIgnore>
+
+    <!-- Azure Pipelines provides _MSDeployUserAgent as a global property which we do not need to care about -->
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);_MSDeployUserAgent</MSBuildCacheGlobalPropertiesToIgnore>
+  </PropertyGroup>
+</Project>

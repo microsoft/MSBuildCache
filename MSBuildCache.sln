@@ -1,0 +1,80 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{EFFB5949-347C-4F28-8964-571D5C6B6209}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.MSBuildCache.Common", "src\Common\Microsoft.MSBuildCache.Common.csproj", "{33CD5B46-ECC1-47B1-B9B4-972218BFC4AC}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.MSBuildCache.Common.Tests", "src\Common.Tests\Microsoft.MSBuildCache.Common.Tests.csproj", "{41E23EB7-6313-4DD0-9F4D-39304CD030A8}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{0392E290-973E-4086-A58E-F927AAA65B9A}"
+	ProjectSection(SolutionItems) = preProject
+		.editorconfig = .editorconfig
+		.gitignore = .gitignore
+		.gitmodules = .gitmodules
+		azure-pipelines.yml = azure-pipelines.yml
+		Directory.Build.props = Directory.Build.props
+		Directory.Build.rsp = Directory.Build.rsp
+		Directory.Build.targets = Directory.Build.targets
+		Directory.Packages.props = Directory.Packages.props
+		nuget.config = nuget.config
+		README.md = README.md
+		version.json = version.json
+	EndProjectSection
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.MSBuildCache.SharedCompilation", "src\SharedCompilation\Microsoft.MSBuildCache.SharedCompilation.csproj", "{53A7161F-16F8-4672-807B-153603AB9A9A}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.MSBuildCache.AzureBlobStorage", "src\AzureBlobStorage\Microsoft.MSBuildCache.AzureBlobStorage.csproj", "{D0195D37-E001-4283-B51A-A0B51B1D54D1}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.MSBuildCache.AzurePipelines", "src\AzurePipelines\Microsoft.MSBuildCache.AzurePipelines.csproj", "{97357681-C75E-445D-8547-46F312D01CED}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.MSBuildCache.Local", "src\Local\Microsoft.MSBuildCache.Local.csproj", "{F6586428-E047-42C8-B0AC-048DF6DFAF18}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{33CD5B46-ECC1-47B1-B9B4-972218BFC4AC}.Debug|x64.ActiveCfg = Debug|x64
+		{33CD5B46-ECC1-47B1-B9B4-972218BFC4AC}.Debug|x64.Build.0 = Debug|x64
+		{33CD5B46-ECC1-47B1-B9B4-972218BFC4AC}.Release|x64.ActiveCfg = Release|x64
+		{33CD5B46-ECC1-47B1-B9B4-972218BFC4AC}.Release|x64.Build.0 = Release|x64
+		{41E23EB7-6313-4DD0-9F4D-39304CD030A8}.Debug|x64.ActiveCfg = Debug|x64
+		{41E23EB7-6313-4DD0-9F4D-39304CD030A8}.Debug|x64.Build.0 = Debug|x64
+		{41E23EB7-6313-4DD0-9F4D-39304CD030A8}.Release|x64.ActiveCfg = Release|x64
+		{41E23EB7-6313-4DD0-9F4D-39304CD030A8}.Release|x64.Build.0 = Release|x64
+		{53A7161F-16F8-4672-807B-153603AB9A9A}.Debug|x64.ActiveCfg = Debug|x64
+		{53A7161F-16F8-4672-807B-153603AB9A9A}.Debug|x64.Build.0 = Debug|x64
+		{53A7161F-16F8-4672-807B-153603AB9A9A}.Release|x64.ActiveCfg = Release|x64
+		{53A7161F-16F8-4672-807B-153603AB9A9A}.Release|x64.Build.0 = Release|x64
+		{D0195D37-E001-4283-B51A-A0B51B1D54D1}.Debug|x64.ActiveCfg = Debug|x64
+		{D0195D37-E001-4283-B51A-A0B51B1D54D1}.Debug|x64.Build.0 = Debug|x64
+		{D0195D37-E001-4283-B51A-A0B51B1D54D1}.Release|x64.ActiveCfg = Release|x64
+		{D0195D37-E001-4283-B51A-A0B51B1D54D1}.Release|x64.Build.0 = Release|x64
+		{97357681-C75E-445D-8547-46F312D01CED}.Debug|x64.ActiveCfg = Debug|x64
+		{97357681-C75E-445D-8547-46F312D01CED}.Debug|x64.Build.0 = Debug|x64
+		{97357681-C75E-445D-8547-46F312D01CED}.Release|x64.ActiveCfg = Release|x64
+		{97357681-C75E-445D-8547-46F312D01CED}.Release|x64.Build.0 = Release|x64
+		{F6586428-E047-42C8-B0AC-048DF6DFAF18}.Debug|x64.ActiveCfg = Debug|x64
+		{F6586428-E047-42C8-B0AC-048DF6DFAF18}.Debug|x64.Build.0 = Debug|x64
+		{F6586428-E047-42C8-B0AC-048DF6DFAF18}.Release|x64.ActiveCfg = Release|x64
+		{F6586428-E047-42C8-B0AC-048DF6DFAF18}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{33CD5B46-ECC1-47B1-B9B4-972218BFC4AC} = {EFFB5949-347C-4F28-8964-571D5C6B6209}
+		{41E23EB7-6313-4DD0-9F4D-39304CD030A8} = {EFFB5949-347C-4F28-8964-571D5C6B6209}
+		{53A7161F-16F8-4672-807B-153603AB9A9A} = {EFFB5949-347C-4F28-8964-571D5C6B6209}
+		{D0195D37-E001-4283-B51A-A0B51B1D54D1} = {EFFB5949-347C-4F28-8964-571D5C6B6209}
+		{97357681-C75E-445D-8547-46F312D01CED} = {EFFB5949-347C-4F28-8964-571D5C6B6209}
+		{F6586428-E047-42C8-B0AC-048DF6DFAF18} = {EFFB5949-347C-4F28-8964-571D5C6B6209}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {F1CDA78F-A666-431B-BF44-56DA7DF193BA}
+	EndGlobalSection
+EndGlobal

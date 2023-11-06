@@ -1,0 +1,55 @@
+<Project>
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+
+    <!-- Use the latest version of C# available -->
+    <LangVersion>Latest</LangVersion>
+
+    <!-- ArtifactsDirectory is an Azure Pipelines variable so presents as an env var -->
+    <BaseArtifactsPath Condition="'$(ArtifactsDirectory)' != ''">$(ArtifactsDirectory)\$(Configuration)\</BaseArtifactsPath>
+    <BaseArtifactsPath Condition="'$(BaseArtifactsPath)' == ''">$(MSBuildThisFileDirectory)artifacts\$(Configuration)\</BaseArtifactsPath>
+
+    <!-- Put all produced packages in the same folder -->
+    <PackageOutputPath>$(BaseArtifactsPath)\packages</PackageOutputPath>
+
+    <!-- Suppress spam about using a preview version of .NET -->
+    <SuppressNETCoreSdkPreviewMessage>true</SuppressNETCoreSdkPreviewMessage>
+
+    <!-- Don't allow warnings -->
+    <MSBuildTreatWarningsAsErrors>true</MSBuildTreatWarningsAsErrors>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- Enabled the built-in analyzers -->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisMode>All</AnalysisMode>
+
+    <!-- Embed symbols for easier debugging -->
+    <DebugType>embedded</DebugType>
+
+    <!-- Required for IDE0005 -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <!-- Use Directory.Packages.props to manage versions -->
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+
+    <!-- BuildXL packages are pre-release but this package itself is not pre-release -->
+    <NoWarn>$(NoWarn);NU5104</NoWarn>
+  </PropertyGroup>
+
+  <!-- Packaging -->
+  <PropertyGroup>
+    <Authors>Microsoft</Authors>
+    <Copyright>© Microsoft Corporation. All rights reserved.</Copyright>
+    <Description>A project cache plugin for MSBuild</Description>
+    <PackageProjectUrl>https://github.com/microsoft/MSBuildCache</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/microsoft/MSBuildCache</RepositoryUrl>
+  </PropertyGroup>
+
+  <!-- Source Link (https://github.com/dotnet/sourcelink) -->
+  <PropertyGroup>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+  </PropertyGroup>
+</Project>
