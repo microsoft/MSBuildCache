@@ -1,5 +1,7 @@
 <Project>
   <PropertyGroup>
+    <RepoRoot>$(MSBuildThisFileDirectory)</RepoRoot>
+
     <Nullable>enable</Nullable>
 
     <!-- Use the latest version of C# available -->

@@ -4,11 +4,6 @@
     <Platform>x64</Platform>
     <Platforms>$(Platform)</Platforms>
     <TargetFrameworks>net472;net8.0</TargetFrameworks>
-    <BuildOutputTargetFolder>build\</BuildOutputTargetFolder>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-    <DevelopmentDependency>true</DevelopmentDependency>
-    <!-- This package contains MSBuild tasks only, so avoid dependencies. -->
-    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis" />
@@ -25,38 +20,5 @@
       <PackagePath>buildMultiTargeting\</PackagePath>
     </None>
   </ItemGroup>
-
-  <!--
-    Set `MSBuildLibraries` to test against locally built MSBuild, 
-    for example for regression testing pre-release versions of MSBuild.
-  -->
-  <!-- TODO: Remove the reference to Microsoft.Build once there is a cleaner task interface for reporting file accesses -->
-  <ItemGroup Condition="'$(MSBuildLibraries)' != '' ">
-    <Reference Include="$(MSBuildLibraries)\Microsoft.Build.dll" />
-    <Reference Include="$(MSBuildLibraries)\Microsoft.Build.Framework.dll" />
-    <Reference Include="$(MSBuildLibraries)\Microsoft.Build.Utilities.Core.dll" />
-  </ItemGroup>
-  <ItemGroup Condition="'$(MSBuildLibraries)' == '' ">
-    <PackageReference Include="Microsoft.Build" />
-    <PackageReference Include="Microsoft.Build.Framework" />
-    <PackageReference Include="Microsoft.Build.Utilities.Core" />
-  </ItemGroup>
-
-  <!--
-    By default, NuGet includes "framework references" so that packages can import CLR assemblies, but this kind of package does not need them added to
-    projects that reference this package
-  -->
-  <Target Name="RemovePackageFrameworkReferences" AfterTargets="_WalkEachTargetPerFramework">
-    <ItemGroup>
-      <_FrameworkAssemblyReferences Remove="@(_FrameworkAssemblyReferences)" />
-    </ItemGroup>
-  </Target>
-
-  <!-- Since this is an MSBuild task, we need to repackage our PackageReferences -->
-  <Target Name="IncludeReferenceCopyLocalPathsInBuildOutputInPackage" BeforeTargets="_GetBuildOutputFilesWithTfm" DependsOnTargets="ResolveReferences;ResolvePackageDependenciesForBuild">
-    <ItemGroup>
-      <BuildOutputInPackage Include="@(RuntimeCopyLocalItems-&gt;WithMetadataValue('AssetType', 'runtime'))" TargetPath="%(RuntimeCopyLocalItems.DestinationSubDirectory)%(Filename)%(Extension)" />
-      <BuildOutputInPackage Include="@(RuntimeCopyLocalItems-&gt;WithMetadataValue('CopyLocal', 'true'))" TargetPath="%(RuntimeCopyLocalItems.DestinationSubDirectory)%(Filename)%(Extension)" />
-    </ItemGroup>
-  </Target>
+  <Import Project="$(RepoRoot)build\MSBuildExtensionPackage.targets" />
 </Project>
