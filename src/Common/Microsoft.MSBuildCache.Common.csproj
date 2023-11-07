@@ -26,17 +26,5 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Microsoft.MSBuildCache.Common.Tests" />
   </ItemGroup>
-
-  <!--
-    Set `MSBuildLibraries` to test against locally built MSBuild, 
-    for example for regression testing pre-release versions of MSBuild.
-  -->
-  <ItemGroup Condition="'$(MSBuildLibraries)' != '' ">
-    <Reference Include="$(MSBuildLibraries)\Microsoft.Build.dll" />
-    <Reference Include="$(MSBuildLibraries)\Microsoft.Build.Framework.dll" />
-  </ItemGroup>
-  <ItemGroup Condition="'$(MSBuildLibraries)' == '' ">
-    <PackageReference Include="Microsoft.Build" />
-    <PackageReference Include="Microsoft.Build.Framework" />
-  </ItemGroup>
+  <Import Project="$(RepoRoot)build\MSBuildReference.targets" />
 </Project>

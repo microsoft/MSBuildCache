@@ -1,0 +1,16 @@
+<Project>
+  <!--
+    Set `MSBuildLibraries` to test against locally built MSBuild, 
+    for example for regression testing pre-release versions of MSBuild.
+  -->
+  <ItemGroup Condition="'$(MSBuildLibraries)' != '' ">
+    <Reference Include="$(MSBuildLibraries)\Microsoft.Build.dll" />
+    <Reference Include="$(MSBuildLibraries)\Microsoft.Build.Framework.dll" />
+    <Reference Include="$(MSBuildLibraries)\Microsoft.Build.Utilities.Core.dll" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(MSBuildLibraries)' == '' ">
+    <PackageReference Include="Microsoft.Build" IncludeAssets="Compile" />
+    <PackageReference Include="Microsoft.Build.Framework" IncludeAssets="Compile" />
+    <PackageReference Include="Microsoft.Build.Utilities.Core" IncludeAssets="Compile" />
+  </ItemGroup>
+</Project>
