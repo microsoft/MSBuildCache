@@ -25,7 +25,7 @@ steps:
   inputs:
     command: build
     projects: ${{ parameters.RepoRoot }}/MSBuildCache.sln
-    arguments: -restore:false --configuration $(BuildConfiguration) -BinaryLogger:$(LogDirectory)/msbuild.binlog
+    arguments: -restore:false --configuration $(BuildConfiguration) -BinaryLogger:$(LogDirectory)/msbuild.binlog -p:ContinuousIntegrationBuild=true
 
 - task: PublishBuildArtifacts@1
   displayName: Publish Logs
