@@ -1,0 +1,96 @@
+variables:
+- template: templates\variables.yml
+- name: SignType
+  value: Test
+- name: TeamName
+  value: MSBuild
+
+trigger:
+  batch: true
+  branches:
+    include:
+    - 'main'
+    - 'refs/tags/*'
+
+# no PR triggers
+pr: none
+
+jobs:
+- job: OfficialBuild
+  displayName: Official Build
+  variables:
+    VsInstallDir: $(Build.ArtifactStagingDirectory)/vs
+  pool:
+    name: VSEngSS-MicroBuild2022-1ES
+  steps:
+  - task: PowerShell@2
+    displayName: 'Update SignType, Build Number, and Add Build Tag for tagged commits'
+    condition: and(succeeded(), startsWith(variables['Build.SourceBranch'], 'refs/tags/v'))
+    inputs:
+      targetType: 'inline'
+      script: |
+        Write-Host "Updating SignType to 'Real'"
+        Write-Host "##vso[task.setvariable variable=SignType;]Real"
+        Write-Host ""
+        $buildTag = [System.Text.RegularExpressions.Regex]::Match("$(Build.SourceBranchName)", "v.*")
+        if($buildTag.Success -eq $true)
+        {
+            Write-Host "Updating VSTS build number to ""$buildTag"""
+            Write-Host "##vso[build.updatebuildnumber]$buildTag"
+            Write-Host ""
+            Write-Host "Adding build tag ""$buildTag"""
+            Write-Host "##vso[build.addbuildtag]$buildTag"
+        }
+
+  - task: MicroBuildSigningPlugin@1
+    displayName: 'Install MicroBuild Signing Plugin'
+    inputs:
+      signType: '$(SignType)'
+      zipSources: false
+
+  - checkout: self
+    # Fetch all history for versioning
+    fetchDepth: 0
+
+  - task: Cache@2
+    displayName: Cache Visual Studio
+    inputs:
+      key: '"vs" | "$(Agent.OS)"'
+      path: $(VsInstallDir)
+
+  - script: |
+      del %TEMP%\vs_buildtools.exe
+      
+      curl.exe -L https://aka.ms/vs/17/pre/vs_buildtools.exe -o %TEMP%\vs_buildtools.exe
+      
+      %TEMP%\vs_buildtools.exe ^
+        --config "$(Build.SourcesDirectory)\.vsconfig" ^
+        --installPath "$(VsInstallDir)" ^
+        --passive ^
+        --norestart ^
+        --wait
+      echo VS installer exit code: %ERRORLEVEL%
+
+      del %TEMP%\vs_buildtools.exe
+
+      echo Current MSBuild version:
+      "$(VsInstallDir)\MSBuild\Current\Bin\amd64\MSBuild.exe" --version
+    displayName: 'Install VS Preview'
+
+  - template: templates\build.yml
+    parameters:
+      RepoRoot: $(Build.SourcesDirectory)
+
+  - task: NuGetCommand@2
+    displayName: 'Push NuGet Packages to nuget.org'
+    condition: and(succeeded(), startsWith(variables['Build.SourceBranch'], 'refs/tags/v'))
+    inputs:
+      command: 'push'
+      packagesToPush: '$(ArtifactsDirectory)/**/*.nupkg'
+      nuGetFeedType: 'external'
+      publishFeedCredentials: 'MSBuildCache-Push'
+
+  - publish: $(LogDirectory)
+    displayName: Publish Logs
+    artifact: '$(System.JobDisplayName) logs'
+    condition: always()

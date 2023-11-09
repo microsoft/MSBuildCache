@@ -27,15 +27,7 @@ steps:
     projects: ${{ parameters.RepoRoot }}/MSBuildCache.sln
     arguments: -restore:false --configuration $(BuildConfiguration) -BinaryLogger:$(LogDirectory)/msbuild.binlog
 
-- task: PublishBuildArtifacts@1
-  displayName: Publish Logs
-  inputs:
-    PathtoPublish: $(LogDirectory)
-    ArtifactName: logs
-  condition: always()
-
-- task: PublishBuildArtifacts@1
+- publish: $(ArtifactsDirectory)
   displayName: Publish Artifacts
-  inputs:
-    PathtoPublish: $(ArtifactsDirectory)
-    ArtifactName: artifacts
+  artifact: '$(System.JobDisplayName) artifacts'
+  condition: always()

@@ -32,5 +32,9 @@
       <PackagePath>buildMultiTargeting\</PackagePath>
     </None>
   </ItemGroup>
+  <!-- Signing -->
+  <ItemGroup>
+    <FilesToSign Include="$(TargetPath)" Authenticode="Microsoft400" StrongName="StrongName" />
+  </ItemGroup>
   <Import Project="$(RepoRoot)build\MSBuildExtensionPackage.targets" />
 </Project>
