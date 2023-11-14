@@ -1,95 +1,134 @@
 # Microsoft.MSBuildCache
+[![Build Status](https://dev.azure.com/msbuildcache/public/_apis/build/status%2FMicrosoft.MSBuildCache?repoName=microsoft%2FMSBuildCache&branchName=refs%2Fpull%2F1%2Fmerge)](https://dev.azure.com/msbuildcache/public/_build/latest?definitionId=1&repoName=microsoft%2FMSBuildCache&branchName=refs%2Fpull%2F1%2Fmerge)
 
-The overarching effort for MSBuildCache is an evolution of the [MSBuild Project Cache](https://github.com/dotnet/msbuild/blob/main/documentation/specs/project-cache.md) to enable the "cache add" scenarios. MSBuildCache is a plugin implementation which takes advantage of this.
+This project provides implementations of plugins for the experimental [MSBuild Project Cache](https://github.com/dotnet/msbuild/blob/main/documentation/specs/project-cache.md), which enables project-level caching within MSBuild.
+
+> [!IMPORTANT]
+> Currently MSBuildCache assumes that the build is running in a clean repo. Incremental builds, eg local developer builds, are not supported. Target scenarios include PR builds and CI builds.
+
+## Usage
+
+To enable caching, simply add a `<PackageReference>` for the desired cache implementation and set various properties to configure it.
+
+For repos which build C# code, also add a `<PackageReference>` to `Microsoft.MSBuildCache.SharedCompilation` for shared compilation support.
+
+Here is an example if you're using NuGet's [Central Package Management](https://learn.microsoft.com/en-us/nuget/consume-packages/Central-Package-Management) and Azure Pipelines:
+
+`Directory.Packages.props`:
+```xml
+  <PropertyGroup>
+    <!-- In Azure pipelines, use Pipeline Caching as the cache storage backend. Otherwise, use the local cache. -->
+    <MSBuildCachePackageName Condition="'$(TF_BUILD)' != ''">Microsoft.MSBuildCache.AzurePipelines</MSBuildCachePackageName>
+    <MSBuildCachePackageName Condition="'$(MSBuildCachePackageName)' == ''">Microsoft.MSBuildCache.Local</MSBuildCachePackageName>
+
+    <!-- Replace this with the latest version -->
+    <MSBuildCachePackageVersion>...</MSBuildCachePackageVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <GlobalPackageReference Include="$(MSBuildCachePackageName)" Version="$(MSBuildCachePackageVersion)" />
+    <GlobalPackageReference Include="Microsoft.MSBuildCache.SharedCompilation" Version="$(MSBuildCachePackageVersion)" />
+  </ItemGroup>
+```
+
+### Common Settings
+
+These settings are common across all plugins, although different implementations may ignore or handle them differently. Refer to the specific plugin documentation for details.
+
+| MSBuild Property Name | Setting Type | Default value | Description |
+| ------------- | ------------ | ------------- | ----------- |
+| `$(MSBuildCacheLogDirectory)` | `string` | "MSBuildCacheLogs" | Base directory to use for logging. If a relative path, it's assumed relative to the repo root. |
+| `$(MSBuildCacheCacheUniverse)` | `string` | "default" | The cache universe is used to isolate the cache. This can be used to bust the cache, or to isolate some types of builds from other types. |
+| `$(MSBuildCacheMaxConcurrentCacheContentOperations)` | `int` | 64 | The maximum number of cache operations to perform concurrently |
+| `$(MSBuildCacheLocalCacheRootPath)` | `string` | "\MSBuildCache" (in repo's drive root) | Base directory to use for the local cache. |
+| `$(MSBuildCacheLocalCacheSizeInMegabytes)` | `int` | 102400 (100 GB) | The maximum size in megabytes of the local cache |
+| `$(MSBuildCacheIgnoredInputPatterns)` | `Glob[]` |  | Files which are part of the repo which should be ignored for cache invalidation |
+| `$(MSBuildCacheIgnoredOutputPatterns)` | `Glob[]` | `*.assets.cache;*assemblyreference.cache` | Files to ignore for output collection into the cache. Note that if output are ignored, the replayed cache entry will not have these files. This should be used for intermediate outputs which are not properly portable |
+| `$(MSBuildCacheIdenticalDuplicateOutputPatterns)` | `Glob[]` | | Files to allow duplicate outputs, with identical content, across projects. Projects which produce files at the same path with differing content will still produce an error. Note: this setting should be used sparingly as it impacts performance |
+| `$(MSBuildCacheRemoteCacheIsReadOnly)` | `bool` | false | Whether the remote cache is read-only. This can be useful for scenarios where the remote cache should only be read from but not produced to. |
+| `$(MSBuildCacheAsyncCachePublishing)` | `bool` | true | Whether files are published asynchronously to the cache as opposed to delaying the completion signal to MSBuild until publishing is complete. Note: Publishing will be awaited before the overall build completes. |
+| `$(MSBuildCacheAsyncCacheMaterialization)` | `bool` | true | Whether files are materialized on disk asynchronously from the cache as opposed to delaying the completion signal to MSBuild until publishing is complete. Note: Materialization will be awaited when a depending project requires the files and before the overall build completes. |
+| `$(MSBuildCacheAllowFileAccessAfterProjectFinishProcessPatterns)` | `Glob[]` | `\**\vctip.exe` | Processes to allow file accesses after the project which launched it completes, ie accesses by a detached process. Note: these accesses will not be considered for caching. |
+| `$(MSBuildCacheAllowFileAccessAfterProjectFinishFilePatterns)` | `Glob[]` | | Files to allow to be accessed by a process launched by a project after the project completes, ie accesses by a detached process. Note: these accesses will not be considered for caching. |
+| `$(MSBuildCacheAllowProcessCloseAfterProjectFinishProcessPatterns)` | `Glob[]` | `\**\mspdbsrv.exe` | Processes to allow to exit after the project which launched it completes, ie detached processes. |
+| `$(MSBuildCacheGlobalPropertiesToIgnore)` | `string[]` | `CurrentSolutionConfigurationContents;ShouldUnsetParentConfigurationAndPlatform;BuildingInsideVisualStudio;BuildingSolutionFile;SolutionDir;SolutionExt;SolutionFileName;SolutionName;SolutionPath;_MSDeployUserAgent`, as well as all proeprties related to plugin settings,  | The list of global properties to exclude from consideration by the cache |
+
+When configuring settings which are list types, you should always append to the existing value to avoid overriding the defaults:
+
+```xml
+<PropertyGroup>
+  <MSBuildCacheIdenticalDuplicateOutputPatterns>$(MSBuildCacheIdenticalDuplicateOutputPatterns);**\foo.txt</MSBuildCacheIdenticalDuplicateOutputPatterns>
+</PropertyGroup>
+```
+
+## Plugins
+
+### Microsoft.MSBuildCache.AzurePipelines
+[![NuGet Version](https://img.shields.io/nuget/v/Microsoft.MSBuildCache.AzurePipelines.svg)](https://www.nuget.org/packages/Microsoft.MSBuildCache.AzurePipelines)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/Microsoft.MSBuildCache.AzurePipelines.svg)](https://www.nuget.org/packages/Microsoft.MSBuildCache.AzurePipelines)
+
+This implementation uses [Azure Pipeline Caching](https://learn.microsoft.com/en-us/azure/devops/pipelines/release/caching?view=azure-devops) as the cache storage, which is ideal for repos using [Azure Pipelines](https://learn.microsoft.com/en-us/azure/devops/pipelines) for their builds.
+
+Please refer to the [cache isolation and security](https://learn.microsoft.com/en-us/azure/devops/pipelines/release/caching?view=azure-devops#cache-isolation-and-security) pipeline caching provides to understand the security around this cache implementation.
+
+It is expected that this plugin is used within an Azure Pipeline. The `SYSTEM_ACCESSTOKEN` environment variable will need to be explicitly passed to the task calling MSBuild since it's considered a secret. In classic pipelines this is done by checking "Allow scripts to access the OAuth token" in the job. In yml pipelines, this is done by passing the env var explicitly using the `$(System.AccessToken)` variable:
+
+```yml
+- script: MSBuild /graph /restore /reportfileaccesses /bl:$(Build.ArtifactStagingDirectory)\Logs\msbuild.binlog /p:Configuration=Release
+  displayName: Build
+  env:
+    SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+```
+
+For the access token to have scopes relevant to Pipeline Caching, the [Cache task](https://learn.microsoft.com/en-us/azure/devops/pipelines/release/caching?view=azure-devops#cache-task-how-it-works) must be used in the pipeline. There is work planned to opt-into this explicitly, but using the task is currently the workaround. You can cache a dummy folder if there is no otherwise reasonable use of the task in your build.
+
+```yml
+- task: Cache@2
+  displayName: Enable Pipeline Caching
+  inputs:
+    key: '"dummy"'
+    path: build
+```
+
+### Microsoft.MSBuildCache.Local
+[![NuGet Version](https://img.shields.io/nuget/v/Microsoft.MSBuildCache.Local.svg)](https://www.nuget.org/packages/Microsoft.MSBuildCache.Local)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/Microsoft.MSBuildCache.Local.svg)](https://www.nuget.org/packages/Microsoft.MSBuildCache.Local)
+
+This implementation uses the local file system for the cache. In particular, it uses [BuildXL](https://github.com/microsoft/BuildXL)'s `LocalCache`. This is recommended for locally testing and debugging caching for your repo.
+
+### Microsoft.MSBuildCache.AzureBlobStorage
+[![NuGet Version](https://img.shields.io/nuget/v/Microsoft.MSBuildCache.AzureBlobStorage.svg)](https://www.nuget.org/packages/Microsoft.MSBuildCache.AzureBlobStorage)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/Microsoft.MSBuildCache.AzureBlobStorage.svg)](https://www.nuget.org/packages/Microsoft.MSBuildCache.AzureBlobStorage)
+
+This implementation uses [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs/) as the cache storage.
+
+> [!WARNING]
+> This implementation does not yet have a robust security model. All builds using this will need write access to the storage resource, so for example an external contributor could send a PR which would write/overwrite arbitrary content which could then be used by CI builds. Builds using this plugin must be restricted to trusted team members. Use at your own risk.
+
+The connection string to the blob storage account must be provided in the `MSBUILDCACHE_CONNECTIONSTRING` environment variable. This connection string needs both read and write access to the resource.
+
+## Other Packages
+
+### Microsoft.MSBuildCache.SharedCompilation
+[![NuGet Version](https://img.shields.io/nuget/v/Microsoft.MSBuildCache.SharedCompilation.svg)](https://www.nuget.org/packages/Microsoft.MSBuildCache.SharedCompilation)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/Microsoft.MSBuildCache.SharedCompilation.svg)](https://www.nuget.org/packages/Microsoft.MSBuildCache.SharedCompilation)
+
+This package enables accurate file access reporting for the Roslyn [Compiler Server](https://github.com/dotnet/roslyn/blob/main/docs/compilers/Compiler%20Server.md). Because the compiler server (`vbcscompiler`) launches as a detached process, its file accesses are not observed by MSBuild. This package manually reports these files accesses to the plugin.
+
+In the future, this feature will be directly supported by Roslyn and this package will no longer be needed at that point.
+
+### Microsoft.MSBuildCache.Common
+[![NuGet Version](https://img.shields.io/nuget/v/Microsoft.MSBuildCache.Common.svg)](https://www.nuget.org/packages/Microsoft.MSBuildCache.Common)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/Microsoft.MSBuildCache.Common.svg)](https://www.nuget.org/packages/Microsoft.MSBuildCache.Common)
+
+This package contains much of the shared logic for the plugins, including handling file accesses and cache fingerprinting. For those wanting to use a different cache backend than the ones associated with the available plugins, referencing this package can be a good option to avoid having to duplicate the rest of the logic involved with caching.
 
 ## Contributing
 
-This project welcomes contributions and suggestions.  Most contributions require you to agree to a
-Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
-the rights to use your contribution. For details, visit https://cla.opensource.microsoft.com.
+See [CONTRIBUTING.md](CONTRIBUTING.md)
 
-When you submit a pull request, a CLA bot will automatically determine whether you need to provide
-a CLA and decorate the PR appropriately (e.g., status check, comment). Simply follow the instructions
-provided by the bot. You will only need to do this once across all repos using our CLA.
+## License
 
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
-For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
-contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
-
-
-### Setup
-
-It is assumed that you are using VS v17.8.0-pre.3.0 or later.
-
-### Building
-
-#### Using a custom MSBuild (optional)
-
-Clone the [MSBuild repo](https://github.com/dotnet/msbuild) as a sibling of the MSBuildCache repo.
-
-Build the msbuild repo:
-```
-..\msbuild\build.cmd /p:CreateBootstrap=true /p:Configuration=Release
-```
-Note, MSBuild only needs to built once each time you update MSBuild, not every time you want to build MSBuildCache.
-
-The path to MSBuild is: `..\msbuild\artifacts\bin\bootstrap\net472\MSBuild\Current\Bin\amd64\MSBuild.exe`.
-
-#### Building MSBuildCache
-
-You can build `MSBuildCache.sln` and/or open it in VS.
-
-### Testing
-
-#### Running
-
-Ensure you've built MSBuildCache as described above.
-
-Now add the following in the repo you're testing with in their `NuGet.config`
-
-```xml
-<add key="MSBuildCache" value="..\MSBuildCache\artifacts\Debug\Microsoft.MSBuildCache" />
-```
-
-The path may need to be adjusted based on the repo and where you have MSBuildCache cloned.
-
-Finally add a `PackageReference` to MSBuildCache to the repo you're testing with version `*-*` to ensure the latest gets picked up. This may look different from repo to repo but here is an example:
-
-```xml
-<PackageReference Include="Microsoft.MSBuildCache" VersionOverride="*-*" IncludeAssets="Analyzers;Build;BuildMultitargeting;BuildTransitive" PrivateAssets="All" />
-```
-
-**NOTE!** Because you're using a locally built package, you may need to clear it from your package cache after each iteration via a command like `rmdir /S /Q %USERPROFILE%\.nuget\packages\Microsoft.MSBuildCache`. Additionally, to ensure you're not using the head version of the package, you may need to create a branch and a dummy commit locally to ensure the version is higher.
-
-**NOTE!** MSBuildCache currently does not handle incremental builds well! The current target scenario is for CI environments, so **it's expected that the repo is always clean before building**. The main reason for this gap is the same as QuickBuild: file probes and directory enumerations are not considered.
-
-To enable file reporting via detours in MSBuild, ensure `/graph` and `/reportfileaccesses` are used. The latter is new as of these unmerged MSBuild changes.
-
-Example of a set of commands to test MSBuildCache e2e in some repo:
-
-```
-rmdir /S /Q %USERPROFILE%\.nuget\packages\Microsoft.MSBuildCache
-git clean -fdx
-restore
-<path-to-msbuild> /graph /restore:false /m /nr:false /reportfileaccesses
-```
-
-Example of a set of commands to test MSBuildCache e2e in a subdirectory of some repo:
-
-```
-rmdir /S /Q %USERPROFILE%\.nuget\packages\Microsoft.MSBuildCache
-pushd <repo-root>
-git clean -fdx
-popd
-restore
-<path-to-msbuild> /graph /restore:false /m /nr:false /reportfileaccesses
-```
-
-#### Settings
-
-There is a built-in mechanism to passing settings to a plugin, which is to add metadata to the `ProjectCachePlugin` item. This is then exposed to the plugin via the `CacheContext` during initialialization.
-
-To add additional setting, add it to `PluginSettings` and `src\MSBuildCache\build\MicrosoftMSBuildCache.targets`. For naming convensions, follow what you see but the gist is that the property name should be the setting name prefixed by "MSBuildCache".
+Microsoft.MSBuildCache is licensed under the [MIT license](LICENSE).
 
 ## Trademarks
 
