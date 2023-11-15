@@ -495,7 +495,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
                 if (IsDuplicateIdenticalOutputAbsolutePath(logger, absolutePath))
                 {
-                    logger.LogWarning($"Project `{nodeContext.Id}` read the output `{normalizedFilePath}` from project `{producerContext.Id}`, but that file may be re-written.");
+                    logger.LogMessage($"Project `{nodeContext.Id}` read the output `{normalizedFilePath}` from project `{producerContext.Id}`, but that file may be re-written.");
                 }
             }
         }
@@ -920,14 +920,14 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             // Duplicate-identical outputs are only allowed if there is a strict ordering between the multiple writers.
             if (!nodeContext.Node.IsDependentOn(previousNode.Node))
             {
-                logger.LogError($"Node {nodeContext.Id} produced duplicate-identical output {normalizedFilePath} which was already produced by another node {previousNode.Id}, but there is no ordering between the two nodes.");
+                logger.LogError($"Node {nodeContext.Id} produced output {normalizedFilePath} which was already produced by another node {previousNode.Id}, but there is no ordering between the two nodes.");
                 return;
             }
 
             // This should never happen as the previous node is a dependent of this node...
             if (previousNode.BuildResult == null)
             {
-                logger.LogError($"Node {nodeContext.Id} produced duplicate-identical output {normalizedFilePath} which was already produced by another node {previousNode.Id}, however the hash of that first output is unknown.");
+                logger.LogError($"Node {nodeContext.Id} produced output {normalizedFilePath} which was already produced by another node {previousNode.Id}, however the hash of that first output is unknown.");
                 return;
             }
 
@@ -939,7 +939,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             }
             else
             {
-                logger.LogError($"Node {nodeContext.Id} produced duplicate-identical output {normalizedFilePath} with hash {newHash} which was already produced by another node {previousNode.Id} with a different hash {previousHash}.");
+                logger.LogError($"Node {nodeContext.Id} produced output {normalizedFilePath} with hash {newHash} which was already produced by another node {previousNode.Id} with a different hash {previousHash}.");
             }
         }
     }
