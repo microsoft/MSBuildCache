@@ -42,8 +42,7 @@
     <!-- Strong-naming -->
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)MicrosoftCorporation.snk</AssemblyOriginatorKeyFile>
-    <DelaySign>false</DelaySign>
-    <PublicSign>true</PublicSign>
+    <DelaySign Condition="'$(SignType)' != ''">true</DelaySign>
   </PropertyGroup>
 
   <!-- Packaging -->
