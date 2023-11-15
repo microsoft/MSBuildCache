@@ -1,16 +1,16 @@
 # Microsoft.MSBuildCache
 [![Build Status](https://dev.azure.com/msbuildcache/public/_apis/build/status%2FMicrosoft.MSBuildCache?repoName=microsoft%2FMSBuildCache&branchName=refs%2Fpull%2F1%2Fmerge)](https://dev.azure.com/msbuildcache/public/_build/latest?definitionId=1&repoName=microsoft%2FMSBuildCache&branchName=refs%2Fpull%2F1%2Fmerge)
 
-This project provides implementations of plugins for the experimental [MSBuild Project Cache](https://github.com/dotnet/msbuild/blob/main/documentation/specs/project-cache.md), which enables project-level caching within MSBuild.
+This project provides plugin implementations for the experimental [MSBuild Project Cache](https://github.com/dotnet/msbuild/blob/main/documentation/specs/project-cache.md), which enables project-level caching within MSBuild.
 
 > [!IMPORTANT]
-> Currently MSBuildCache assumes that the build is running in a clean repo. Incremental builds, eg local developer builds, are not supported. Target scenarios include PR builds and CI builds.
+> Currently MSBuildCache assumes that the build is running in a clean repo. Incremental builds, e.g. local developer builds, are not supported. Target scenarios include PR builds and CI builds.
 
 ## Usage
 
 To enable caching, simply add a `<PackageReference>` for the desired cache implementation and set various properties to configure it.
 
-For repos which build C# code, also add a `<PackageReference>` to `Microsoft.MSBuildCache.SharedCompilation` for shared compilation support.
+For repos which build C# code, add a `<PackageReference>` to `Microsoft.MSBuildCache.SharedCompilation` for shared compilation support.
 
 Here is an example if you're using NuGet's [Central Package Management](https://learn.microsoft.com/en-us/nuget/consume-packages/Central-Package-Management) and Azure Pipelines:
 
@@ -28,6 +28,24 @@ Here is an example if you're using NuGet's [Central Package Management](https://
     <GlobalPackageReference Include="$(MSBuildCachePackageName)" Version="$(MSBuildCachePackageVersion)" />
     <GlobalPackageReference Include="Microsoft.MSBuildCache.SharedCompilation" Version="$(MSBuildCachePackageVersion)" />
   </ItemGroup>
+```
+
+For repos using C++, you will need to add the projects to a packages.config and import the props/targets files directly.
+
+`Directory.Build.props`:
+```xml
+  <PropertyGroup>
+    <PackagesConfigFile>packages.config</PackagesConfigFile>
+    <PackagesConfigContents>$([System.IO.File]::ReadAllText("$(PackagesConfigFile)"))</PackagesConfigContents>
+    <MSBuildCachePackageVersion>$([System.Text.RegularExpressions.Regex]::Match($(PackagesConfigContents), 'Microsoft.MSBuildCache.*?version="(.*?)"').Groups[1].Value)</MSBuildCachePackageVersion>
+    <MSBuildCachePackageRoot>$(NugetPackageDirectory)\$(MSBuildCachePackageName).$(MSBuildCachePackageVersion)</MSBuildCachePackageRoot>
+  </PropertyGroup>
+  <Import Project="$(MSBuildCachePackageRoot)\build\$(MSBuildCachePackageName).props" />
+```
+
+`Directory.Build.targets`:
+```xml
+  <Import Project="$(MSBuildCachePackageRoot)\build\$(MSBuildCachePackageName).targets" />
 ```
 
 ### Common Settings
@@ -114,7 +132,7 @@ The connection string to the blob storage account must be provided in the `MSBUI
 
 This package enables accurate file access reporting for the Roslyn [Compiler Server](https://github.com/dotnet/roslyn/blob/main/docs/compilers/Compiler%20Server.md). Because the compiler server (`vbcscompiler`) launches as a detached process, its file accesses are not observed by MSBuild. This package manually reports these files accesses to the plugin.
 
-In the future, this feature will be directly supported by Roslyn and this package will no longer be needed at that point.
+In the future, this feature will be directly supported by Roslyn, at which point this package will no longer be needed.
 
 ### Microsoft.MSBuildCache.Common
 [![NuGet Version](https://img.shields.io/nuget/v/Microsoft.MSBuildCache.Common.svg)](https://www.nuget.org/packages/Microsoft.MSBuildCache.Common)
