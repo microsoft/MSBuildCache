@@ -14,9 +14,6 @@
     <!-- Put all produced packages in the same folder -->
     <PackageOutputPath>$(BaseArtifactsPath)\packages</PackageOutputPath>
 
-    <!-- Suppress spam about using a preview version of .NET -->
-    <SuppressNETCoreSdkPreviewMessage>true</SuppressNETCoreSdkPreviewMessage>
-
     <!-- Don't allow warnings -->
     <MSBuildTreatWarningsAsErrors>true</MSBuildTreatWarningsAsErrors>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
