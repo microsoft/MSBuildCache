@@ -35,11 +35,6 @@
 
     <!-- BuildXL packages are pre-release but this package itself is not pre-release -->
     <NoWarn>$(NoWarn);NU5104</NoWarn>
-
-    <!-- Strong-naming -->
-    <SignAssembly>true</SignAssembly>
-    <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)StrongNameKey.snk</AssemblyOriginatorKeyFile>
-    <DelaySign Condition="'$(SignType)' != ''">true</DelaySign>
   </PropertyGroup>
 
   <!-- Packaging -->
