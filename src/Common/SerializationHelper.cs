@@ -10,13 +10,13 @@ using System.Text.Json;
 
 namespace Microsoft.MSBuildCache;
 
-internal static class SerializationHelper
+public static class SerializationHelper
 {
     public static JsonWriterOptions WriterOptions { get; } = new JsonWriterOptions { Indented = true };
 
     public static JsonSerializerOptions SerializerOptions { get; } = CreateJsonSerializerOptions();
 
-    internal static async Task<T?> DeserializeAsync<T>(this Stream stream, JsonSerializerOptions? options = null, CancellationToken cancellationToken = default)
+    public static async Task<T?> DeserializeAsync<T>(this Stream stream, JsonSerializerOptions? options = null, CancellationToken cancellationToken = default)
         where T : class
     {
         try
