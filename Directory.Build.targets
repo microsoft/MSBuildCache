@@ -3,6 +3,14 @@
     <Compile Include="$(MSBuildThisFileDirectory)build\Attributes\*.cs" Visible="false" />
   </ItemGroup>
 
+  <!-- Strong-naming -->
+  <PropertyGroup>
+    <SignAssembly>true</SignAssembly>
+    <MicroBuild_NuPkgSigningEnabled Condition="'$(SignType)' == 'Test'">false</MicroBuild_NuPkgSigningEnabled>
+    <DelaySign Condition="'$(MicroBuild_SigningTargetsImported)' == 'true' and '$(IsTestProject)' != 'true'">true</DelaySign>
+    <AssemblyOriginatorKeyFile Condition="'$(SignType)' == 'Real' and '$(IsTestProject)' != 'true'">$(MSBuildThisFileDirectory)MicrosoftCorporation.snk</AssemblyOriginatorKeyFile>
+    <AssemblyOriginatorKeyFile Condition="'$(AssemblyOriginatorKeyFile)' == ''">$(MSBuildThisFileDirectory)Test.snk</AssemblyOriginatorKeyFile>
+  </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Update="@(InternalsVisibleTo)"
                         Key="002400000480000094000000060200000024000052534131000400000100010005055631641d3e7a8b5c05061f45ebe8c6f4ebecb61014b0e082556e1a9c84ce1cfe610bf2108bd12e088a5fcf9a015766123c9f6d81e69ef71d4deaf3b6f03a298de8a71fa562dd0e4ce2d7eefd4eeb8e7af7ef612d0ca64fed752393abaeeb80621b8097434795d41a0a0b97b592d01e68e979013da944d28e04ceadab30ec" />
