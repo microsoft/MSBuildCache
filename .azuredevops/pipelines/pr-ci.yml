@@ -29,8 +29,8 @@ resources:
     ref: main
 
 jobs:
-- job: BuildVSPreview
-  displayName: Build using VS Preview
+- job: BuildVS
+  displayName: Build using VS
   variables:
     VsInstallDir: $(Build.ArtifactStagingDirectory)/vs
   steps:
@@ -47,7 +47,7 @@ jobs:
   - script: |
       del %TEMP%\vs_buildtools.exe
       
-      curl.exe -L https://aka.ms/vs/17/pre/vs_buildtools.exe -o %TEMP%\vs_buildtools.exe
+      curl.exe -L https://aka.ms/vs/17/release/vs_buildtools.exe -o %TEMP%\vs_buildtools.exe
       
       %TEMP%\vs_buildtools.exe ^
         --config "$(Build.SourcesDirectory)\.vsconfig" ^
@@ -61,7 +61,7 @@ jobs:
 
       echo Current MSBuild version:
       "$(VsInstallDir)\MSBuild\Current\Bin\amd64\MSBuild.exe" --version
-    displayName: 'Install VS Preview'
+    displayName: 'Install VS'
 
   - template: templates\build.yml
     parameters:

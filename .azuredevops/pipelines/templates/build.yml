@@ -7,7 +7,6 @@ steps:
   displayName: 'Install .NET $(DotNetVersion)'
   inputs:
     version: '$(DotNetVersion)'
-    includePreviewVersions: true
 
 - task: NuGetAuthenticate@1
   displayName: NuGet Authenticate
