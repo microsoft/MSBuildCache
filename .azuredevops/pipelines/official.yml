@@ -52,31 +52,6 @@ jobs:
     # Fetch all history for versioning
     fetchDepth: 0
 
-  - task: Cache@2
-    displayName: Cache Visual Studio
-    inputs:
-      key: '"vs" | "$(Agent.OS)"'
-      path: $(VsInstallDir)
-
-  - script: |
-      del %TEMP%\vs_buildtools.exe
-      
-      curl.exe -L https://aka.ms/vs/17/pre/vs_buildtools.exe -o %TEMP%\vs_buildtools.exe
-      
-      %TEMP%\vs_buildtools.exe ^
-        --config "$(Build.SourcesDirectory)\.vsconfig" ^
-        --installPath "$(VsInstallDir)" ^
-        --passive ^
-        --norestart ^
-        --wait
-      echo VS installer exit code: %ERRORLEVEL%
-
-      del %TEMP%\vs_buildtools.exe
-
-      echo Current MSBuild version:
-      "$(VsInstallDir)\MSBuild\Current\Bin\amd64\MSBuild.exe" --version
-    displayName: 'Install VS Preview'
-
   - template: templates\build.yml
     parameters:
       RepoRoot: $(Build.SourcesDirectory)
