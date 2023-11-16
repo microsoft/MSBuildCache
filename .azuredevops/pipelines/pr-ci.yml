@@ -72,6 +72,11 @@ jobs:
       RepoRoot: $(Build.SourcesDirectory)
       MSBuildPath: $(VsInstallDir)\MSBuild\Current\Bin\amd64\MSBuild.exe
 
+  - publish: $(LogDirectory)
+    displayName: Publish Logs
+    artifact: '$(System.JobDisplayName) logs'
+    condition: always()
+
 - job: BuildMSBuildRepo
   displayName: Build using tip of MSBuild repo
   variables:
@@ -104,3 +109,8 @@ jobs:
     parameters:
       RepoRoot: $(Build.SourcesDirectory)/MSBuildCache
       MSBuildPath: $(MSBuildLibraries)\MSBuild.exe
+
+  - publish: $(LogDirectory)
+    displayName: Publish Logs
+    artifact: '$(System.JobDisplayName) logs'
+    condition: always()

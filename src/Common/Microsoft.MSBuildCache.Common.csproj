@@ -26,5 +26,9 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Microsoft.MSBuildCache.Common.Tests" />
   </ItemGroup>
+  <!-- Signing -->
+  <ItemGroup>
+    <FilesToSign Include="$(TargetPath)" Authenticode="Microsoft400" StrongName="StrongName" />
+  </ItemGroup>
   <Import Project="$(RepoRoot)build\MSBuildReference.targets" />
 </Project>
