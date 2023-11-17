@@ -122,9 +122,9 @@ public sealed class FingerprintFactory : IFingerprintFactory
                     NodeContext dependency = kvp.Value;
 
                     // Sort outputs for consistent hash ordering
-                    foreach (KeyValuePair<string, ContentHash> dependencyOutput in dependency.BuildResult!.Outputs)
+                    foreach (KeyValuePair<string, (DateTime LastModified, ContentHash Hash)> dependencyOutput in dependency.BuildResult!.Outputs)
                     {
-                        entries.Add(new FingerprintEntry(dependencyOutput.Value.ToHashByteArray(), $"Dependency Output: {dependency.Id} - {dependencyOutput.Key}"));
+                        entries.Add(new FingerprintEntry(dependencyOutput.Value.Hash.ToHashByteArray(), $"Dependency Output: {dependency.Id} - {dependencyOutput.Key}"));
                     }
                 }
 

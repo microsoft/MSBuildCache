@@ -120,10 +120,13 @@ public abstract class CacheClient : ICacheClient
         StrongFingerprint cacheStrongFingerprint,
         CancellationToken cancellationToken);
 
+    protected record FilePlacement(ContentHash Hash, DateTime? LastModifiedUTC, FileRealizationMode RealizationMode);
+
     protected interface ICacheEntry : IDisposable
     {
+
         Task<Stream?> GetNodeBuildResultAsync(Context context, CancellationToken cancellationToken);
-        Task PlaceFilesAsync(Context context, IReadOnlyDictionary<AbsolutePath, ContentHash> files, CancellationToken cancellationToken);
+        Task PlaceFilesAsync(Context context, IReadOnlyDictionary<AbsolutePath, FilePlacement> files, CancellationToken cancellationToken);
     }
 
     public virtual async ValueTask DisposeAsync()
@@ -264,7 +267,7 @@ public abstract class CacheClient : ICacheClient
 
         Dictionary<AbsolutePath, ContentHash> outputs = nodeBuildResult.Outputs.ToDictionary(
             kvp => RepoRoot / kvp.Key,
-            kvp => kvp.Value);
+            kvp => kvp.Value.Hash);
 
         Fingerprint? weakFingerprint = _fingerprintFactory.GetWeakFingerprint(nodeContext);
         if (weakFingerprint is null)
@@ -357,10 +360,20 @@ public abstract class CacheClient : ICacheClient
             return (null, null);
         }
 
-        Func<CancellationToken, Task> placeFilesAsync = (ct) => cacheEntry.PlaceFilesAsync(
-            context,
-            nodeBuildResult.Outputs.ToDictionary(o => RepoRoot / o.Key, o => o.Value),
-            ct);
+        Dictionary<AbsolutePath, FilePlacement> placements = new();
+        foreach (KeyValuePair<string, (DateTime LastModified, ContentHash Hash)> output in nodeBuildResult.Outputs)
+        {
+            AbsolutePath outputPath = RepoRoot / output.Key;
+            FileRealizationMode realizationMode = GetFileRealizationMode(outputPath.Path);
+            placements.Add(
+                outputPath,
+                new FilePlacement(
+                    output.Value.Hash,
+                    realizationMode == FileRealizationMode.Copy ? output.Value.LastModified : null,
+                    realizationMode));
+        }
+
+        Func<CancellationToken, Task> placeFilesAsync = (ct) => cacheEntry.PlaceFilesAsync(context, placements, ct);
 
         if (_enableAsyncMaterialization)
         {

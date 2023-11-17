@@ -237,6 +237,11 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                     {
                         Indexed<PlaceFileResult> placeResult = await placeResultTask;
                         placeResult.Item.ThrowIfFailure();
+
+                        // if (accessMode == FileAccessMode.Write)
+                        // {
+
+                        // }
                     }
                 }
 
@@ -421,7 +426,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         public Task<Stream?> GetNodeBuildResultAsync(Context context, CancellationToken cancellationToken) =>
             Task.FromResult((Stream?)new MemoryStream(_nodeBuildResultBytes));
 
-        public Task PlaceFilesAsync(Context context, IReadOnlyDictionary<AbsolutePath, ContentHash> files, CancellationToken cancellationToken)
+        public async Task PlaceFilesAsync(Context context, IReadOnlyDictionary<AbsolutePath, FilePlacement> files, CancellationToken cancellationToken)
         {
             _client.Tracer.Debug(context, $"Placing manifest `{_manifestId}`.");
 
@@ -444,7 +449,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                     AllowWindowsPaths = false,
                 });
 
-            return _client.WithHttpRetries(async () =>
+            await _client.WithHttpRetries(async () =>
             {
                 await _client._manifestClient.DownloadAsync(manifestOptions, cancellationToken);
                 return 0;
@@ -525,7 +530,10 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         return sorted;
     }
 
-    private SortedDictionary<RelativePath, DedupIdentifier> CreateNormalizedManifest(IReadOnlyDictionary<AbsolutePath, ContentHash> files)
+    private SortedDictionary<RelativePath, DedupIdentifier> CreateNormalizedManifest(IEnumerable<KeyValuePair<AbsolutePath, FilePlacement>> files) =>
+        CreateNormalizedManifest(files.Select(kvp => new KeyValuePair<AbsolutePath, ContentHash>(kvp.Key, kvp.Value.Hash)));
+
+    private SortedDictionary<RelativePath, DedupIdentifier> CreateNormalizedManifest(IEnumerable<KeyValuePair<AbsolutePath, ContentHash>> files)
     {
         SortedDictionary<RelativePath, DedupIdentifier> sorted = new(RelativePathComparer.Instance);
 

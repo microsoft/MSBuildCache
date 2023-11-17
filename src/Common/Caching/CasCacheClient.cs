@@ -334,20 +334,21 @@ public sealed class CasCacheClient : CacheClient
             }
         }
 
-        public async Task PlaceFilesAsync(Context context, IReadOnlyDictionary<AbsolutePath, ContentHash> files, CancellationToken cancellationToken)
+        public async Task PlaceFilesAsync(Context context, IReadOnlyDictionary<AbsolutePath, FilePlacement> files, CancellationToken cancellationToken)
         {
             // Place all the files on disk
             List<Task<PlaceFileOperation>> placeFileTasks = new(files.Count);
-            foreach (KeyValuePair<AbsolutePath, ContentHash> kvp in files)
+            foreach (KeyValuePair<AbsolutePath, FilePlacement> kvp in files)
             {
                 AbsolutePath filePath = kvp.Key;
-                ContentHash contentHash = kvp.Value;
+                FilePlacement placement = kvp.Value;
 
                 Task<PlaceFileOperation> placeResultTask = _casCacheClient.PutOrPlaceFileGate.GatedOperationAsync(
                     async (_, _) =>
                     {
-                        PlaceFileResult result = await _casCacheClient.PlaceFileCoreAsync(context, contentHash, filePath, cancellationToken);
-                        return new PlaceFileOperation(contentHash, filePath, result);
+                        PlaceFileResult result = await _casCacheClient.PlaceFileCoreAsync(context, filePath, placement, cancellationToken);
+
+                        return new PlaceFileOperation(placement.Hash, filePath, result);
                     },
                     cancellationToken);
 
@@ -432,12 +433,11 @@ public sealed class CasCacheClient : CacheClient
 
     private async Task<PlaceFileResult> PlaceFileCoreAsync(
         Context context,
-        ContentHash contentHash,
         AbsolutePath filePath,
+        FilePlacement placement,
         CancellationToken cancellationToken)
     {
-        FileRealizationMode realizationMode = GetFileRealizationMode(filePath.Path);
-        FileAccessMode accessMode = realizationMode == FileRealizationMode.HardLink
+        FileAccessMode accessMode = placement.RealizationMode == FileRealizationMode.HardLink
             ? FileAccessMode.ReadOnly
             : FileAccessMode.Write;
 
@@ -456,17 +456,26 @@ public sealed class CasCacheClient : CacheClient
 
         PlaceFileResult placeResult = await _twoLevelCacheSession.PlaceFileAsync(
             context,
-            contentHash,
+            placement.Hash,
             filePath,
             accessMode,
             FileReplacementMode.ReplaceExisting,
-            realizationMode,
+            placement.RealizationMode,
             cancellationToken);
 
         if (placeResult.Succeeded)
         {
+            if (placement.LastModifiedUTC != null)
+            {
+                if (placement.RealizationMode != FileRealizationMode.Copy)
+                {
+                    throw new ArgumentException($"Can only set LastModifiedUTC with FileRealizationMode.Copy {filePath}.");
+                }
+
+                File.SetLastWriteTimeUtc(filePath.Path, placement.LastModifiedUTC.Value);
+            }
             // Ensure we don't attempt to put content we successfully placed, since we know the cache has it.
-            PutLocalTaskCache.TryAdd(contentHash, Task.FromResult(new PutFileOperation(contentHash, BoolResult.Success)));
+            PutLocalTaskCache.TryAdd(placement.Hash, Task.FromResult(new PutFileOperation(placement.Hash, BoolResult.Success)));
         }
 
         return placeResult;

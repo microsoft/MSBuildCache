@@ -14,10 +14,10 @@ namespace Microsoft.MSBuildCache.Tests;
 [TestClass]
 public class NodeBuildResultTests
 {
-    private static readonly Dictionary<string, ContentHash> Outputs = new Dictionary<string, ContentHash> {
-        {"Lib-link.write.1.tlog", ContentHash.Random()},
-        {"Lib.command.1.tlog", ContentHash.Random()},
-        {"logger.lastbuildstate", ContentHash.Random()},
+    private static readonly Dictionary<string, (DateTime, ContentHash)> Outputs = new(){
+        {"Lib-link.write.1.tlog", (DateTime.UtcNow, ContentHash.Random())},
+        {"Lib.command.1.tlog", (DateTime.UtcNow, ContentHash.Random())},
+        {"logger.lastbuildstate", (DateTime.UtcNow, ContentHash.Random())},
     };
 
     [TestMethod]
@@ -36,11 +36,11 @@ public class NodeBuildResultTests
     public void SortWorksConsistentlyAcrossJson()
     {
         List<string> names = Outputs.Keys.ToList();
-        var expected = new SortedDictionary<string, ContentHash>(Outputs, StringComparer.OrdinalIgnoreCase);
+        var expected = new SortedDictionary<string, (DateTime, ContentHash)>(Outputs, StringComparer.OrdinalIgnoreCase);
 
         foreach (IList<string> permutation in names.Permutations())
         {
-            var maybeMixed = new SortedDictionary<string, ContentHash>(
+            var maybeMixed = new SortedDictionary<string, (DateTime, ContentHash)>(
                 permutation.ToDictionary(name => name, name => Outputs[name]));
 
             NodeBuildResult nodeBuildResult = new(

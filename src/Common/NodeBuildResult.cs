@@ -17,7 +17,7 @@ public sealed class NodeBuildResult
 
     [JsonConstructor]
     public NodeBuildResult(
-        SortedDictionary<string, ContentHash> outputs,
+        SortedDictionary<string, (DateTime LastModified, ContentHash Hash)> outputs,
         IReadOnlyList<NodeTargetResult> targetResults,
         DateTime startTimeUtc,
         DateTime endTimeUtc,
@@ -32,7 +32,7 @@ public sealed class NodeBuildResult
 
     // Use a sorted dictionary so the JSON output is deterministically sorted and easier to compare build-to-build.
     [JsonConverter(typeof(SortedDictionaryConverter))]
-    public SortedDictionary<string, ContentHash> Outputs { get; }
+    public SortedDictionary<string, (DateTime LastModified, ContentHash Hash)> Outputs { get; }
 
     public IReadOnlyList<NodeTargetResult> TargetResults { get; }
 
@@ -42,7 +42,7 @@ public sealed class NodeBuildResult
 
     public string? BuildId { get; }
 
-    public static NodeBuildResult FromBuildResult(SortedDictionary<string, ContentHash> outputs, BuildResult buildResult, DateTime creationTimeUtc, DateTime endTimeUtc, string? buildId, PathNormalizer pathNormalizer)
+    public static NodeBuildResult FromBuildResult(SortedDictionary<string, (DateTime LastModified, ContentHash Hash)> outputs, BuildResult buildResult, DateTime creationTimeUtc, DateTime endTimeUtc, string? buildId, PathNormalizer pathNormalizer)
     {
         List<NodeTargetResult> targetResults = new(buildResult.ResultsByTarget.Count);
         foreach (KeyValuePair<string, TargetResult> kvp in buildResult.ResultsByTarget)

@@ -563,13 +563,13 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             normalizedOutputPaths.Keys,
             absolutePathToHash =>
             {
-                SortedDictionary<string, ContentHash> outputs = new(StringComparer.OrdinalIgnoreCase);
+                SortedDictionary<string, (DateTime LastModified, ContentHash Hash)> outputs = new(StringComparer.OrdinalIgnoreCase);
 
                 foreach (KeyValuePair<string, ContentHash> absolutePathAndHash in absolutePathToHash)
                 {
                     outputs.Add(
                         normalizedOutputPaths[absolutePathAndHash.Key], // so we map back to normalized paths
-                        absolutePathAndHash.Value);
+                        (File.GetLastWriteTimeUtc(absolutePathAndHash.Key), absolutePathAndHash.Value));
                 }
 
                 CheckForDuplicateOutputs(logger, outputs, nodeContext);
@@ -896,12 +896,12 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         return false;
     }
 
-    private void CheckForDuplicateOutputs(PluginLoggerBase logger, IReadOnlyDictionary<string, ContentHash> normalizedFilePathToHash, NodeContext nodeContext)
+    private void CheckForDuplicateOutputs(PluginLoggerBase logger, IReadOnlyDictionary<string, (DateTime LastModified, ContentHash Hash)> normalizedFilePathToHash, NodeContext nodeContext)
     {
-        foreach (KeyValuePair<string, ContentHash> kvp in normalizedFilePathToHash)
+        foreach (KeyValuePair<string, (DateTime LastModified, ContentHash Hash)> kvp in normalizedFilePathToHash)
         {
             string normalizedFilePath = kvp.Key;
-            ContentHash newHash = kvp.Value;
+            ContentHash newHash = kvp.Value.Hash;
 
             // If this is the first writer to this path, then we are done.
             NodeContext previousNode = _outputProducer.GetOrAdd(normalizedFilePath, nodeContext);
@@ -932,7 +932,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             }
 
             // compare the hash of the original output to this output and log/error accordingly.
-            ContentHash previousHash = previousNode.BuildResult!.Outputs[normalizedFilePath];
+            ContentHash previousHash = previousNode.BuildResult!.Outputs[normalizedFilePath].Hash;
             if (previousHash == newHash)
             {
                 logger.LogMessage($"Node {nodeContext.Id} produced duplicate-identical output {normalizedFilePath} which was already produced by another node {previousNode.Id}. Allowing as content is the same.");
