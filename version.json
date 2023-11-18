@@ -4,7 +4,8 @@
   // For historical reasons, use a specific offset. Reset to -1 when bumping the version above.
   "buildNumberOffset": 204,
   "publicReleaseRefSpec": [
-    "^refs/heads/main$"
+    "^refs/heads/main$",
+    "^refs/tags/v\\d+\\.\\d+\\.\\d+"
   ],
   "inherit": false
 }
