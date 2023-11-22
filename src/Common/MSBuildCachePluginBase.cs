@@ -917,8 +917,6 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
                 return;
             }
 
-
-
             // This should never happen as the previous node is a dependent of this node...
             if (previousNode.BuildResult == null)
             {
