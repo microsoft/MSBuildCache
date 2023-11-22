@@ -472,6 +472,7 @@ public sealed class CasCacheClient : CacheClient
                     throw new ArgumentException($"Can only set LastModifiedUTC with FileRealizationMode.Copy {filePath}.");
                 }
 
+                Tracer.Debug(context, $"Setting last modified time for `{filePath.Path}` to `{placement.LastModifiedUTC.Value}`.");
                 File.SetLastWriteTimeUtc(filePath.Path, placement.LastModifiedUTC.Value);
             }
             // Ensure we don't attempt to put content we successfully placed, since we know the cache has it.

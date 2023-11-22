@@ -461,6 +461,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
             {
                 if (file.Value.LastModifiedUTC != null)
                 {
+                    _client.Tracer.Debug(context, $"Setting last modified time for `{file.Key.Path}` to `{file.Value.LastModifiedUTC.Value}`.");
                     File.SetLastWriteTimeUtc(file.Key.Path, file.Value.LastModifiedUTC.Value);
                 }
             }
