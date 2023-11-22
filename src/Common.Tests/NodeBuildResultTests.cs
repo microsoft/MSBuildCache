@@ -7,17 +7,16 @@ using MoreLinq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.Json;
 
 namespace Microsoft.MSBuildCache.Tests;
 
 [TestClass]
 public class NodeBuildResultTests
 {
-    private static readonly Dictionary<string, (DateTime, ContentHash)> Outputs = new(){
-        {"Lib-link.write.1.tlog", (DateTime.UtcNow, ContentHash.Random())},
-        {"Lib.command.1.tlog", (DateTime.UtcNow, ContentHash.Random())},
-        {"logger.lastbuildstate", (DateTime.UtcNow, ContentHash.Random())},
+    private static readonly Dictionary<string, OutputInfo> Outputs = new(){
+        {"Lib-link.write.1.tlog", new OutputInfo(DateTime.UtcNow, ContentHash.Random())},
+        {"Lib.command.1.tlog", new OutputInfo(DateTime.UtcNow, ContentHash.Random())},
+        {"logger.lastbuildstate", new OutputInfo(DateTime.UtcNow, ContentHash.Random())},
     };
 
     [TestMethod]
@@ -36,11 +35,11 @@ public class NodeBuildResultTests
     public void SortWorksConsistentlyAcrossJson()
     {
         List<string> names = Outputs.Keys.ToList();
-        var expected = new SortedDictionary<string, (DateTime, ContentHash)>(Outputs, StringComparer.OrdinalIgnoreCase);
+        var expected = new SortedDictionary<string, OutputInfo>(Outputs, StringComparer.OrdinalIgnoreCase);
 
         foreach (IList<string> permutation in names.Permutations())
         {
-            var maybeMixed = new SortedDictionary<string, (DateTime, ContentHash)>(
+            var maybeMixed = new SortedDictionary<string, OutputInfo>(
                 permutation.ToDictionary(name => name, name => Outputs[name]));
 
             NodeBuildResult nodeBuildResult = new(
@@ -51,8 +50,8 @@ public class NodeBuildResultTests
                 null
             );
 
-            string serialized = JsonSerializer.Serialize(nodeBuildResult);
-            NodeBuildResult deserialized = JsonSerializer.Deserialize<NodeBuildResult>(serialized)!;
+            string serialized = SerializationHelper.Serialize(nodeBuildResult);
+            NodeBuildResult deserialized = SerializationHelper.Deserialize<NodeBuildResult>(serialized)!;
 
             CollectionAssert.AreEqual(expected.Keys, deserialized.Outputs.Keys, "\n" +
                 "Permutation: " + string.Join(", ", permutation) + "\n" +

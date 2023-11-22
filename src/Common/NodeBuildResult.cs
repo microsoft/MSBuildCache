@@ -11,13 +11,15 @@ using Microsoft.Build.Experimental.ProjectCache;
 
 namespace Microsoft.MSBuildCache;
 
+public record struct OutputInfo(DateTime LastModified, ContentHash Hash);
+
 public sealed class NodeBuildResult
 {
-    public const uint CurrentVersion = 0;
+    public const uint CurrentVersion = 1;
 
     [JsonConstructor]
     public NodeBuildResult(
-        SortedDictionary<string, (DateTime LastModified, ContentHash Hash)> outputs,
+        SortedDictionary<string, OutputInfo> outputs,
         IReadOnlyList<NodeTargetResult> targetResults,
         DateTime startTimeUtc,
         DateTime endTimeUtc,
@@ -32,7 +34,7 @@ public sealed class NodeBuildResult
 
     // Use a sorted dictionary so the JSON output is deterministically sorted and easier to compare build-to-build.
     [JsonConverter(typeof(SortedDictionaryConverter))]
-    public SortedDictionary<string, (DateTime LastModified, ContentHash Hash)> Outputs { get; }
+    public SortedDictionary<string, OutputInfo> Outputs { get; }
 
     public IReadOnlyList<NodeTargetResult> TargetResults { get; }
 
@@ -42,7 +44,7 @@ public sealed class NodeBuildResult
 
     public string? BuildId { get; }
 
-    public static NodeBuildResult FromBuildResult(SortedDictionary<string, (DateTime LastModified, ContentHash Hash)> outputs, BuildResult buildResult, DateTime creationTimeUtc, DateTime endTimeUtc, string? buildId, PathNormalizer pathNormalizer)
+    public static NodeBuildResult FromBuildResult(SortedDictionary<string, OutputInfo> outputs, BuildResult buildResult, DateTime creationTimeUtc, DateTime endTimeUtc, string? buildId, PathNormalizer pathNormalizer)
     {
         List<NodeTargetResult> targetResults = new(buildResult.ResultsByTarget.Count);
         foreach (KeyValuePair<string, TargetResult> kvp in buildResult.ResultsByTarget)
@@ -64,12 +66,12 @@ public sealed class NodeBuildResult
         return CacheResult.IndicateCacheHit(targetResults);
     }
 
-    private sealed class SortedDictionaryConverter : JsonConverter<SortedDictionary<string, ContentHash>>
+    private sealed class SortedDictionaryConverter : JsonConverter<SortedDictionary<string, OutputInfo>>
     {
-        public override SortedDictionary<string, ContentHash>? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        public override SortedDictionary<string, OutputInfo>? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
-            var contentHashConverter = (JsonConverter<ContentHash>)options.GetConverter(typeof(ContentHash));
-            var outputs = new SortedDictionary<string, ContentHash>(StringComparer.OrdinalIgnoreCase);
+            var infoConverter = (JsonConverter<OutputInfo>)options.GetConverter(typeof(OutputInfo));
+            var outputs = new SortedDictionary<string, OutputInfo>(StringComparer.OrdinalIgnoreCase);
             while (reader.Read())
             {
                 if (reader.TokenType == JsonTokenType.EndObject)
@@ -88,22 +90,22 @@ public sealed class NodeBuildResult
                     throw new JsonException($"Property name '{propertyName}' does not have a value.");
                 }
 
-                ContentHash? contentHash = contentHashConverter.Read(ref reader, typeof(ContentHash), options);
-                if (contentHash == null)
+                OutputInfo? info = infoConverter.Read(ref reader, typeof(OutputInfo), options);
+                if (info == null)
                 {
                     throw new JsonException($"Property value for '{propertyName}' could not be parsed.");
                 }
 
-                outputs.Add(propertyName, contentHash.Value);
+                outputs.Add(propertyName, info.Value);
             }
 
             return outputs;
         }
 
-        public override void Write(Utf8JsonWriter writer, SortedDictionary<string, ContentHash> value, JsonSerializerOptions options)
+        public override void Write(Utf8JsonWriter writer, SortedDictionary<string, OutputInfo> value, JsonSerializerOptions options)
         {
-            var defaultConverter = (JsonConverter<SortedDictionary<string, ContentHash>>)
-                options.GetConverter(typeof(SortedDictionary<string, ContentHash>));
+            var defaultConverter = (JsonConverter<SortedDictionary<string, OutputInfo>>)
+                options.GetConverter(typeof(SortedDictionary<string, OutputInfo>));
             defaultConverter.Write(writer, value, options);
         }
     }

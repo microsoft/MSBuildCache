@@ -16,6 +16,28 @@ internal static class SerializationHelper
 
     public static JsonSerializerOptions SerializerOptions { get; } = CreateJsonSerializerOptions();
 
+    internal static string Serialize<T>(this T value) => JsonSerializer.Serialize(value, SerializerOptions);
+
+    internal static Task<T?> DeserializeAsync<T>(this Stream stream, CancellationToken cancellationToken = default) where T : class =>
+        DeserializeAsync<T>(stream, SerializerOptions, cancellationToken);
+
+    internal static T? Deserialize<T>(this string str) where T : class =>
+        Deserialize<T>(str, SerializerOptions);
+
+    internal static T? Deserialize<T>(this string str, JsonSerializerOptions? options = null)
+        where T : class
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<T>(str, options);
+        }
+        catch (JsonException)
+        {
+            Throw<T>(str);
+            throw new InvalidOperationException(); // Unreachable
+        }
+    }
+
     internal static async Task<T?> DeserializeAsync<T>(this Stream stream, JsonSerializerOptions? options = null, CancellationToken cancellationToken = default)
         where T : class
     {
@@ -25,8 +47,7 @@ internal static class SerializationHelper
         }
         catch (JsonException)
         {
-            var message = $"Can't successfully deserialize a value of type {typeof(T)} from stream.";
-
+            string? content = null;
             if (stream.CanSeek)
             {
                 stream.Position = 0;
@@ -40,21 +61,31 @@ internal static class SerializationHelper
 #endif
                     leaveOpen: true))
                 {
-                    string content = await streamReader.ReadToEndAsync(cancellationToken);
-
-                    // Truncating the string to avoid a very long error message.
-                    const int maxLength = 512;
-                    if (content.Length > maxLength)
-                    {
-                        content = content.Substring(0, maxLength).Trim();
-                    }
-
-                    message = $"{message} Content: '{content}'";
+                    content = await streamReader.ReadToEndAsync(cancellationToken);
                 }
             }
 
-            throw new InvalidOperationException(message);
+            Throw<T>(content);
+            throw new InvalidOperationException(); // Unreachable
         }
+    }
+
+    private static void Throw<T>(string? fullString)
+    {
+        string message = $"Can't successfully deserialize a value of type {typeof(T)} from stream.";
+        if (fullString != null)
+        {
+            // Truncating the string to avoid a very long error message.
+            const int maxLength = 512;
+            if (fullString.Length > maxLength)
+            {
+                fullString = fullString.Substring(0, maxLength).Trim();
+            }
+
+            message = $"{message} Content: '{fullString}'";
+        }
+
+        throw new InvalidOperationException(message);
     }
 
     private static JsonSerializerOptions CreateJsonSerializerOptions()

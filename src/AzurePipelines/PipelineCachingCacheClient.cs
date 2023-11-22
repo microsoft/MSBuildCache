@@ -456,6 +456,14 @@ internal sealed class PipelineCachingCacheClient : CacheClient
             },
             context: context.ToString()!,
             cancellationToken);
+
+            foreach (KeyValuePair<AbsolutePath, FilePlacement> file in files)
+            {
+                if (file.Value.LastModifiedUTC != null)
+                {
+                    File.SetLastWriteTimeUtc(file.Key.Path, file.Value.LastModifiedUTC.Value);
+                }
+            }
         }
     }
 

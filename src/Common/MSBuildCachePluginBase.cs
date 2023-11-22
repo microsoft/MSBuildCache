@@ -563,13 +563,13 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             normalizedOutputPaths.Keys,
             absolutePathToHash =>
             {
-                SortedDictionary<string, (DateTime LastModified, ContentHash Hash)> outputs = new(StringComparer.OrdinalIgnoreCase);
+                SortedDictionary<string, OutputInfo> outputs = new(StringComparer.OrdinalIgnoreCase);
 
                 foreach (KeyValuePair<string, ContentHash> absolutePathAndHash in absolutePathToHash)
                 {
                     outputs.Add(
                         normalizedOutputPaths[absolutePathAndHash.Key], // so we map back to normalized paths
-                        (File.GetLastWriteTimeUtc(absolutePathAndHash.Key), absolutePathAndHash.Value));
+                        new OutputInfo(File.GetLastWriteTimeUtc(absolutePathAndHash.Key), absolutePathAndHash.Value));
                 }
 
                 CheckForDuplicateOutputs(logger, outputs, nodeContext);
@@ -896,9 +896,9 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         return false;
     }
 
-    private void CheckForDuplicateOutputs(PluginLoggerBase logger, IReadOnlyDictionary<string, (DateTime LastModified, ContentHash Hash)> normalizedFilePathToHash, NodeContext nodeContext)
+    private void CheckForDuplicateOutputs(PluginLoggerBase logger, IReadOnlyDictionary<string, OutputInfo> normalizedFilePathToHash, NodeContext nodeContext)
     {
-        foreach (KeyValuePair<string, (DateTime LastModified, ContentHash Hash)> kvp in normalizedFilePathToHash)
+        foreach (KeyValuePair<string, OutputInfo> kvp in normalizedFilePathToHash)
         {
             string normalizedFilePath = kvp.Key;
             ContentHash newHash = kvp.Value.Hash;

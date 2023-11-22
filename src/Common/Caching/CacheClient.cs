@@ -361,7 +361,7 @@ public abstract class CacheClient : ICacheClient
         }
 
         Dictionary<AbsolutePath, FilePlacement> placements = new();
-        foreach (KeyValuePair<string, (DateTime LastModified, ContentHash Hash)> output in nodeBuildResult.Outputs)
+        foreach (KeyValuePair<string, OutputInfo> output in nodeBuildResult.Outputs)
         {
             AbsolutePath outputPath = RepoRoot / output.Key;
             FileRealizationMode realizationMode = GetFileRealizationMode(outputPath.Path);
