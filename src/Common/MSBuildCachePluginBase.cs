@@ -917,13 +917,6 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
                 return;
             }
 
-            // Duplicate-identical outputs are only allowed if there is a strict ordering between the multiple writers.
-            if (!nodeContext.Node.IsDependentOn(previousNode.Node))
-            {
-                logger.LogError($"Node {nodeContext.Id} produced output {normalizedFilePath} which was already produced by another node {previousNode.Id}, but there is no ordering between the two nodes.");
-                return;
-            }
-
             // This should never happen as the previous node is a dependent of this node...
             if (previousNode.BuildResult == null)
             {
@@ -933,14 +926,20 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
             // compare the hash of the original output to this output and log/error accordingly.
             ContentHash previousHash = previousNode.BuildResult!.Outputs[normalizedFilePath];
-            if (previousHash == newHash)
-            {
-                logger.LogMessage($"Node {nodeContext.Id} produced duplicate-identical output {normalizedFilePath} which was already produced by another node {previousNode.Id}. Allowing as content is the same.");
-            }
-            else
+            if (previousHash != newHash)
             {
                 logger.LogError($"Node {nodeContext.Id} produced output {normalizedFilePath} with hash {newHash} which was already produced by another node {previousNode.Id} with a different hash {previousHash}.");
+                return;
             }
+
+            // Duplicate-identical outputs are only allowed if there is a strict ordering between the multiple writers.
+            if (!nodeContext.Node.IsDependentOn(previousNode.Node))
+            {
+                logger.LogWarning($"Node {nodeContext.Id} produced output {normalizedFilePath} which was already produced by another node {previousNode.Id}, but there is no ordering between the two nodes.");
+                return;
+            }
+
+            logger.LogMessage($"Node {nodeContext.Id} produced duplicate-identical output {normalizedFilePath} which was already produced by another node {previousNode.Id}. Allowing as content is the same.");
         }
     }
 }
