@@ -226,7 +226,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                 foreach (IGrouping<FileRealizationMode, ContentHashWithPath>? tempFilesByRealizationMode in tempFiles.GroupBy(f => GetFileRealizationMode(f.Path.Path)))
                 {
                     FileRealizationMode realizationMode = tempFilesByRealizationMode.Key;
-                    FileAccessMode accessMode = realizationMode == FileRealizationMode.Copy
+                    FileAccessMode accessMode = realizationMode == FileRealizationMode.CopyNoVerify
                         ? FileAccessMode.Write
                         : FileAccessMode.ReadOnly;
 

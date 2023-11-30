@@ -437,9 +437,9 @@ public sealed class CasCacheClient : CacheClient
         CancellationToken cancellationToken)
     {
         FileRealizationMode realizationMode = GetFileRealizationMode(filePath.Path);
-        FileAccessMode accessMode = realizationMode == FileRealizationMode.HardLink
-            ? FileAccessMode.ReadOnly
-            : FileAccessMode.Write;
+        FileAccessMode accessMode = realizationMode == FileRealizationMode.CopyNoVerify
+            ? FileAccessMode.Write
+            : FileAccessMode.ReadOnly;
 
         // The cache doesn't create the directory for us.
         AbsolutePath? parentDirectory = filePath.Parent;

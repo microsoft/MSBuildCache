@@ -167,7 +167,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     protected abstract Task<ICacheClient> CreateCacheClientAsync(PluginLoggerBase logger, CancellationToken cancellationToken);
 
     protected FileRealizationMode GetFileRealizationMode(string path)
-        => IsDuplicateIdenticalOutputAbsolutePath(_pluginLogger!, path) ? FileRealizationMode.Copy : FileRealizationMode.Any;
+        => IsDuplicateIdenticalOutputAbsolutePath(_pluginLogger!, path) ? FileRealizationMode.CopyNoVerify : FileRealizationMode.Any;
 
     public async override Task BeginBuildAsync(CacheContext context, PluginLoggerBase logger, CancellationToken cancellationToken)
     {
