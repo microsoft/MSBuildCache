@@ -2,10 +2,7 @@
 <Project>
   <PropertyGroup>
     <ArtifactsPackageVersion>19.230.34229-buildid23092045</ArtifactsPackageVersion>
-
-    <!-- see https://www.nuget.org/packages/Microsoft.VisualStudio.Services.PipelineCache.WebApi/19.230.34229-buildid23092045 -->
-    <BuildXLPackageVersion>0.1.0-20230922.1</BuildXLPackageVersion>
-
+    <BuildXLPackageVersion>0.1.0-20231128.3</BuildXLPackageVersion>
     <MSBuildPackageVersion>17.8.3</MSBuildPackageVersion>
   </PropertyGroup>
   <ItemGroup>
