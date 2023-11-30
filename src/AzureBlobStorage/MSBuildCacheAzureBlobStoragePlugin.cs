@@ -16,6 +16,7 @@ using BuildXL.Cache.ContentStore.Interfaces.Results;
 using BuildXL.Cache.ContentStore.Interfaces.Stores;
 using BuildXL.Cache.ContentStore.Interfaces.Tracing;
 using BuildXL.Cache.ContentStore.Logging;
+using BuildXL.Cache.ContentStore.Tracing.Internal;
 using BuildXL.Cache.MemoizationStore.Distributed.Stores;
 using BuildXL.Cache.MemoizationStore.Interfaces.Caches;
 using BuildXL.Cache.MemoizationStore.Interfaces.Sessions;
@@ -72,7 +73,7 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase
         logger.LogMessage($"Using cache namespace '{cacheContainer}' as '{cacheContainerHash}'.");
 
 #pragma warning disable CA2000 // Dispose objects before losing scope. Expected to be disposed by TwoLevelCache
-        ICache remoteCache = CreateRemoteCache(cacheContainerHash);
+        ICache remoteCache = CreateRemoteCache(new OperationContext(context, cancellationToken), cacheContainerHash);
 #pragma warning restore CA2000 // Dispose objects before losing scope
 
         ICacheSession remoteCacheSession = await StartCacheSessionAsync(context, remoteCache, "remote");
@@ -98,7 +99,7 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase
             Settings.AsyncCacheMaterialization);
     }
 
-    private static ICache CreateRemoteCache(string cacheUniverse)
+    private static ICache CreateRemoteCache(OperationContext context, string cacheUniverse)
     {
         string? connectionString = Environment.GetEnvironmentVariable(AzureBlobConnectionStringEnvVar);
         if (string.IsNullOrEmpty(connectionString))
@@ -113,7 +114,7 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase
             Universe: cacheUniverse,
             Namespace: "0",
             RetentionPolicyInDays: null);
-        return AzureBlobStorageCacheFactory.Create(cacheConfig, new StaticBlobCacheSecretsProvider(credentials));
+        return AzureBlobStorageCacheFactory.Create(context, cacheConfig, new StaticBlobCacheSecretsProvider(credentials));
     }
 
     private static async Task<ICacheSession> StartCacheSessionAsync(Context context, ICache cache, string name)
