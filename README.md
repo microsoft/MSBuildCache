@@ -1,5 +1,5 @@
 # Microsoft.MSBuildCache
-[![Build Status](https://dev.azure.com/msbuildcache/public/_apis/build/status%2FMicrosoft.MSBuildCache?repoName=microsoft%2FMSBuildCache&branchName=refs%2Fpull%2F1%2Fmerge)](https://dev.azure.com/msbuildcache/public/_build/latest?definitionId=1&repoName=microsoft%2FMSBuildCache&branchName=refs%2Fpull%2F1%2Fmerge)
+[![Build Status](https://dev.azure.com/msbuildcache/public/_apis/build/status%2FMicrosoft.MSBuildCache?repoName=microsoft%2FMSBuildCache&branchName=main)](https://dev.azure.com/msbuildcache/public/_build/latest?definitionId=1&repoName=microsoft%2FMSBuildCache&branchName=main)
 
 This project provides plugin implementations for the experimental [MSBuild Project Cache](https://github.com/dotnet/msbuild/blob/main/documentation/specs/project-cache.md), which enables project-level caching within MSBuild.
 
