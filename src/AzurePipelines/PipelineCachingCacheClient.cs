@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
+// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
@@ -63,8 +63,6 @@ internal sealed class PipelineCachingCacheClient : CacheClient
 #pragma warning restore CS1570 // XML comment has badly formed XML
 {
     private const string InternalMetadataPathPrefix = "/???";
-    private static readonly string InternalMetadataPathExcludeMinimatchFilter = // "!\\?\\?\\?/**";
-        "!" + InternalMetadataPathPrefix.TrimStart('/').Replace("?", "\\?", StringComparison.Ordinal) + "/**";
 
     private const string NodeBuildResultRelativePath = $"{InternalMetadataPathPrefix}/NodeBuildResult";
     private const string PathSetRelativePathBase = $"{InternalMetadataPathPrefix}/PathSets";
@@ -159,7 +157,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
             _azureDevopsTracer);
 
         // seed the OPTIONS call
-        _startupTask = Task.Run(() => QueryPipelineCaching(rootContext, new Microsoft.VisualStudio.Services.PipelineCache.WebApi.Fingerprint("init"), CancellationToken.None));
+        _startupTask = Task.Run(() => QueryPipelineCaching(rootContext, new VisualStudio.Services.PipelineCache.WebApi.Fingerprint("init"), CancellationToken.None));
     }
 
     protected override async Task AddNodeAsync(
@@ -210,41 +208,31 @@ internal sealed class PipelineCachingCacheClient : CacheClient
 
                 // 2. Link out unique content to the temp folder
 
-                Dictionary<ContentHash, string> tempFilesPerHash = outputs.Values.Distinct().ToDictionary(
+                Dictionary<ContentHash, AbsolutePath> tempFilesPerHash = outputs.Values.Distinct().ToDictionary(
                     hash => hash,
                     hash =>
                     {
                         string tempFilePath = Path.Combine(TempFolder, Guid.NewGuid().ToString("N") + ".tmp");
                         tempFilePaths.Add(tempFilePath);
-                        return tempFilePath;
+                        return new AbsolutePath(tempFilePath);
                     });
 
                 List<ContentHashWithPath> tempFiles = tempFilesPerHash
-                    .Select(kvp => new ContentHashWithPath(kvp.Key, new AbsolutePath(kvp.Value)))
+                    .Select(kvp => new ContentHashWithPath(kvp.Key, kvp.Value))
                     .ToList();
 
-                foreach (IGrouping<FileRealizationMode, ContentHashWithPath>? tempFilesByRealizationMode in tempFiles.GroupBy(f => GetFileRealizationMode(f.Path.Path)))
+                IEnumerable<Task<Indexed<PlaceFileResult>>> placeResults = await TryPlaceFilesFromCacheAsync(context, tempFiles, cancellationToken);
+                foreach (Task<Indexed<PlaceFileResult>> placeResultTask in placeResults)
                 {
-                    FileRealizationMode realizationMode = tempFilesByRealizationMode.Key;
-                    FileAccessMode accessMode = realizationMode == FileRealizationMode.CopyNoVerify
-                        ? FileAccessMode.Write
-                        : FileAccessMode.ReadOnly;
-
-                    IEnumerable<Task<Indexed<PlaceFileResult>>> placeResults = await _localCAS.PlaceFileAsync(
-                        context, tempFilesByRealizationMode.ToList(), accessMode, FileReplacementMode.FailIfExists, realizationMode, cancellationToken);
-
-                    foreach (Task<Indexed<PlaceFileResult>> placeResultTask in placeResults)
-                    {
-                        Indexed<PlaceFileResult> placeResult = await placeResultTask;
-                        placeResult.Item.ThrowIfFailure();
-                    }
+                    Indexed<PlaceFileResult> placeResult = await placeResultTask;
+                    placeResult.Item.ThrowIfFailure();
                 }
 
                 // 3. map all the relative paths to the temp files
                 foreach (KeyValuePair<AbsolutePath, ContentHash> output in outputs)
                 {
                     string relativePath = output.Key.Path.Replace(RepoRoot.Path, "", StringComparison.OrdinalIgnoreCase);
-                    extras.Add(relativePath.Replace("\\", "/", StringComparison.Ordinal), new FileInfo(tempFilesPerHash[output.Value]));
+                    extras.Add(relativePath.Replace("\\", "/", StringComparison.Ordinal), new FileInfo(tempFilesPerHash[output.Value].Path));
                 }
             }
             else
@@ -268,7 +256,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
 
             var key = ComputeKey(fingerprint, forWrite: true);
             var entry = new CreatePipelineCacheArtifactContract(
-                new Microsoft.VisualStudio.Services.PipelineCache.WebApi.Fingerprint(key.Split(KeySegmentSeperator)),
+                new VisualStudio.Services.PipelineCache.WebApi.Fingerprint(key.Split(KeySegmentSeperator)),
                 result.ManifestId,
                 result.RootId,
                 result.ProofNodes,
@@ -350,7 +338,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                 cancellationToken);
 
             var entry = new CreatePipelineCacheArtifactContract(
-                new Microsoft.VisualStudio.Services.PipelineCache.WebApi.Fingerprint(key.Split(KeySegmentSeperator)),
+                new VisualStudio.Services.PipelineCache.WebApi.Fingerprint(key.Split(KeySegmentSeperator)),
                 result.ManifestId,
                 result.RootId,
                 result.ProofNodes,
@@ -372,12 +360,29 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         }
     }
 
+    private async Task<IEnumerable<Task<Indexed<PlaceFileResult>>>> TryPlaceFilesFromCacheAsync(Context context, IReadOnlyList<ContentHashWithPath> files, CancellationToken cancellationToken)
+    {
+        IEnumerable<Task<Indexed<PlaceFileResult>>> placeResults = Enumerable.Empty<Task<Indexed<PlaceFileResult>>>();
+        foreach (IGrouping<FileRealizationMode, ContentHashWithPath>? tempFilesByRealizationMode in files.GroupBy(f => GetFileRealizationMode(f.Path.Path)))
+        {
+            FileRealizationMode realizationMode = tempFilesByRealizationMode.Key;
+            FileAccessMode accessMode = realizationMode == FileRealizationMode.CopyNoVerify
+                ? FileAccessMode.Write
+                : FileAccessMode.ReadOnly;
+
+            placeResults = placeResults.Concat(await _localCAS.PlaceFileAsync(
+                context, tempFilesByRealizationMode.ToList(), accessMode, FileReplacementMode.ReplaceExisting, realizationMode, cancellationToken));
+        }
+
+        return placeResults;
+    }
+
     protected override async Task<ICacheEntry?> GetCacheEntryAsync(Context context, StrongFingerprint cacheStrongFingerprint, CancellationToken cancellationToken)
     {
         string key = ComputeKey(cacheStrongFingerprint, forWrite: false);
         PipelineCacheArtifact? result = await QueryPipelineCaching(
             context,
-            new Microsoft.VisualStudio.Services.PipelineCache.WebApi.Fingerprint(key.Split(KeySegmentSeperator)),
+            new VisualStudio.Services.PipelineCache.WebApi.Fingerprint(key.Split(KeySegmentSeperator)),
             cancellationToken);
 
         if (result == null)
@@ -421,7 +426,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         public Task<Stream?> GetNodeBuildResultAsync(Context context, CancellationToken cancellationToken) =>
             Task.FromResult((Stream?)new MemoryStream(_nodeBuildResultBytes));
 
-        public Task PlaceFilesAsync(Context context, IReadOnlyDictionary<AbsolutePath, ContentHash> files, CancellationToken cancellationToken)
+        public async Task PlaceFilesAsync(Context context, IReadOnlyDictionary<AbsolutePath, ContentHash> files, CancellationToken cancellationToken)
         {
             _client.Tracer.Debug(context, $"Placing manifest `{_manifestId}`.");
 
@@ -429,28 +434,64 @@ internal sealed class PipelineCachingCacheClient : CacheClient
             var requestFiles = _client.CreateNormalizedManifest(files);
             ThrowIfDifferent(manifestFiles, requestFiles, $"Manifest `{_manifestId}` and PlaceFiles don't match:");
 
-            var manifestOptions = DownloadDedupManifestArtifactOptions.CreateWithManifestId(
-                _manifestId,
-                _client.RepoRoot.Path,
-                minimatchPatterns: new[] { InternalMetadataPathExcludeMinimatchFilter },
-                customMinimatchOptions: new Minimatch.Options()
-                {
-                    Dot = true,
-                    NoBrace = true,
-                    NoCase = false,
-                    // From comments on GitHub as of 08/04/2019
-                    // "If true, backslahes in patterns and paths will be treated as forward slashes.  This disables escape characters."
-                    // https://github.com/SLaks/Minimatch/blob/5a5bd62444005689d8ba71541ac36dcfc775e0c7/Minimatch/Minimatcher.cs#L37
-                    AllowWindowsPaths = false,
-                });
+            // try to pull whole files from the cache
+            var placements = files.Select(f => new ContentHashWithPath(f.Value, f.Key)).ToList();
 
-            return _client.WithHttpRetries(async () =>
+            // cache expects destination directories already exist
+            var directories = files.Select(f => f.Key.GetParent()!).ToHashSet();
+            foreach (AbsolutePath directory in directories)
             {
-                await _client._manifestClient.DownloadAsync(manifestOptions, cancellationToken);
-                return 0;
-            },
-            context: context.ToString()!,
-            cancellationToken);
+                Directory.CreateDirectory(directory.Path);
+            }
+            var placeResults = await _client.TryPlaceFilesFromCacheAsync(context, placements, cancellationToken);
+
+            Dictionary<AbsolutePath, ManifestItem> manifestItems = _manifest.Items.ToDictionary(i => _client.RepoRoot / new RelativePath(i.Path), i => i);
+            var itemsToDownload = new List<ManifestItem>();
+            var localCacheMisses = new Dictionary<ContentHash, AbsolutePath>();
+            foreach (Task<Indexed<PlaceFileResult>> placeResultTask in placeResults)
+            {
+                Indexed<PlaceFileResult> placeResult = await placeResultTask;
+                ContentHashWithPath placement = placements[placeResult.Index];
+                if (!placeResult.Item.Succeeded)
+                {
+                    itemsToDownload.Add(manifestItems[placement.Path]);
+                    localCacheMisses.TryAdd(placement.Hash, placement.Path);
+                }
+            }
+
+            if (itemsToDownload.Count == 0)
+            {
+                return;
+            }
+
+            using var tempManifestFile = new TempFile(FileSystem.Instance, TempFolder);
+            var tempManifest = new Manifest(itemsToDownload);
+
+#if NETFRAMEWORK
+            File.WriteAllText(tempManifestFile.Path, JsonSerializer.Serialize(tempManifest));
+#else
+            await File.WriteAllTextAsync(tempManifestFile.Path, JsonSerializer.Serialize(tempManifest), cancellationToken);
+#endif
+
+            var manifestOptions = DownloadDedupManifestArtifactOptions.CreateWithManifestPath(
+                tempManifestFile.Path,
+                _client.RepoRoot.Path);
+
+            await _client.WithHttpRetries(
+                async () =>
+                {
+                    await _client._manifestClient.DownloadAsyncWithManifestPath(manifestOptions, cancellationToken);
+                    return 0;
+                },
+                context: context.ToString()!,
+                cancellationToken);
+
+            foreach (KeyValuePair<ContentHash, AbsolutePath> localCacheMiss in localCacheMisses)
+            {
+                ContentHash hash = localCacheMiss.Key;
+                AbsolutePath path = localCacheMiss.Value;
+                await _client._localCAS.PutFileAsync(context, hash, path, _client.GetFileRealizationMode(path.Path), cancellationToken);
+            }
         }
     }
 
@@ -464,7 +505,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         string key = ComputeSelectorsKey(fingerprint, forWrite: false);
         PipelineCacheArtifact? result = await QueryPipelineCaching(
             context,
-            new Microsoft.VisualStudio.Services.PipelineCache.WebApi.Fingerprint(key.Split(KeySegmentSeperator)),
+            new VisualStudio.Services.PipelineCache.WebApi.Fingerprint(key.Split(KeySegmentSeperator)),
             cancellationToken);
 
         if (result == null)
@@ -570,7 +611,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
             ? $"selector{InternalSeed}{KeySegmentSeperator}{_universe}{KeySegmentSeperator}{wfp.Serialize()}{KeySegmentSeperator}{DateTime.UtcNow.Ticks}"
             : $"selector{InternalSeed}{KeySegmentSeperator}{_universe}{KeySegmentSeperator}{wfp.Serialize()}{KeySegmentSeperator}**";
 
-    private Task<PipelineCacheArtifact?> QueryPipelineCaching(Context context, Microsoft.VisualStudio.Services.PipelineCache.WebApi.Fingerprint key, CancellationToken cancellationToken)
+    private Task<PipelineCacheArtifact?> QueryPipelineCaching(Context context, VisualStudio.Services.PipelineCache.WebApi.Fingerprint key, CancellationToken cancellationToken)
     {
         return WithHttpRetries(
             async () =>
