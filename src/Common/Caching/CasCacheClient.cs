@@ -34,8 +34,6 @@ public sealed class CasCacheClient : CacheClient
 
     private readonly ConcurrentDictionary<ContentHash, Task<PutFileOperation>> _putRemoteTaskCache = new();
 
-    private readonly ConcurrentDictionary<AbsolutePath, bool> _directoryCreationCache = new();
-
     private readonly ICache? _remoteCache;
     private readonly ICache _localCache;
 
@@ -441,18 +439,7 @@ public sealed class CasCacheClient : CacheClient
             ? FileAccessMode.Write
             : FileAccessMode.ReadOnly;
 
-        // The cache doesn't create the directory for us.
-        AbsolutePath? parentDirectory = filePath.Parent;
-        if (parentDirectory is not null)
-        {
-            _directoryCreationCache.GetOrAdd(
-                parentDirectory,
-                dir =>
-                {
-                    Directory.CreateDirectory(dir.Path);
-                    return true;
-                });
-        }
+        CreateParentDirectory(filePath);
 
         PlaceFileResult placeResult = await _twoLevelCacheSession.PlaceFileAsync(
             context,

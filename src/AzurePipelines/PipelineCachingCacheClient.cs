@@ -221,11 +221,10 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                     .Select(kvp => new ContentHashWithPath(kvp.Key, kvp.Value))
                     .ToList();
 
-                IEnumerable<Task<Indexed<PlaceFileResult>>> placeResults = await TryPlaceFilesFromCacheAsync(context, tempFiles, cancellationToken);
-                foreach (Task<Indexed<PlaceFileResult>> placeResultTask in placeResults)
+                Dictionary<AbsolutePath, PlaceFileResult> placeResults = await TryPlaceFilesFromCacheAsync(context, tempFiles, cancellationToken);
+                foreach (PlaceFileResult placeResult in placeResults.Values)
                 {
-                    Indexed<PlaceFileResult> placeResult = await placeResultTask;
-                    placeResult.Item.ThrowIfFailure();
+                    placeResult.ThrowIfFailure();
                 }
 
                 // 3. map all the relative paths to the temp files
@@ -360,21 +359,67 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         }
     }
 
-    private async Task<IEnumerable<Task<Indexed<PlaceFileResult>>>> TryPlaceFilesFromCacheAsync(Context context, IReadOnlyList<ContentHashWithPath> files, CancellationToken cancellationToken)
+    private static byte GetAlgorithmId(ContentHash hash)
     {
-        IEnumerable<Task<Indexed<PlaceFileResult>>> placeResults = Enumerable.Empty<Task<Indexed<PlaceFileResult>>>();
-        foreach (IGrouping<FileRealizationMode, ContentHashWithPath>? tempFilesByRealizationMode in files.GroupBy(f => GetFileRealizationMode(f.Path.Path)))
+        switch (hash._hashType)
         {
-            FileRealizationMode realizationMode = tempFilesByRealizationMode.Key;
+            case HashType.Dedup1024K:
+            case HashType.Dedup64K:
+                return hash[hash.Length - 1];
+            default:
+                throw new NotSupportedException($"Hash type {hash._hashType} is not supported");
+        }
+    }
+
+    private async Task<Dictionary<AbsolutePath, PlaceFileResult>> TryPlaceFilesFromCacheAsync(Context context, IReadOnlyList<ContentHashWithPath> files, CancellationToken cancellationToken)
+    {
+        // cache expects destination directories already exist
+        foreach (ContentHashWithPath file in files)
+        {
+            CreateParentDirectory(file.Path);
+        }
+
+        Dictionary<AbsolutePath, PlaceFileResult> results = new();
+        List<ContentHashWithPath> places = new();
+
+        foreach (IGrouping<(byte algoId, FileRealizationMode mode), ContentHashWithPath>? filesGroup in files.GroupBy(f => (GetAlgorithmId(f.Hash), GetFileRealizationMode(f.Path.Path))))
+        {
+            FileRealizationMode realizationMode = filesGroup.Key.mode;
             FileAccessMode accessMode = realizationMode == FileRealizationMode.CopyNoVerify
                 ? FileAccessMode.Write
                 : FileAccessMode.ReadOnly;
 
-            placeResults = placeResults.Concat(await _localCAS.PlaceFileAsync(
-                context, tempFilesByRealizationMode.ToList(), accessMode, FileReplacementMode.ReplaceExisting, realizationMode, cancellationToken));
+            places.Clear();
+            places.AddRange(filesGroup);
+
+            List<Task<Indexed<PlaceFileResult>>> groupResults = (await _localCAS.PlaceFileAsync(
+                context, places, accessMode, FileReplacementMode.ReplaceExisting, realizationMode, cancellationToken)).ToList();
+
+            // try to pull single-chunk files from chunk store
+            if (filesGroup.Key.algoId == ChunkDedupIdentifier.ChunkAlgorithmId)
+            {
+                for (int i = 0; i < groupResults.Count; i++)
+                {
+                    Indexed<PlaceFileResult> result = await groupResults[i];
+                    if (!result.Item.Succeeded)
+                    {
+                        byte[] hashBytes = places[result.Index].Hash.ToHashByteArray();
+
+                        groupResults[i] = Task.Run(async () => (await _localCAS.PlaceFileAsync(
+                            context, new ContentHash(HashType.DedupSingleChunk, hashBytes), places[result.Index].Path, accessMode,
+                            FileReplacementMode.ReplaceExisting, realizationMode, cancellationToken)).WithIndex(result.Index));
+                    }
+                }
+            }
+
+            foreach (Task<Indexed<PlaceFileResult>> resultTask in groupResults)
+            {
+                Indexed<PlaceFileResult> result = await resultTask;
+                results.Add(places[result.Index].Path, result.Item);
+            }
         }
 
-        return placeResults;
+        return results;
     }
 
     protected override async Task<ICacheEntry?> GetCacheEntryAsync(Context context, StrongFingerprint cacheStrongFingerprint, CancellationToken cancellationToken)
@@ -435,27 +480,26 @@ internal sealed class PipelineCachingCacheClient : CacheClient
             ThrowIfDifferent(manifestFiles, requestFiles, $"Manifest `{_manifestId}` and PlaceFiles don't match:");
 
             // try to pull whole files from the cache
-            var placements = files.Select(f => new ContentHashWithPath(f.Value, f.Key)).ToList();
+            var places = files.Select(f => new ContentHashWithPath(f.Value, f.Key)).ToList();
 
-            // cache expects destination directories already exist
-            var directories = files.Select(f => f.Key.GetParent()!).ToHashSet();
-            foreach (AbsolutePath directory in directories)
-            {
-                Directory.CreateDirectory(directory.Path);
-            }
-            var placeResults = await _client.TryPlaceFilesFromCacheAsync(context, placements, cancellationToken);
+            Dictionary<AbsolutePath, PlaceFileResult> placeResults = await _client.TryPlaceFilesFromCacheAsync(context, places, cancellationToken);
 
             Dictionary<AbsolutePath, ManifestItem> manifestItems = _manifest.Items.ToDictionary(i => _client.RepoRoot / new RelativePath(i.Path), i => i);
             var itemsToDownload = new List<ManifestItem>();
-            var localCacheMisses = new Dictionary<ContentHash, AbsolutePath>();
-            foreach (Task<Indexed<PlaceFileResult>> placeResultTask in placeResults)
+            var toAddToCacheAsWholeFile = new Dictionary<ContentHash, AbsolutePath>();
+            foreach (KeyValuePair<AbsolutePath, PlaceFileResult> placeResult in placeResults)
             {
-                Indexed<PlaceFileResult> placeResult = await placeResultTask;
-                ContentHashWithPath placement = placements[placeResult.Index];
-                if (!placeResult.Item.Succeeded)
+                if (!placeResult.Value.Succeeded)
                 {
-                    itemsToDownload.Add(manifestItems[placement.Path]);
-                    localCacheMisses.TryAdd(placement.Hash, placement.Path);
+                    AbsolutePath path = placeResult.Key;
+                    itemsToDownload.Add(manifestItems[path]);
+
+                    ContentHash hash = files[path];
+                    // We don't need to add single-chunk files as whole files because they are already stored as a chunk
+                    if (GetAlgorithmId(hash) != ChunkDedupIdentifier.ChunkAlgorithmId)
+                    {
+                        toAddToCacheAsWholeFile.TryAdd(hash, path);
+                    }
                 }
             }
 
@@ -486,10 +530,10 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                 context: context.ToString()!,
                 cancellationToken);
 
-            foreach (KeyValuePair<ContentHash, AbsolutePath> localCacheMiss in localCacheMisses)
+            foreach (KeyValuePair<ContentHash, AbsolutePath> addToCache in toAddToCacheAsWholeFile)
             {
-                ContentHash hash = localCacheMiss.Key;
-                AbsolutePath path = localCacheMiss.Value;
+                ContentHash hash = addToCache.Key;
+                AbsolutePath path = addToCache.Value;
                 await _client._localCAS.PutFileAsync(context, hash, path, _client.GetFileRealizationMode(path.Path), cancellationToken);
             }
         }
