@@ -32,6 +32,7 @@ public abstract class CacheClient : ICacheClient
     private readonly OutputHasher _outputHasher;
     private readonly ConcurrentDictionary<NodeContext, Task> _publishingTasks = new();
     private readonly ConcurrentDictionary<NodeContext, Task> _materializationTasks = new();
+    private readonly ConcurrentDictionary<AbsolutePath, bool> _directoryCreationCache = new();
     private readonly IContentHasher _hasher;
     private readonly IFingerprintFactory _fingerprintFactory;
     private readonly INodeContextRepository _nodeContextRepository;
@@ -164,6 +165,21 @@ public abstract class CacheClient : ICacheClient
                     exceptions.Add(ex);
                 }
             }
+        }
+    }
+
+    protected void CreateParentDirectory(AbsolutePath filePath)
+    {
+        AbsolutePath? parentDirectory = filePath.Parent;
+        if (parentDirectory is not null)
+        {
+            _directoryCreationCache.GetOrAdd(
+                parentDirectory,
+                dir =>
+                {
+                    Directory.CreateDirectory(dir.Path);
+                    return true;
+                });
         }
     }
 
