@@ -59,6 +59,7 @@ These settings are common across all plugins, although different implementations
 | `$(MSBuildCacheMaxConcurrentCacheContentOperations)` | `int` | 64 | The maximum number of cache operations to perform concurrently |
 | `$(MSBuildCacheLocalCacheRootPath)` | `string` | "\MSBuildCache" (in repo's drive root) | Base directory to use for the local cache. |
 | `$(MSBuildCacheLocalCacheSizeInMegabytes)` | `int` | 102400 (100 GB) | The maximum size in megabytes of the local cache |
+| `$(ForceCacheMissPercentage)` | `int` | 0 | Force a cache miss a percentage of the time. Useful for testing to simulate natural cache misses. |
 | `$(MSBuildCacheIgnoredInputPatterns)` | `Glob[]` |  | Files which are part of the repo which should be ignored for cache invalidation |
 | `$(MSBuildCacheIgnoredOutputPatterns)` | `Glob[]` | `*.assets.cache; *assemblyreference.cache` | Files to ignore for output collection into the cache. Note that if output are ignored, the replayed cache entry will not have these files. This should be used for intermediate outputs which are not properly portable |
 | `$(MSBuildCacheIdenticalDuplicateOutputPatterns)` | `Glob[]` | | Files to allow duplicate outputs, with identical content, across projects. Projects which produce files at the same path with differing content will still produce an error. Note: this setting should be used sparingly as it impacts performance |

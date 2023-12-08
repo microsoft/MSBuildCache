@@ -94,6 +94,13 @@ public sealed class PluginSettingsTests
             pluginSettings => pluginSettings.LocalCacheSizeInMegabytes,
             new[] { 123u, 456u, 789u });
 
+    [TestMethod]
+    public void ForceCacheMissBitMaskSetting()
+        => TestBasicSetting(
+            nameof(PluginSettings.ForceCacheMissPercentage),
+            pluginSettings => pluginSettings.ForceCacheMissPercentage,
+            new[] { 0u, 10u, 100u });
+
     private static IEnumerable<object[]> GlobTestData
     {
         get
