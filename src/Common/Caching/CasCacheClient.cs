@@ -35,7 +35,6 @@ public sealed class CasCacheClient : CacheClient
     private readonly ConcurrentDictionary<ContentHash, Task<PutFileOperation>> _putRemoteTaskCache = new();
 
     private readonly ICache? _remoteCache;
-    private readonly ICache _localCache;
 
     private readonly ICacheSession? _remoteCacheSession;
     private readonly ICacheSession _twoLevelCacheSession;
@@ -53,7 +52,7 @@ public sealed class CasCacheClient : CacheClient
         int maxConcurrentCacheContentOperations,
         bool enableAsyncPublishing,
         bool enableAsyncMaterialization)
-        : base(rootContext, fingerprintFactory, hashType, repoRoot, nodeContextRepository, getFileRealizationMode, localCacheSession, maxConcurrentCacheContentOperations, enableAsyncPublishing, enableAsyncMaterialization)
+        : base(rootContext, fingerprintFactory, hashType, repoRoot, nodeContextRepository, getFileRealizationMode, localCache, localCacheSession, maxConcurrentCacheContentOperations, enableAsyncPublishing, enableAsyncMaterialization)
     {
         ICacheSession cacheSession;
         if (remoteCache == null)
@@ -73,7 +72,6 @@ public sealed class CasCacheClient : CacheClient
             _remoteCache = remoteCache.Value.cache;
         }
 
-        _localCache = localCache;
         _twoLevelCacheSession = cacheSession;
     }
 
@@ -83,22 +81,6 @@ public sealed class CasCacheClient : CacheClient
         await _twoLevelCacheSession.ShutdownAsync(RootContext);
         _twoLevelCacheSession.Dispose();
 
-        async Task ShutdownCacheAsync(ICache cache)
-        {
-            GetStatsResult stats = await cache.GetStatsAsync(RootContext);
-            if (stats.Succeeded)
-            {
-                foreach (KeyValuePair<string, long> stat in stats.CounterSet.ToDictionaryIntegral())
-                {
-                    RootContext.Logger.Debug($"{cache.GetType().Name} {stat.Key}={stat.Value}");
-                }
-            }
-
-            (await cache.ShutdownAsync(RootContext)).ThrowIfFailure();
-            cache.Dispose();
-        }
-
-        await ShutdownCacheAsync(_localCache);
         if (_remoteCache != null)
         {
             await ShutdownCacheAsync(_remoteCache);

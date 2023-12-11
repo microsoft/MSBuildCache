@@ -17,6 +17,7 @@ using BuildXL.Cache.ContentStore.Interfaces.Results;
 using BuildXL.Cache.ContentStore.Interfaces.Sessions;
 using BuildXL.Cache.ContentStore.Interfaces.Tracing;
 using BuildXL.Cache.ContentStore.Tracing;
+using BuildXL.Cache.MemoizationStore.Interfaces.Caches;
 using BuildXL.Cache.MemoizationStore.Interfaces.Sessions;
 using BuildXL.Native.IO;
 using Microsoft.MSBuildCache.Caching;
@@ -83,12 +84,12 @@ internal sealed class PipelineCachingCacheClient : CacheClient
     private readonly DedupStoreClientWithDataport _dedupClient;
     private readonly DedupManifestArtifactClient _manifestClient;
     private readonly Task _startupTask;
-    private readonly IContentSession _localCAS;
 
     public PipelineCachingCacheClient(
         Context rootContext,
         IFingerprintFactory fingerprintFactory,
         HashType hashType,
+        ICache localCache,
         IContentSession localCAS,
         ILogger logger,
         string universe,
@@ -99,9 +100,8 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         bool remoteCacheIsReadOnly,
         bool enableAsyncPublishing,
         bool enableAsyncMaterialization)
-        : base(rootContext, fingerprintFactory, hashType, repoRoot, nodeContextRepository, getFileRealizationMode, localCAS, maxConcurrentCacheContentOperations, enableAsyncPublishing, enableAsyncMaterialization)
+        : base(rootContext, fingerprintFactory, hashType, repoRoot, nodeContextRepository, getFileRealizationMode, localCache, localCAS, maxConcurrentCacheContentOperations, enableAsyncPublishing, enableAsyncMaterialization)
     {
-        _localCAS = localCAS;
         _remoteCacheIsReadOnly = remoteCacheIsReadOnly;
         _universe = $"pccc-{(int)hashType}-{InternalSeed}-" + (string.IsNullOrEmpty(universe) ? "DEFAULT" : universe);
 
@@ -392,7 +392,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
             places.Clear();
             places.AddRange(filesGroup);
 
-            List<Task<Indexed<PlaceFileResult>>> groupResults = (await _localCAS.PlaceFileAsync(
+            List<Task<Indexed<PlaceFileResult>>> groupResults = (await LocalCacheSession.PlaceFileAsync(
                 context, places, accessMode, FileReplacementMode.ReplaceExisting, realizationMode, cancellationToken)).ToList();
 
             // try to pull single-chunk files from chunk store
@@ -405,7 +405,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                     {
                         byte[] hashBytes = places[result.Index].Hash.ToHashByteArray();
 
-                        groupResults[i] = Task.Run(async () => (await _localCAS.PlaceFileAsync(
+                        groupResults[i] = Task.Run(async () => (await LocalCacheSession.PlaceFileAsync(
                             context, new ContentHash(HashType.DedupSingleChunk, hashBytes), places[result.Index].Path, accessMode,
                             FileReplacementMode.ReplaceExisting, realizationMode, cancellationToken)).WithIndex(result.Index));
                     }
@@ -534,7 +534,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
             {
                 ContentHash hash = addToCache.Key;
                 AbsolutePath path = addToCache.Value;
-                await _client._localCAS.PutFileAsync(context, hash, path, _client.GetFileRealizationMode(path.Path), cancellationToken);
+                await _client.LocalCacheSession.PutFileAsync(context, hash, path, _client.GetFileRealizationMode(path.Path), cancellationToken);
             }
         }
     }

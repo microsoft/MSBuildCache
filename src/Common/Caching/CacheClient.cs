@@ -17,6 +17,7 @@ using BuildXL.Cache.ContentStore.Interfaces.Tracing;
 using BuildXL.Cache.ContentStore.Interfaces.Utils;
 using BuildXL.Cache.ContentStore.Tracing;
 using BuildXL.Cache.ContentStore.UtilitiesCore;
+using BuildXL.Cache.MemoizationStore.Interfaces.Caches;
 using BuildXL.Cache.MemoizationStore.Interfaces.Sessions;
 using Microsoft.Build.Graph;
 using Microsoft.MSBuildCache.Fingerprinting;
@@ -37,6 +38,7 @@ public abstract class CacheClient : ICacheClient
     private readonly IFingerprintFactory _fingerprintFactory;
     private readonly INodeContextRepository _nodeContextRepository;
     private readonly bool _enableAsyncMaterialization;
+    private readonly ICache _localCache;
 
     protected CacheClient(
         Context rootContext,
@@ -45,6 +47,7 @@ public abstract class CacheClient : ICacheClient
         AbsolutePath repoRoot,
         INodeContextRepository nodeContextRepository,
         Func<string, FileRealizationMode> getFileRealizationMode,
+        ICache localCache,
         IContentSession localCas,
         int maxConcurrentCacheContentOperations,
         bool enableAsyncPublishing,
@@ -57,6 +60,7 @@ public abstract class CacheClient : ICacheClient
         EmptySelector = new(hashInfo.EmptyHash, EmptySelectorOutput);
         RepoRoot = repoRoot;
         _nodeContextRepository = nodeContextRepository;
+        _localCache = localCache;
         LocalCacheSession = localCas;
         EnableAsyncPublishing = enableAsyncPublishing;
         _enableAsyncMaterialization = enableAsyncMaterialization;
@@ -127,9 +131,27 @@ public abstract class CacheClient : ICacheClient
         Task PlaceFilesAsync(Context context, IReadOnlyDictionary<AbsolutePath, ContentHash> files, CancellationToken cancellationToken);
     }
 
+    protected async Task ShutdownCacheAsync(ICache cache)
+    {
+        GetStatsResult stats = await cache.GetStatsAsync(RootContext);
+        if (stats.Succeeded)
+        {
+            foreach (KeyValuePair<string, long> stat in stats.CounterSet.ToDictionaryIntegral())
+            {
+                RootContext.Logger.Debug($"{cache.GetType().Name} {stat.Key}={stat.Value}");
+            }
+        }
+
+        (await cache.ShutdownAsync(RootContext)).ThrowIfFailure();
+        cache.Dispose();
+    }
+
     public virtual async ValueTask DisposeAsync()
     {
         GC.SuppressFinalize(this);
+
+        LocalCacheSession.Dispose();
+        await ShutdownCacheAsync(_localCache);
 
         if (_outputHasher != null)
         {

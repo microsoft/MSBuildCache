@@ -51,6 +51,7 @@ public sealed class MSBuildCacheAzurePipelinesPlugin : MSBuildCachePluginBase
             context,
             FingerprintFactory,
             HashType,
+            localCache,
             localCacheSession,
             cacheLogger,
             Settings.CacheUniverse,
