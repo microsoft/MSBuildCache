@@ -49,6 +49,9 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     private string? _repoRoot;
     private string? _buildId;
 
+    // Set if we've received any file access report. Ideally MSBuild would tell us in the CacheContext
+    private bool _hasHadFileAccessReport;
+
     private PluginLoggerBase? _pluginLogger;
     private NodeDescriptorFactory? _nodeDescriptorFactory;
     private NodeContextRepository? _nodeContextRepository;
@@ -358,6 +361,8 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
     public override void HandleFileAccess(FileAccessContext fileAccessContext, FileAccessData fileAccessData)
     {
+        _hasHadFileAccessReport = true;
+
         try
         {
             HandleFileAccessInner(fileAccessContext, fileAccessData);
@@ -466,9 +471,8 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
         FileAccesses fileAccesses = _fileAccessRepository.FinishProject(nodeContext);
 
-        // If there are no inputs nor outputs, file access reports are disabled in MSBuild so we can't cache anything.
-        // The project file itself at least would be an input, but worst case projects with literally zero I/O are not cacheable.
-        if (fileAccesses.Inputs.Count == 0 && fileAccesses.Outputs.Count == 0)
+        // If file access reports are disabled in MSBuild we can't cache anything as we don't know what to cache.
+        if (!_hasHadFileAccessReport)
         {
             return;
         }
