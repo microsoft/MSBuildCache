@@ -81,6 +81,8 @@ public class PluginSettings
 
     public uint LocalCacheSizeInMegabytes { get; init; } = 102400; // 100GB
 
+    public uint ForceCacheMissPercentage { get; init; }
+
     public IReadOnlyCollection<Glob> IgnoredInputPatterns { get; init; } = Array.Empty<Glob>();
 
     public IReadOnlyCollection<Glob> IgnoredOutputPatterns { get; init; } = Array.Empty<Glob>();

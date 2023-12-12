@@ -38,7 +38,6 @@ public sealed class MSBuildCacheLocalPlugin : MSBuildCachePluginBase
 #pragma warning restore CA2000 // Dispose objects before losing scope
         Context context = new(cacheLogger);
 
-
 #pragma warning disable CA2000 // Dispose objects before losing scope. Expected to be disposed by TwoLevelCache
         LocalCache cache = LocalCacheFactory.Create(cacheLogger, Settings.LocalCacheRootPath, Settings.LocalCacheSizeInMegabytes);
 #pragma warning restore CA2000 // Dispose objects before losing scope

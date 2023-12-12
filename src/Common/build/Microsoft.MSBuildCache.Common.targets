@@ -10,6 +10,7 @@
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheMaxConcurrentCacheContentOperations</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheLocalCacheRootPath</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheLocalCacheSizeInMegabytes</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheForceCacheMissPercentage</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheIgnoredInputPatterns</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheIgnoredOutputPatterns</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheIdenticalDuplicateOutputPatterns</MSBuildCacheGlobalPropertiesToIgnore>
@@ -29,6 +30,7 @@
       <MaxConcurrentCacheContentOperations>$(MSBuildCacheMaxConcurrentCacheContentOperations)</MaxConcurrentCacheContentOperations>
       <LocalCacheRootPath>$(MSBuildCacheLocalCacheRootPath)</LocalCacheRootPath>
       <LocalCacheSizeInMegabytes>$(MSBuildCacheLocalCacheSizeInMegabytes)</LocalCacheSizeInMegabytes>
+      <ForceCacheMissPercentage>$(MSBuildCacheForceCacheMissPercentage)</ForceCacheMissPercentage>
       <IgnoredInputPatterns>$(MSBuildCacheIgnoredInputPatterns)</IgnoredInputPatterns>
       <IgnoredOutputPatterns>$(MSBuildCacheIgnoredOutputPatterns)</IgnoredOutputPatterns>
       <IdenticalDuplicateOutputPatterns>$(MSBuildCacheIdenticalDuplicateOutputPatterns)</IdenticalDuplicateOutputPatterns>
