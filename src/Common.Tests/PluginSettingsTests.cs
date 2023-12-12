@@ -95,7 +95,7 @@ public sealed class PluginSettingsTests
             new[] { 123u, 456u, 789u });
 
     [TestMethod]
-    public void ForceCacheMissBitMaskSetting()
+    public void ForceCacheMissPercentageSetting()
         => TestBasicSetting(
             nameof(PluginSettings.ForceCacheMissPercentage),
             pluginSettings => pluginSettings.ForceCacheMissPercentage,

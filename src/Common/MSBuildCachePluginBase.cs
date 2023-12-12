@@ -355,11 +355,15 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         if (Settings.ForceCacheMissPercentage != 0)
         {
             // use a hash of the project id so that it is repeatable
-#pragma warning disable CA1850 // ComputeHash is not in net472
+
+#if NETFRAMEWORK
             using SHA256 hasher = SHA256.Create();
             byte[] projectHash = hasher.ComputeHash(Encoding.UTF8.GetBytes(nodeContext.Id));
+#else
+            byte[] projectHash = SHA256.HashData(Encoding.UTF8.GetBytes(nodeContext.Id));
+#endif
+
             uint hashInt = BitConverter.ToUInt32(projectHash, 0);
-#pragma warning restore CA1850
             if ((hashInt % 100) < Settings.ForceCacheMissPercentage)
             {
                 logger.LogMessage($"Forcing an otherwise 'cache hit' to be a 'cache miss' because of ForceCacheMissPercentage.");
