@@ -52,9 +52,7 @@ jobs:
     # Fetch all history for versioning
     fetchDepth: 0
 
-  - template: templates\build.yml
-    parameters:
-      RepoRoot: $(Build.SourcesDirectory)
+  - template: templates\build-and-test.yml
 
   - task: NuGetCommand@2
     displayName: 'Push NuGet Packages to nuget.org'
@@ -67,5 +65,5 @@ jobs:
 
   - publish: $(LogDirectory)
     displayName: Publish Logs
-    artifact: '$(System.JobDisplayName) logs'
+    artifact: 'logs'
     condition: always()

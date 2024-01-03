@@ -1,0 +1,23 @@
+parameters:
+- name: RepoRoot
+  type: string
+- name: MSBuildPath 
+  type: string
+  default: ""
+
+steps:
+- task: PowerShell@2
+  displayName: "E2E Test: Microsoft.MSBuildCache.Local"
+  inputs:
+    filePath: ${{ parameters.RepoRoot }}\tests\test.ps1
+    arguments: -MSBuildPath "${{ parameters.MSBuildPath }}" -Configuration $(BuildConfiguration) -LogDirectory "$(LogDirectory)\Tests\Local" -LocalPackageDir "$(Pipeline.Workspace)\artifacts\$(BuildConfiguration)\packages" -CachePackage Microsoft.MSBuildCache.Local
+    pwsh: true
+
+- task: PowerShell@2
+  displayName: "E2E Test: Microsoft.MSBuildCache.AzurePipelines"
+  inputs:
+    filePath: ${{ parameters.RepoRoot }}\tests\test.ps1
+    arguments: -MSBuildPath "${{ parameters.MSBuildPath }}" -Configuration $(BuildConfiguration) -LogDirectory "$(LogDirectory)\Tests\AzurePipelines" -LocalPackageDir "$(Pipeline.Workspace)\artifacts\$(BuildConfiguration)\packages" -CachePackage Microsoft.MSBuildCache.AzurePipelines
+    pwsh: true
+  env:
+    SYSTEM_ACCESSTOKEN: $(System.AccessToken)

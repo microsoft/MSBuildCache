@@ -4,7 +4,7 @@ param
     [string] $LogDirectory = $env:LogDirectory,
 
     [Parameter(Mandatory = $false)]
-    [string] $ArtifactsDirectory = $env:ArtifactsDirectory,
+    [string] $LocalPackageDir = $env:LocalPackageDir,
 
     [Parameter(Mandatory = $false)]
     [string] $TestRoot,
@@ -146,9 +146,9 @@ Push-Location (Join-Path $PSScriptRoot "..")
 $RepoRoot = "$PWD"
 Pop-Location
 
-if (-not $ArtifactsDirectory)
+if (-not $LocalPackageDir)
 {
-    $ArtifactsDirectory = Join-Path $RepoRoot "artifacts"
+    $LocalPackageDir = Join-Path $RepoRoot "artifacts\$Configuration\packages"
 }
 
 if (-not $LogDirectory)
@@ -169,7 +169,7 @@ if (-not $MSBuildPath)
 # Use a unique cache universe for every test run
 $CacheUniverse = (New-Guid).ToString()
 
-$env:LocalPackageDir = Join-Path (Join-Path $ArtifactsDirectory $Configuration) "packages"
+$env:LocalPackageDir = $LocalPackageDir
 
 Write-Host "Log Directory: $LogDirectory"
 Remove-Item -Path $LogDirectory -Recurse -Force -ErrorAction SilentlyContinue

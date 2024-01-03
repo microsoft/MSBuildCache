@@ -30,19 +30,37 @@ resources:
     ref: main
 
 jobs:
-- job: BuildVS
-  displayName: Build using VS
-  variables:
-    VsInstallDir: $(Build.ArtifactStagingDirectory)/vs
+- job: Build
+  displayName: Build and Test
   steps:
   - checkout: self
     # Fetch all history for versioning
     fetchDepth: 0
 
+  - template: templates\build-and-test.yml
+
+  - publish: $(LogDirectory)
+    displayName: Publish Logs
+    artifact: '$(System.JobDisplayName) logs'
+    condition: always()
+
+- job: E2ETestVS
+  displayName: E2E Tests using VS
+  dependsOn: Build
+  variables:
+    VsInstallDir: $(Build.ArtifactStagingDirectory)\vs
+    MSBuildPath: $(VsInstallDir)\MSBuild\Current\Bin\amd64\MSBuild.exe
+  steps:
+  - download: current
+    displayName: 'Download Build Artifacts'
+    artifact: artifacts
+
+  - checkout: self
+
   - task: Cache@2
     displayName: Cache Visual Studio
     inputs:
-      key: '"vs" | "$(Agent.OS)"'
+      key: '"vs-release" | "$(Agent.OS)"'
       path: $(VsInstallDir)
 
   - script: |
@@ -61,32 +79,78 @@ jobs:
       del %TEMP%\vs_buildtools.exe
 
       echo Current MSBuild version:
-      "$(VsInstallDir)\MSBuild\Current\Bin\amd64\MSBuild.exe" --version
+      "$(MSBuildPath)" --version
     displayName: 'Install VS'
 
-  - template: templates\build.yml
+  - template: templates\e2e-test.yml
     parameters:
       RepoRoot: $(Build.SourcesDirectory)
-
-  - template: templates\test.yml
-    parameters:
-      RepoRoot: $(Build.SourcesDirectory)
-      MSBuildPath: $(VsInstallDir)\MSBuild\Current\Bin\amd64\MSBuild.exe
+      MSBuildPath: $(MSBuildPath)
 
   - publish: $(LogDirectory)
     displayName: Publish Logs
     artifact: '$(System.JobDisplayName) logs'
     condition: always()
 
-- job: BuildMSBuildRepo
-  displayName: Build using tip of MSBuild repo
+- job: E2ETestVSPreview
+  displayName: E2E Tests using VS Preview
+  dependsOn: Build
   variables:
-    # Used as an env var as well
-    MSBuildLibraries: $(Build.SourcesDirectory)\msbuild\artifacts\bin\bootstrap\net472\MSBuild\Current\Bin\amd64
+    VsInstallDir: $(Build.ArtifactStagingDirectory)\vs
+    MSBuildPath: $(VsInstallDir)\MSBuild\Current\Bin\amd64\MSBuild.exe
   steps:
+  - download: current
+    displayName: 'Download Build Artifacts'
+    artifact: artifacts
+
   - checkout: self
-    # Fetch all history for versioning
-    fetchDepth: 0
+
+  - task: Cache@2
+    displayName: Cache Visual Studio
+    inputs:
+      key: '"vs-pre" | "$(Agent.OS)"'
+      path: $(VsInstallDir)
+
+  - script: |
+      del %TEMP%\vs_buildtools.exe
+      
+      curl.exe -L https://aka.ms/vs/17/pre/vs_buildtools.exe -o %TEMP%\vs_buildtools.exe
+      
+      %TEMP%\vs_buildtools.exe ^
+        --config "$(Build.SourcesDirectory)\.vsconfig" ^
+        --installPath "$(VsInstallDir)" ^
+        --passive ^
+        --norestart ^
+        --wait
+      echo VS installer exit code: %ERRORLEVEL%
+
+      del %TEMP%\vs_buildtools.exe
+
+      echo Current MSBuild version:
+      "$(MSBuildPath)" --version
+    displayName: 'Install VS Preview'
+
+  - template: templates\e2e-test.yml
+    parameters:
+      RepoRoot: $(Build.SourcesDirectory)
+      MSBuildPath: $(MSBuildPath)
+
+  - publish: $(LogDirectory)
+    displayName: Publish Logs
+    artifact: '$(System.JobDisplayName) logs'
+    condition: always()
+
+- job: E2ETestMSBuildRepo
+  displayName: E2E Tests using tip of MSBuild repo
+  dependsOn: Build
+  variables:
+    MSBuildPath: $(Build.SourcesDirectory)\msbuild\artifacts\bin\bootstrap\net472\MSBuild\Current\Bin\amd64\MSBuild.exe
+  steps:
+  - download: current
+    displayName: 'Download Build Artifacts'
+    artifact: artifacts
+
+  - checkout: self
 
   - checkout: msbuild
 
@@ -102,14 +166,10 @@ jobs:
     displayName: Build MSBuild
     condition: ne(variables.MSBUILD_RESTORED, 'true')
 
-  - template: templates\build.yml
+  - template: templates\e2e-test.yml
     parameters:
       RepoRoot: $(Build.SourcesDirectory)/MSBuildCache
-
-  - template: templates\test.yml
-    parameters:
-      RepoRoot: $(Build.SourcesDirectory)/MSBuildCache
-      MSBuildPath: $(MSBuildLibraries)\MSBuild.exe
+      MSBuildPath: $(MSBuildPath)
 
   - publish: $(LogDirectory)
     displayName: Publish Logs
