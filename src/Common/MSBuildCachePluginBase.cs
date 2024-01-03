@@ -338,7 +338,8 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
         nodeContext.SetStartTime();
 
-        if (!nodeContext.TargetNames.SetEquals(buildRequest.TargetNames))
+        bool isBuildAndTestRequest = IsBuildAndTestRequest(buildRequest);
+        if (!nodeContext.TargetNames.SetEquals(buildRequest.TargetNames) && !isBuildAndTestRequest)
         {
             logger.LogMessage($"`TargetNames` does not match for {nodeContext.Id}. `{string.Join(";", nodeContext.TargetNames)}` vs `{string.Join(";", buildRequest.TargetNames)}`.");
             return CacheResult.IndicateNonCacheHit(CacheResultType.CacheNotApplicable);
@@ -354,6 +355,15 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         CheckForDuplicateOutputs(logger, nodeBuildResult.Outputs, nodeContext);
 
         await FinishNodeAsync(logger, nodeContext, pathSet, nodeBuildResult);
+        // In the case of a build-and-test request, we want to cache the build results but and the test execution (i.e, only execute tests on cache misses).
+        _ = bool.TryParse(projectInstance.GetPropertyValue("IsTestProject"), out bool isTestProject);
+        if (isBuildAndTestRequest && isTestProject)
+        {
+            // this property can be read by downstream tasks, such as a Test Target, to determine if the test execution should be skipped
+            _ = projectInstance.SetProperty("SkipExecution", "true");
+            string skippedMsg = $"Test Project Cache Hit, Test Execution Skipped: {projectInstance.GetPropertyValue("MSBuildProjectName")}";
+            logger.LogMessage(skippedMsg, MessageImportance.High);
+        }
 
         Interlocked.Increment(ref _cacheHitCount);
         Interlocked.Add(ref _cacheHitDurationMilliseconds, (int)(nodeBuildResult.EndTimeUtc - nodeBuildResult.StartTimeUtc).TotalMilliseconds);
@@ -373,6 +383,21 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             _pluginLogger?.LogWarning($"{nameof(HandleFileAccess)}: {e}");
             throw;
         }
+    }
+    /// <summary>
+    /// Determines if the build request is a build and test request.
+    /// </summary>
+    /// <param name="buildRequest">The build request data</param>
+    /// <returns>A bool value representing whether the build request is a build and test request.</returns>
+    private static bool IsBuildAndTestRequest(BuildRequestData buildRequest)
+    {
+        if (buildRequest == null)
+        {
+            return false;
+        }
+        // Check if the build request includes both "Build" and "Test" targets
+        bool isBuildAndTestRequest = buildRequest.TargetNames.Contains("Build") && buildRequest.TargetNames.Contains("Test");
+        return isBuildAndTestRequest;
     }
 
     private void HandleFileAccessInner(FileAccessContext fileAccessContext, FileAccessData fileAccessData)
