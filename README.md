@@ -97,15 +97,7 @@ It is expected that this plugin is used within an Azure Pipeline. The `SYSTEM_AC
     SYSTEM_ACCESSTOKEN: $(System.AccessToken)
 ```
 
-For the access token to have scopes relevant to Pipeline Caching, the [Cache task](https://learn.microsoft.com/en-us/azure/devops/pipelines/release/caching?view=azure-devops#cache-task-how-it-works) must be used in the pipeline. There is work planned to opt-into this explicitly, but using the task is currently the workaround. You can cache a dummy folder if there is no otherwise reasonable use of the task in your build.
-
-```yml
-- task: Cache@2
-  displayName: Enable Pipeline Caching
-  inputs:
-    key: '"dummy"'
-    path: build
-```
+`$(System.AccessToken)` by default does not have the scope relevant to Pipeline Caching. The scope can be enabled by setting the `EnablePipelineCache` pipeline variable. Additionally, the scope will get automatically added if the [Cache task](https://learn.microsoft.com/en-us/azure/devops/pipelines/release/caching?view=azure-devops#cache-task-how-it-works) is used somewhere in the pipeline.
 
 ### Microsoft.MSBuildCache.Local
 [![NuGet Version](https://img.shields.io/nuget/v/Microsoft.MSBuildCache.Local.svg)](https://www.nuget.org/packages/Microsoft.MSBuildCache.Local)
