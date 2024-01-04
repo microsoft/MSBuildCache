@@ -69,18 +69,29 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     static MSBuildCachePluginBase() =>
         AppDomain.CurrentDomain.AssemblyResolve += (sender, args) =>
         {
-            var assemblyName = new AssemblyName(args.Name);
+            AssemblyName assemblyName = new(args.Name);
 
-            var loadedAssemblies = AppDomain.CurrentDomain.GetAssemblies();
-            var loadedAssembly = loadedAssemblies.FirstOrDefault(a => a.GetName().Name == assemblyName.Name);
-
+            // First try using any assembly already loaded by MSBuild.
+            Assembly[] loadedAssemblies = AppDomain.CurrentDomain.GetAssemblies();
+            Assembly? loadedAssembly = loadedAssemblies.FirstOrDefault(a => a.GetName().Name == assemblyName.Name);
             if (loadedAssembly != null)
             {
                 return loadedAssembly;
             }
 
-            string candidateAssemblyPath = Path.Combine(PluginAssemblyDirectory, $"{assemblyName.Name}.dll");
+            string assemblyFileName = $"{assemblyName.Name}.dll";
 
+            // Next try force loading any of MSBuild's assemblies.
+            // This ensures that we always prefer MSBuild's dependencies for shared dependencies to avoid mismatched type issues.
+            string candidateAssemblyPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, assemblyFileName);
+            if (File.Exists(candidateAssemblyPath))
+            {
+                return Assembly.LoadFrom(candidateAssemblyPath);
+            }
+
+            // Finally, load anything adjacent to us.
+            // This should be dependencies which are unique to us.
+            candidateAssemblyPath = Path.Combine(PluginAssemblyDirectory, assemblyFileName);
             if (File.Exists(candidateAssemblyPath))
             {
                 return Assembly.LoadFrom(candidateAssemblyPath);
