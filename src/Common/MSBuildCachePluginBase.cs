@@ -356,8 +356,9 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
         await FinishNodeAsync(logger, nodeContext, pathSet, nodeBuildResult);
         // In the case of a build-and-test request, we want to cache the build results but and the test execution (i.e, only execute tests on cache misses).
-        _ = bool.TryParse(projectInstance.GetPropertyValue("IsTestProject"), out bool isTestProject);
-        if (isBuildAndTestRequest && isTestProject)
+        if (isBuildAndTestRequest
+            && bool.TryParse(projectInstance.GetPropertyValue("IsTestProject"), out bool isTestProject)
+            && isTestProject)
         {
             // this property can be read by downstream tasks, such as a Test Target, to determine if the test execution should be skipped
             _ = projectInstance.SetProperty("SkipExecution", "true");
@@ -391,12 +392,8 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     /// <returns>A bool value representing whether the build request is a build and test request.</returns>
     private static bool IsBuildAndTestRequest(BuildRequestData buildRequest)
     {
-        if (buildRequest == null)
-        {
-            return false;
-        }
         // Check if the build request includes both "Build" and "Test" targets
-        bool isBuildAndTestRequest = buildRequest.TargetNames.Contains("Build") && buildRequest.TargetNames.Contains("Test");
+        bool isBuildAndTestRequest = buildRequest.TargetNames.Contains("Build", StringComparer.OrdinalIgnoreCase) && buildRequest.TargetNames.Contains("Test", StringComparer.OrdinalIgnoreCase);
         return isBuildAndTestRequest;
     }
 
