@@ -25,7 +25,7 @@ jobs:
   steps:
   - task: PowerShell@2
     displayName: 'Update SignType, Build Number, and Add Build Tag for tagged commits'
-    condition: and(succeeded(), startsWith(variables['Build.SourceBranch'], 'refs/tags/v'))
+    #condition: and(succeeded(), startsWith(variables['Build.SourceBranch'], 'refs/tags/v'))
     inputs:
       targetType: 'inline'
       script: |
@@ -53,15 +53,6 @@ jobs:
     fetchDepth: 0
 
   - template: templates\build-and-test.yml
-
-  - task: NuGetCommand@2
-    displayName: 'Push NuGet Packages to nuget.org'
-    condition: and(succeeded(), startsWith(variables['Build.SourceBranch'], 'refs/tags/v'))
-    inputs:
-      command: 'push'
-      packagesToPush: '$(ArtifactsDirectory)/**/*.nupkg'
-      nuGetFeedType: 'external'
-      publishFeedCredentials: 'MSBuildCache-Push'
 
   - publish: $(LogDirectory)
     displayName: Publish Logs
