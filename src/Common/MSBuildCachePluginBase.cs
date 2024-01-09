@@ -393,13 +393,6 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             return;
         }
 
-        // Ignore file accesses outside the repository
-        ReadOnlySpan<char> path = PathHelper.RemoveLongPathPrefixes(fileAccessData.Path.AsSpan());
-        if (!path.StartsWith(_repoRoot.AsSpan(), StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
         NodeContext? nodeContext = GetNodeContext(fileAccessContext);
         if (nodeContext == null)
         {
@@ -496,6 +489,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             string? normalizedFilePath = absolutePath.MakePathRelativeTo(_repoRoot!);
             if (normalizedFilePath == null)
             {
+                // Ignore inputs outside the repository
                 continue;
             }
 
