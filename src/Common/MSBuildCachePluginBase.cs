@@ -164,6 +164,17 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         return null;
     }
 
+    protected virtual async Task<IInputHasher> CreateInputHasherAsync(PluginLoggerBase logger, CancellationToken cancellationToken)
+    {
+        if (ContentHasher is null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        IReadOnlyDictionary<string, byte[]> fileHashes = await GetSourceControlFileHashesAsync(logger, cancellationToken);
+        return new InputHasher(ContentHasher, fileHashes);
+    }
+
     protected virtual IFingerprintFactory CreateFingerprintFactory()
     {
         if (ContentHasher == null
@@ -234,24 +245,27 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
         Directory.CreateDirectory(Settings.LogDirectory);
 
+        _ignoredOutputPatterns = Settings.IgnoredOutputPatterns;
+        _identicalDuplicateOutputPatterns = Settings.IdenticalDuplicateOutputPatterns;
+
         ContentHasher = HashInfoLookup.Find(HashType).CreateContentHasher();
 
-        IReadOnlyDictionary<string, byte[]> fileHashes = await GetSourceControlFileHashesAsync(logger, cancellationToken);
-
-        InputHasher = new InputHasher(ContentHasher, fileHashes);
+        // Kick off async since this may take some time.
+        Task<IInputHasher> inputHasherTask = CreateInputHasherAsync(logger, cancellationToken);
 
         HashSet<string> globalPropertiesToIgnore = new(Settings.GlobalPropertiesToIgnore, StringComparer.OrdinalIgnoreCase);
         _nodeDescriptorFactory = new NodeDescriptorFactory(globalPropertiesToIgnore);
 
         ProjectGraph graph = GetProjectGraph(context, logger);
-        Parser parser = new(logger, _repoRoot, fileHashes);
+        Parser parser = new(logger, _repoRoot);
         IReadOnlyDictionary<ProjectGraphNode, ParserInfo> parserInfoForNodes = parser.Parse(graph);
 
         // TODO: MSBuild should give this to us via CacheContext
         var entryProjectTargets = Array.Empty<string>();
         IReadOnlyDictionary<ProjectGraphNode, ImmutableList<string>> targetListPerNode = graph.GetTargetLists(entryProjectTargets);
 
-        var nodeContexts = new Dictionary<NodeDescriptor, NodeContext>(parserInfoForNodes.Count);
+        Dictionary<NodeDescriptor, NodeContext> nodeContexts = new(parserInfoForNodes.Count);
+        List<Task> dumpParserInfoTasks = new(parserInfoForNodes.Count);
         foreach (KeyValuePair<ProjectGraphNode, ParserInfo> pair in parserInfoForNodes)
         {
             ProjectGraphNode node = pair.Key;
@@ -273,17 +287,19 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             NodeDescriptor nodeDescriptor = _nodeDescriptorFactory.Create(node.ProjectInstance);
             NodeContext nodeContext = new(Settings.LogDirectory, node, parserInfo.NormalizedProjectFilePath, nodeDescriptor.GlobalProperties, inputs, targetNames);
 
-            await DumpParserInfoAsync(logger, nodeContext, parserInfo);
-
+            dumpParserInfoTasks.Add(DumpParserInfoAsync(logger, nodeContext, parserInfo));
             nodeContexts.Add(nodeDescriptor, nodeContext);
         }
 
         _nodeContextRepository = new NodeContextRepository(nodeContexts, _nodeDescriptorFactory);
+        InputHasher = await inputHasherTask;
         FingerprintFactory = CreateFingerprintFactory();
         _fileAccessRepository = new FileAccessRepository(logger, Settings);
         _cacheClient = await CreateCacheClientAsync(logger, cancellationToken);
-        _ignoredOutputPatterns = Settings.IgnoredOutputPatterns;
-        _identicalDuplicateOutputPatterns = Settings.IdenticalDuplicateOutputPatterns;
+
+        // Ensure all logs are written
+        await Task.WhenAll(dumpParserInfoTasks);
+
         Initialized = true;
     }
 
