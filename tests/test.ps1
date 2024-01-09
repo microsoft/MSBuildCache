@@ -184,6 +184,16 @@ $ProjectDir = Join-Path $TestRoot "src"
 Remove-Item -Path $TestRoot -Recurse -Force -ErrorAction SilentlyContinue
 Copy-Item -Path (Join-Path $PSScriptRoot "TestProject") -Destination $ProjectDir -Recurse
 
+# Create a new git repo with an initial commit so hashing works properly
+Write-Host "Creating Git repo in $ProjectDir"
+Push-Location $ProjectDir
+& git init
+& git config user.email "$Env:UserName@microsoft.com"
+& git config user.name "$Env:UserName"
+& git add .
+& git commit -m "Dummy"
+Pop-Location
+
 Run-Test `
     -TestName "ColdCache" `
     -ExpectedCacheHits 0 `
