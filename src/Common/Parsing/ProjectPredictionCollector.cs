@@ -15,7 +15,6 @@ internal sealed class ProjectPredictionCollector : IProjectPredictionCollector
 {
     private static readonly char[] DirectorySeparatorChars = { Path.DirectorySeparatorChar };
     private readonly string _repoRoot;
-    private readonly PathTree _repoPathTree;
     private readonly ConcurrentDictionary<string, string> _normalizedFileCache;
     private readonly string _projectDirectory;
     private readonly string _normalizedProjectFilePath;
@@ -30,12 +29,10 @@ internal sealed class ProjectPredictionCollector : IProjectPredictionCollector
     public ProjectPredictionCollector(
         ProjectGraphNode node,
         string repoRoot,
-        PathTree repoPathTree,
         ConcurrentDictionary<string, string> normalizedFileCache)
     {
         Node = node;
         _repoRoot = repoRoot;
-        _repoPathTree = repoPathTree;
         _normalizedFileCache = normalizedFileCache;
 
         string projectFilePath = node.ProjectInstance.FullPath;
@@ -76,7 +73,7 @@ internal sealed class ProjectPredictionCollector : IProjectPredictionCollector
             return;
         }
 
-        foreach (string normalizedFilePath in _repoPathTree.EnumerateFiles(normalizedDirPath, SearchOption.TopDirectoryOnly))
+        foreach (string normalizedFilePath in Directory.EnumerateFiles(normalizedDirPath, "*", SearchOption.TopDirectoryOnly))
         {
             AddInput(normalizedFilePath, predictorName);
         }
