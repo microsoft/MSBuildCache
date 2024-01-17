@@ -28,7 +28,8 @@ public sealed class MSBuildCacheAzurePipelinesPlugin : MSBuildCachePluginBase
     {
         if (Settings == null
             || NodeContextRepository == null
-            || FingerprintFactory == null)
+            || FingerprintFactory == null
+            || ContentHasher == null)
         {
             throw new InvalidOperationException();
         }
@@ -50,7 +51,7 @@ public sealed class MSBuildCacheAzurePipelinesPlugin : MSBuildCachePluginBase
         return new PipelineCachingCacheClient(
             context,
             FingerprintFactory,
-            HashType,
+            ContentHasher,
             localCache,
             localCacheSession,
             cacheLogger,

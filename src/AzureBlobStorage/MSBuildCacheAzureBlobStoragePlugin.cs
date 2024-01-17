@@ -90,7 +90,7 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase
             localCache,
             localCacheSession,
             (remoteCache, remoteCacheSession, twoLevelConfig),
-            HashType,
+            ContentHasher,
             new AbsolutePath(Settings.RepoRoot),
             NodeContextRepository,
             GetFileRealizationMode,
