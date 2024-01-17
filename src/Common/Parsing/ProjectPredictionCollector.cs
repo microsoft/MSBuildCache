@@ -73,9 +73,16 @@ internal sealed class ProjectPredictionCollector : IProjectPredictionCollector
             return;
         }
 
-        foreach (string normalizedFilePath in Directory.EnumerateFiles(normalizedDirPath, "*", SearchOption.TopDirectoryOnly))
+        string absoluteDirPath = Path.Combine(_repoRoot, normalizedDirPath);
+        if (!Directory.Exists(absoluteDirPath))
         {
-            AddInput(normalizedFilePath, predictorName);
+            // Ignore inputs to output directories which don't exist
+            return;
+        }
+
+        foreach (string filePath in Directory.EnumerateFiles(absoluteDirPath, "*", SearchOption.TopDirectoryOnly))
+        {
+            AddInputFile(filePath, projectInstance, predictorName);
         }
     }
 
