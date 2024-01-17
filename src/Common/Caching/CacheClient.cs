@@ -43,7 +43,7 @@ public abstract class CacheClient : ICacheClient
     protected CacheClient(
         Context rootContext,
         IFingerprintFactory fingerprintFactory,
-        HashType hashType,
+        IContentHasher hasher,
         AbsolutePath repoRoot,
         INodeContextRepository nodeContextRepository,
         Func<string, FileRealizationMode> getFileRealizationMode,
@@ -55,9 +55,8 @@ public abstract class CacheClient : ICacheClient
     {
         RootContext = rootContext;
         _fingerprintFactory = fingerprintFactory;
-        HashInfo hashInfo = HashInfoLookup.Find(hashType);
-        _hasher = hashInfo.CreateContentHasher();
-        EmptySelector = new(hashInfo.EmptyHash, EmptySelectorOutput);
+        _hasher = hasher;
+        EmptySelector = new(hasher.Info.EmptyHash, EmptySelectorOutput);
         RepoRoot = repoRoot;
         _nodeContextRepository = nodeContextRepository;
         _localCache = localCache;

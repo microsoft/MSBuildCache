@@ -45,14 +45,14 @@ public sealed class CasCacheClient : CacheClient
         ICache localCache,
         ICacheSession localCacheSession,
         (ICache cache, ICacheSession session, TwoLevelCacheConfiguration config)? remoteCache,
-        HashType hashType,
+        IContentHasher hasher,
         AbsolutePath repoRoot,
         INodeContextRepository nodeContextRepository,
         Func<string, FileRealizationMode> getFileRealizationMode,
         int maxConcurrentCacheContentOperations,
         bool enableAsyncPublishing,
         bool enableAsyncMaterialization)
-        : base(rootContext, fingerprintFactory, hashType, repoRoot, nodeContextRepository, getFileRealizationMode, localCache, localCacheSession, maxConcurrentCacheContentOperations, enableAsyncPublishing, enableAsyncMaterialization)
+        : base(rootContext, fingerprintFactory, hasher, repoRoot, nodeContextRepository, getFileRealizationMode, localCache, localCacheSession, maxConcurrentCacheContentOperations, enableAsyncPublishing, enableAsyncMaterialization)
     {
         ICacheSession cacheSession;
         if (remoteCache == null)

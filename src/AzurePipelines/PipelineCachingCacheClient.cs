@@ -88,7 +88,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
     public PipelineCachingCacheClient(
         Context rootContext,
         IFingerprintFactory fingerprintFactory,
-        HashType hashType,
+        IContentHasher hasher,
         ICache localCache,
         IContentSession localCAS,
         ILogger logger,
@@ -100,10 +100,10 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         bool remoteCacheIsReadOnly,
         bool enableAsyncPublishing,
         bool enableAsyncMaterialization)
-        : base(rootContext, fingerprintFactory, hashType, repoRoot, nodeContextRepository, getFileRealizationMode, localCache, localCAS, maxConcurrentCacheContentOperations, enableAsyncPublishing, enableAsyncMaterialization)
+        : base(rootContext, fingerprintFactory, hasher, repoRoot, nodeContextRepository, getFileRealizationMode, localCache, localCAS, maxConcurrentCacheContentOperations, enableAsyncPublishing, enableAsyncMaterialization)
     {
         _remoteCacheIsReadOnly = remoteCacheIsReadOnly;
-        _universe = $"pccc-{(int)hashType}-{InternalSeed}-" + (string.IsNullOrEmpty(universe) ? "DEFAULT" : universe);
+        _universe = $"pccc-{(int)hasher.Info.HashType}-{InternalSeed}-" + (string.IsNullOrEmpty(universe) ? "DEFAULT" : universe);
 
         _azureDevopsTracer = new CallbackAppTraceSource(
             (message, level) =>
@@ -141,7 +141,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         _dedupHttpClient = new DedupStoreHttpClient(blob, token, settings);
 
         // https://dev.azure.com/mseng/1ES/_workitems/edit/2060777
-        if (hashType == HashType.Dedup1024K)
+        if (hasher.Info.HashType == HashType.Dedup1024K)
         {
             _dedupHttpClient.RecommendedChunkCountPerCall = 8;
         }
@@ -149,7 +149,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         var dedupHttpClientWithCache = new DedupStoreHttpClientWithCache(_dedupHttpClient, localCAS, logger, cacheChunks: true, cacheNodes: true);
 
         var cacheClientContext = new DedupStoreClientContext(maxParallelism: 128);
-        _dedupClient = new DedupStoreClientWithDataport(dedupHttpClientWithCache, cacheClientContext, hashType, canRedirect: true);
+        _dedupClient = new DedupStoreClientWithDataport(dedupHttpClientWithCache, cacheClientContext, hasher.Info.HashType, canRedirect: true);
 
         _manifestClient = new DedupManifestArtifactClient(
             blobStoreClientTelemetry: NoOpBlobStoreClientTelemetry.Instance,
