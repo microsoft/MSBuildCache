@@ -230,8 +230,8 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                 // 3. map all the relative paths to the temp files
                 foreach (KeyValuePair<AbsolutePath, ContentHash> output in outputs)
                 {
-                    string relativePath = output.Key.Path.Replace(RepoRoot.Path, "", StringComparison.OrdinalIgnoreCase);
-                    extras.Add(relativePath.Replace("\\", "/", StringComparison.Ordinal), new FileInfo(tempFilesPerHash[output.Value].Path));
+                    RelativePath relativePath = output.Key.MakePathRelativeTo(RepoRoot)!;
+                    extras.Add(relativePath.Path.Replace("\\", "/", StringComparison.Ordinal), new FileInfo(tempFilesPerHash[output.Value].Path));
                 }
             }
             else
@@ -616,7 +616,9 @@ internal sealed class PipelineCachingCacheClient : CacheClient
 
         foreach (KeyValuePair<AbsolutePath, ContentHash> f in files)
         {
-            sorted.Add(new RelativePath(f.Key.Path.Replace(RepoRoot.Path, "", StringComparison.OrdinalIgnoreCase)), f.Value.ToBlobIdentifier().ToDedupIdentifier());
+            sorted.Add(
+                f.Key.MakePathRelativeTo(RepoRoot)!,
+                f.Value.ToBlobIdentifier().ToDedupIdentifier());
         }
 
         return sorted;

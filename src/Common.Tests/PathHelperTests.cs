@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using BuildXL.Cache.ContentStore.Interfaces.FileSystem;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Microsoft.MSBuildCache.Tests;
@@ -24,8 +25,22 @@ public class PathHelperTests
     [DataRow(@"X:\A\B\C\", @"X:\A\", @"B\C\")]
     [DataRow(@"X:\A\B\C\", @"X:\A", @"B\C\")]
     [DataRow(@"X:\A\B\C", @"X:\A\", @"B\C")]
+    // Long paths
+    [DataRow(
+        @"\\?\D:\a\_work\1\s\src\modules\FileLocksmith\FileLocksmithUI\obj\x64\Release\generated\CommunityToolkit.Mvvm.SourceGenerators\CommunityToolkit.Mvvm.SourceGenerators.RelayCommandGenerator\PowerToys.FileLocksmithUI.ViewModels.MainViewModel.RestartElevated.g.cs",
+        @"\\?\D:\a\_work\1\s\",
+        @"src\modules\FileLocksmith\FileLocksmithUI\obj\x64\Release\generated\CommunityToolkit.Mvvm.SourceGenerators\CommunityToolkit.Mvvm.SourceGenerators.RelayCommandGenerator\PowerToys.FileLocksmithUI.ViewModels.MainViewModel.RestartElevated.g.cs")]
+    [DataRow(
+        @"\\?\D:\a\_work\1\s\src\modules\FileLocksmith\FileLocksmithUI\obj\x64\Release\generated\CommunityToolkit.Mvvm.SourceGenerators\CommunityToolkit.Mvvm.SourceGenerators.RelayCommandGenerator\PowerToys.FileLocksmithUI.ViewModels.MainViewModel.RestartElevated.g.cs",
+        @"D:\a\_work\1\s\",
+        @"src\modules\FileLocksmith\FileLocksmithUI\obj\x64\Release\generated\CommunityToolkit.Mvvm.SourceGenerators\CommunityToolkit.Mvvm.SourceGenerators.RelayCommandGenerator\PowerToys.FileLocksmithUI.ViewModels.MainViewModel.RestartElevated.g.cs")]
     public void MakePathRelative(string path, string basePath, string? expectedResult)
-        => Assert.AreEqual(expectedResult, path.MakePathRelativeTo(basePath));
+    {
+        Assert.AreEqual(expectedResult, path.MakePathRelativeTo(basePath));
+        Assert.AreEqual(
+            expectedResult == null ? null : new RelativePath(expectedResult),
+            new AbsolutePath(path).MakePathRelativeTo(new AbsolutePath(basePath)));
+    }
 
     [DataTestMethod]
     [DataRow(@"X:\A\B\C\file.txt", @"X:\A", true)]

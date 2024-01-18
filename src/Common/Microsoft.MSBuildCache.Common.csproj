@@ -25,6 +25,7 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Microsoft.MSBuildCache.Common.Tests" />
+    <InternalsVisibleTo Include="Microsoft.MSBuildCache.AzurePipelines" />
   </ItemGroup>
   <!-- Signing -->
   <ItemGroup>

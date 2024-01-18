@@ -3,17 +3,27 @@
 
 using System;
 using System.IO;
+using BuildXL.Cache.ContentStore.Interfaces.FileSystem;
 
 namespace Microsoft.MSBuildCache;
 
 internal static class PathHelper
 {
+    public static RelativePath? MakePathRelativeTo(this AbsolutePath path, AbsolutePath basePath)
+    {
+        string? relativePath = path.Path.MakePathRelativeTo(basePath.Path);
+        return relativePath != null ? new RelativePath(relativePath) : null;
+    }
+
     public static string? MakePathRelativeTo(this string path, string basePath)
     {
         ReadOnlySpan<char> pathSpan = Path.GetFullPath(path).AsSpan();
         ReadOnlySpan<char> basePathSpan = Path.GetFullPath(basePath).AsSpan();
 
         basePathSpan = basePathSpan.TrimEnd(Path.DirectorySeparatorChar);
+
+        pathSpan = RemoveLongPathPrefixes(pathSpan);
+        basePathSpan = RemoveLongPathPrefixes(basePathSpan);
 
         if (pathSpan.StartsWith(basePathSpan, StringComparison.OrdinalIgnoreCase))
         {
