@@ -6,11 +6,15 @@ using System.IO;
 
 namespace Microsoft.MSBuildCache;
 
+/// <summary>
+/// Normalizes paths to be portable across machines.
+/// </summary>
+/// <remarks>
+/// "Normalizing" a path will replace well-known base paths with placeholders. This enables the base paths to be different across machines
+/// and thus make the paths portable, at least for the well-known base paths.
+/// </remarks>
 public sealed class PathNormalizer
 {
-    // To assist portability of these results, on serialization replace various well-known absolute path roots
-    // with a placeholder and on deserialization replace the placeholder with the repo root. That way the producing
-    // and consuming builds don't need the repo root to have these roots be the exact same path.
     private const string RepoRootPlaceholder = "{RepoRoot}";
     private const string NugetPackageRootPlaceholder = "{NugetPackageRoot}";
 

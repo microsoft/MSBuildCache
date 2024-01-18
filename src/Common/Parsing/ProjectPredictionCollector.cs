@@ -15,29 +15,24 @@ internal sealed class ProjectPredictionCollector : IProjectPredictionCollector
 {
     private static readonly char[] DirectorySeparatorChars = { Path.DirectorySeparatorChar };
     private readonly string _repoRoot;
-    private readonly ConcurrentDictionary<string, string> _normalizedFileCache;
     private readonly string _projectDirectory;
-    private readonly string _normalizedProjectFilePath;
+    private readonly string _projectFileRelativePath;
 
-    // A cache of paths (relative or absolute) to their absolute form. Used for normalization.
-    // This is scoped per build file since the relative paths are different.
-    // See the NormalizedFileCache for a parser-wide cache of absolute paths to their normalized forms.
+    // A cache of paths (relative or absolute) to their absolute form.
+    // This is scoped per build file since the paths are relative to different directories.
     private readonly Dictionary<string, string> _absolutePathFileCache = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly ConcurrentDictionary<string, PredictedInput> _inputs = new(StringComparer.OrdinalIgnoreCase);
 
-    public ProjectPredictionCollector(
-        ProjectGraphNode node,
-        string repoRoot,
-        ConcurrentDictionary<string, string> normalizedFileCache)
+    public ProjectPredictionCollector(ProjectGraphNode node, string repoRoot)
     {
         Node = node;
         _repoRoot = repoRoot;
-        _normalizedFileCache = normalizedFileCache;
 
         string projectFilePath = node.ProjectInstance.FullPath;
         _projectDirectory = Path.GetDirectoryName(projectFilePath)!;
-        _normalizedProjectFilePath = NormalizePath(projectFilePath) ?? throw new ArgumentException($"Project \"{projectFilePath}\" is not under the repo root \"{repoRoot}\"", nameof(node));
+
+        _projectFileRelativePath = projectFilePath.MakePathRelativeTo(_repoRoot) ?? throw new ArgumentException($"Project \"{projectFilePath}\" is not under the repo root \"{repoRoot}\"", nameof(node));
     }
 
     public ProjectGraphNode Node { get; }
@@ -51,29 +46,18 @@ internal sealed class ProjectPredictionCollector : IProjectPredictionCollector
             inputs[inputIndex++] = kvp.Value;
         }
 
-        return new ParserInfo(_normalizedProjectFilePath, inputs);
+        return new ParserInfo(_projectFileRelativePath, inputs);
     }
 
     public void AddInputFile(string path, ProjectInstance projectInstance, string predictorName)
     {
-        string? normalizedPath = NormalizePath(path);
-        if (normalizedPath == null)
-        {
-            return;
-        }
-
-        AddInput(normalizedPath, predictorName);
+        string absolutePath = GetFullPath(path);
+        AddInput(absolutePath, predictorName);
     }
 
     public void AddInputDirectory(string path, ProjectInstance projectInstance, string predictorName)
     {
-        string? normalizedDirPath = NormalizePath(path);
-        if (normalizedDirPath == null)
-        {
-            return;
-        }
-
-        string absoluteDirPath = Path.Combine(_repoRoot, normalizedDirPath);
+        string absoluteDirPath = GetFullPath(path);
         if (!Directory.Exists(absoluteDirPath))
         {
             // Ignore inputs to output directories which don't exist
@@ -96,20 +80,19 @@ internal sealed class ProjectPredictionCollector : IProjectPredictionCollector
         // No need to track these
     }
 
-    private void AddInput(string normalizedPath, string predictorName)
+    private void AddInput(string absolutePath, string predictorName)
     {
-        PredictedInput input = _inputs.GetOrAdd(normalizedPath, static path => new PredictedInput(path));
+        PredictedInput input = _inputs.GetOrAdd(absolutePath, static path => new PredictedInput(path));
         input.AddPredictorName(predictorName);
     }
 
     /// <summary>
-    /// Normalizes an absolute file path into an repository-relative path, if the path is under the repository root. Otherwise, null is returned.
+    /// Gets the full path of a path which may be absolute or project-relative.
     /// </summary>
     /// <param name="path">An absolute or project-relative file path</param>
-    /// <returns>The normalized file path.</returns>
-    private string? NormalizePath(string path)
+    /// <returns>The absolute file path.</returns>
+    private string GetFullPath(string path)
     {
-        // Make the path absolute if needed.
         if (!_absolutePathFileCache.TryGetValue(path, out string? absolutePath))
         {
             absolutePath = path;
@@ -133,23 +116,6 @@ internal sealed class ProjectPredictionCollector : IProjectPredictionCollector
             _absolutePathFileCache.Add(path, absolutePath);
         }
 
-        // Only consider files in the repository
-        if (!absolutePath.StartsWith(_repoRoot, StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        // Normalize the path
-        if (!_normalizedFileCache.TryGetValue(absolutePath, out string? normalizedPath))
-        {
-            // Make repository-relative
-            normalizedPath = absolutePath.Equals(_repoRoot, StringComparison.OrdinalIgnoreCase)
-                ? string.Empty
-                : absolutePath.Substring(_repoRoot.Length + 1);
-
-            _normalizedFileCache.TryAdd(absolutePath, normalizedPath);
-        }
-
-        return normalizedPath;
+        return absolutePath;
     }
 }

@@ -31,6 +31,7 @@ public sealed class NodeBuildResult
     }
 
     // Use a sorted dictionary so the JSON output is deterministically sorted and easier to compare build-to-build.
+    // These paths are repo-relative.
     [JsonConverter(typeof(SortedDictionaryConverter))]
     public SortedDictionary<string, ContentHash> Outputs { get; }
 

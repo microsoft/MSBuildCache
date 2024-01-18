@@ -8,7 +8,7 @@ public interface IInputHasher
     /// <summary>
     /// Check if a file path is in the repository.
     /// </summary>
-    bool ContainsPath(string relativePath);
+    bool ContainsPath(string absolutePath);
 
     /// <summary>
     /// Return a hash value for the path.
@@ -16,5 +16,5 @@ public interface IInputHasher
     /// <returns>
     /// Returns null if no matching files are found.
     /// </returns>
-    byte[]? GetHash(string relativePath);
+    byte[]? GetHash(string absolutePath);
 }

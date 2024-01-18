@@ -10,12 +10,12 @@ internal sealed class PredictedInput
 {
     private readonly List<string> _predictorNames = new(1);
 
-    public PredictedInput(string relativePath)
+    public PredictedInput(string absolutePath)
     {
-        RelativePath = relativePath;
+        AbsolutePath = absolutePath;
     }
 
-    public string RelativePath { get; }
+    public string AbsolutePath { get; }
 
     public IReadOnlyList<string> PredictorNames => _predictorNames;
 

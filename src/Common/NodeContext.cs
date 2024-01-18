@@ -21,15 +21,15 @@ public sealed class NodeContext
     public NodeContext(
         string baseLogDirectory,
         ProjectGraphNode node,
-        string normalizedProjectFilePath,
+        string projectFileRelativePath,
         IReadOnlyDictionary<string, string> globalProperties,
         IReadOnlyList<string> inputs,
         HashSet<string> targetNames)
     {
-        Id = GenerateId(normalizedProjectFilePath, node);
+        Id = GenerateId(projectFileRelativePath, node);
         _logDirectory = Path.Combine(baseLogDirectory, Id);
         Node = node;
-        NormalizedProjectFilePath = normalizedProjectFilePath;
+        ProjectFileRelativePath = projectFileRelativePath;
         GlobalProperties = globalProperties;
         Inputs = inputs;
         TargetNames = targetNames;
@@ -54,7 +54,7 @@ public sealed class NodeContext
 
     public ProjectGraphNode Node { get; }
 
-    public string NormalizedProjectFilePath { get; }
+    public string ProjectFileRelativePath { get; }
 
     public IReadOnlyDictionary<string, string> GlobalProperties { get; }
 
@@ -85,7 +85,7 @@ public sealed class NodeContext
     /// <summary>
     /// Generate a stable Id which we can use for sorting and comparison purposes across builds.
     /// </summary>
-    private static string GenerateId(string normalizedProjectFilePath, ProjectGraphNode node)
+    private static string GenerateId(string projectFileRelativePath, ProjectGraphNode node)
     {
         SortedDictionary<string, string> sortedProperties = new(node.ProjectInstance.GlobalProperties, StringComparer.OrdinalIgnoreCase);
 
@@ -107,7 +107,7 @@ public sealed class NodeContext
         hasher.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
         byte[] hash = hasher.Hash!;
 
-        string id = $"{normalizedProjectFilePath}_{Convert.ToBase64String(hash)}";
+        string id = $"{projectFileRelativePath}_{Convert.ToBase64String(hash)}";
 
         // Avoid casing issues
         id = id.ToUpperInvariant();

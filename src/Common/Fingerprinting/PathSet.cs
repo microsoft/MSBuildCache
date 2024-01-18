@@ -13,6 +13,9 @@ public sealed class PathSet : IEquatable<PathSet>
         FilesRead = filesRead;
     }
 
+    /// <summary>
+    /// Gets the set of files read which were not predicted. These paths are normalized.
+    /// </summary>
     public IReadOnlyList<string> FilesRead { get; }
 
     public bool Equals(PathSet? other)
