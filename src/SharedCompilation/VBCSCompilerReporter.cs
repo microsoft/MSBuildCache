@@ -9,6 +9,8 @@ using System.Diagnostics;
 #endif
 using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Reflection.Emit;
 using Microsoft.Build.Experimental.FileAccess;
 using Microsoft.Build.Framework;
 using Microsoft.CodeAnalysis;
@@ -20,8 +22,6 @@ namespace Microsoft.MSBuildCache.SharedCompilation;
 /// </summary>
 internal static class VBCSCompilerReporter
 {
-    private delegate void ReportFileAccessFn(FileAccessData fileAccessData);
-
     /// <summary>
     /// Resolve and report file accesses given the <paramref name="language"/>, <paramref name="commandLineArguments"/>,
     /// and <paramref name="projectFile"/> of a project.
@@ -221,9 +221,26 @@ internal static class VBCSCompilerReporter
     /// </summary>
     private sealed class AccessRegistrar
     {
+        private delegate void ReportFileAccessFn(FileAccessData fileAccessData);
+
+        private delegate FileAccessData CreateFileAccessFn(
+            ReportedFileOperation operation,
+            RequestedAccess requestedAccess,
+            uint processId,
+            uint id,
+            uint correlationId,
+            uint error,
+            DesiredAccess desiredAccess,
+            FlagsAndAttributes flagsAndAttributes,
+            string path,
+            string processArgs,
+            bool isAnAugmentedFileAccess);
+
         private readonly string _basePath;
 
         private readonly ReportFileAccessFn _reportFileAccess;
+
+        private readonly CreateFileAccessFn _createFileAccess;
 
         private static readonly uint ProcessId = (uint)
 #if NET472
@@ -240,6 +257,57 @@ internal static class VBCSCompilerReporter
             // Use reflection to get the ReportFileAccess method since it's not exposed.
             // TODO: Once there is a proper API for this, use it.
             _reportFileAccess = (ReportFileAccessFn)Delegate.CreateDelegate(typeof(ReportFileAccessFn), engineServices, "ReportFileAccess");
+
+            ConstructorInfo fileAccessDataCtor = typeof(FileAccessData).GetConstructors()[0];
+            ParameterInfo[] fileAccessDataCtorParams = fileAccessDataCtor.GetParameters();
+            if (fileAccessDataCtorParams.Length == 9)
+            {
+                // This is the one we compiled against so just use it.
+                _createFileAccess = (
+                    ReportedFileOperation operation,
+                    RequestedAccess requestedAccess,
+                    uint processId,
+                    uint id,
+                    uint correlationId,
+                    uint error,
+                    DesiredAccess desiredAccess,
+                    FlagsAndAttributes flagsAndAttributes,
+                    string path,
+                    string processArgs,
+                    bool isAnAugmentedFileAccess)
+                    => new FileAccessData(operation, requestedAccess, processId, error, desiredAccess, flagsAndAttributes, path, processArgs, isAnAugmentedFileAccess);
+            }
+            else if (fileAccessDataCtorParams.Length == 11)
+            {
+                // Adjust to a breaking change made in MSBuild to the FileAccessData ctor. See: https://github.com/dotnet/msbuild/pull/9615
+                // Create a dynamic method which basically just invokes the ctor with all the params from the CreateFileAccessFn delegate.
+                DynamicMethod dynamicMethod = new(
+                    name: string.Empty,
+                    returnType: typeof(FileAccessData),
+                    parameterTypes: fileAccessDataCtorParams.Select(param => param.ParameterType).ToArray(),
+                    owner: typeof(FileAccessData));
+
+                ILGenerator il = dynamicMethod.GetILGenerator();
+                il.Emit(OpCodes.Ldarg_0);
+                il.Emit(OpCodes.Ldarg_1);
+                il.Emit(OpCodes.Ldarg_2);
+                il.Emit(OpCodes.Ldarg_3);
+                il.Emit(OpCodes.Ldarg_S, 4);
+                il.Emit(OpCodes.Ldarg_S, 5);
+                il.Emit(OpCodes.Ldarg_S, 6);
+                il.Emit(OpCodes.Ldarg_S, 7);
+                il.Emit(OpCodes.Ldarg_S, 8);
+                il.Emit(OpCodes.Ldarg_S, 9);
+                il.Emit(OpCodes.Ldarg_S, 10);
+                il.Emit(OpCodes.Newobj, fileAccessDataCtor);
+                il.Emit(OpCodes.Ret);
+
+                _createFileAccess = (CreateFileAccessFn)dynamicMethod.CreateDelegate(typeof(CreateFileAccessFn));
+            }
+            else
+            {
+                throw new MissingMethodException("Could not find supported constructor for FileAccessData");
+            }
         }
 
         public void RegisterOutput(string? filePath) => RegisterAccess(filePath, RequestedAccess.Write, DesiredAccess.GENERIC_WRITE);
@@ -270,11 +338,13 @@ internal static class VBCSCompilerReporter
                 return;
             }
 
-            FileAccessData fileAccessData = new(
+            FileAccessData fileAccessData = _createFileAccess(
                 ReportedFileOperation.CreateFile,
                 requestedAccess,
                 ProcessId,
-                0,
+                id: 0,
+                correlationId: 0,
+                error: 0,
                 desiredAccess,
                 FlagsAndAttributes.FILE_ATTRIBUTE_NORMAL,
                 MakeAbsoluteIfNeeded(filePath!),
