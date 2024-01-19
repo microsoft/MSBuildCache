@@ -33,7 +33,7 @@ public abstract class CacheClient : ICacheClient
     private readonly OutputHasher _outputHasher;
     private readonly ConcurrentDictionary<NodeContext, Task> _publishingTasks = new();
     private readonly ConcurrentDictionary<NodeContext, Task> _materializationTasks = new();
-    private readonly ConcurrentDictionary<AbsolutePath, bool> _directoryCreationCache = new();
+    private readonly ConcurrentDictionary<string, bool> _directoryCreationCache = new();
     private readonly IContentHasher _hasher;
     private readonly IFingerprintFactory _fingerprintFactory;
     private readonly INodeContextRepository _nodeContextRepository;
@@ -44,7 +44,7 @@ public abstract class CacheClient : ICacheClient
         Context rootContext,
         IFingerprintFactory fingerprintFactory,
         IContentHasher hasher,
-        AbsolutePath repoRoot,
+        string repoRoot,
         INodeContextRepository nodeContextRepository,
         Func<string, FileRealizationMode> getFileRealizationMode,
         ICache localCache,
@@ -89,7 +89,7 @@ public abstract class CacheClient : ICacheClient
 
     protected Context RootContext { get; }
 
-    protected AbsolutePath RepoRoot { get; }
+    protected string RepoRoot { get; }
 
     protected Selector EmptySelector { get; }
 
@@ -109,7 +109,7 @@ public abstract class CacheClient : ICacheClient
     protected abstract Task AddNodeAsync(
         Context context,
         StrongFingerprint fingerprint,
-        IReadOnlyDictionary<AbsolutePath, ContentHash> outputs,
+        IReadOnlyDictionary<string, ContentHash> outputs,
         (ContentHash hash, byte[] bytes) nodeBuildResultBytes,
         (ContentHash hash, byte[] bytes)? pathSetBytes,
         CancellationToken cancellationToken);
@@ -127,7 +127,7 @@ public abstract class CacheClient : ICacheClient
     protected interface ICacheEntry : IDisposable
     {
         Task<Stream?> GetNodeBuildResultAsync(Context context, CancellationToken cancellationToken);
-        Task PlaceFilesAsync(Context context, IReadOnlyDictionary<AbsolutePath, ContentHash> files, CancellationToken cancellationToken);
+        Task PlaceFilesAsync(Context context, IReadOnlyDictionary<string, ContentHash> files, CancellationToken cancellationToken);
     }
 
     protected async Task ShutdownCacheAsync(ICache cache)
@@ -189,16 +189,16 @@ public abstract class CacheClient : ICacheClient
         }
     }
 
-    protected void CreateParentDirectory(AbsolutePath filePath)
+    protected void CreateParentDirectory(string filePath)
     {
-        AbsolutePath? parentDirectory = filePath.Parent;
+        string? parentDirectory = Path.GetDirectoryName(filePath);
         if (parentDirectory is not null)
         {
             _directoryCreationCache.GetOrAdd(
                 parentDirectory,
                 dir =>
                 {
-                    Directory.CreateDirectory(dir.Path);
+                    Directory.CreateDirectory(dir);
                     return true;
                 });
         }
@@ -299,8 +299,8 @@ public abstract class CacheClient : ICacheClient
             pathSetBytes = null;
         }
 
-        Dictionary<AbsolutePath, ContentHash> outputs = nodeBuildResult.Outputs.ToDictionary(
-            kvp => RepoRoot / kvp.Key,
+        Dictionary<string, ContentHash> outputs = nodeBuildResult.Outputs.ToDictionary(
+            kvp => Path.Combine(RepoRoot, kvp.Key),
             kvp => kvp.Value);
 
         Fingerprint? weakFingerprint = _fingerprintFactory.GetWeakFingerprint(nodeContext);
@@ -396,7 +396,7 @@ public abstract class CacheClient : ICacheClient
 
         Func<CancellationToken, Task> placeFilesAsync = (ct) => cacheEntry.PlaceFilesAsync(
             context,
-            nodeBuildResult.Outputs.ToDictionary(o => RepoRoot / o.Key, o => o.Value),
+            nodeBuildResult.Outputs.ToDictionary(o => Path.Combine(RepoRoot, o.Key), o => o.Value),
             ct);
 
         if (_enableAsyncMaterialization)

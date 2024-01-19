@@ -30,7 +30,7 @@ namespace Microsoft.MSBuildCache.Caching;
 
 public sealed class CasCacheClient : CacheClient
 {
-    private readonly record struct PlaceFileOperation(ContentHash Hash, AbsolutePath FilePath, PlaceFileResult Result);
+    private readonly record struct PlaceFileOperation(ContentHash Hash, string FilePath, PlaceFileResult Result);
 
     private readonly ConcurrentDictionary<ContentHash, Task<PutFileOperation>> _putRemoteTaskCache = new();
 
@@ -46,7 +46,7 @@ public sealed class CasCacheClient : CacheClient
         ICacheSession localCacheSession,
         (ICache cache, ICacheSession session, TwoLevelCacheConfiguration config)? remoteCache,
         IContentHasher hasher,
-        AbsolutePath repoRoot,
+        string repoRoot,
         INodeContextRepository nodeContextRepository,
         Func<string, FileRealizationMode> getFileRealizationMode,
         int maxConcurrentCacheContentOperations,
@@ -112,16 +112,16 @@ public sealed class CasCacheClient : CacheClient
     protected override async Task AddNodeAsync(
         Context context,
         StrongFingerprint fingerprint,
-        IReadOnlyDictionary<AbsolutePath, ContentHash> outputs,
+        IReadOnlyDictionary<string, ContentHash> outputs,
         (ContentHash hash, byte[] bytes) nodeBuildResultBytes,
         (ContentHash hash, byte[] bytes)? pathSetBytes,
         CancellationToken cancellationToken)
     {
         // Make a reverse lookup
-        Dictionary<ContentHash, AbsolutePath> contentAbsolutePaths = new(outputs.Count);
-        foreach (KeyValuePair<AbsolutePath, ContentHash> kvp in outputs)
+        Dictionary<ContentHash, string> contentAbsolutePaths = new(outputs.Count);
+        foreach (KeyValuePair<string, ContentHash> kvp in outputs)
         {
-            AbsolutePath filePath = kvp.Key;
+            string filePath = kvp.Key;
             ContentHash contentHash = kvp.Value;
             contentAbsolutePaths.TryAdd(contentHash, filePath);
         }
@@ -314,13 +314,13 @@ public sealed class CasCacheClient : CacheClient
             }
         }
 
-        public async Task PlaceFilesAsync(Context context, IReadOnlyDictionary<AbsolutePath, ContentHash> files, CancellationToken cancellationToken)
+        public async Task PlaceFilesAsync(Context context, IReadOnlyDictionary<string, ContentHash> files, CancellationToken cancellationToken)
         {
             // Place all the files on disk
             List<Task<PlaceFileOperation>> placeFileTasks = new(files.Count);
-            foreach (KeyValuePair<AbsolutePath, ContentHash> kvp in files)
+            foreach (KeyValuePair<string, ContentHash> kvp in files)
             {
-                AbsolutePath filePath = kvp.Key;
+                string filePath = kvp.Key;
                 ContentHash contentHash = kvp.Value;
 
                 Task<PlaceFileOperation> placeResultTask = _casCacheClient.PutOrPlaceFileGate.GatedOperationAsync(
@@ -399,24 +399,24 @@ public sealed class CasCacheClient : CacheClient
         Context context,
         IContentSession cacheSession,
         ContentHash contentHash,
-        AbsolutePath filePath,
+        string filePath,
         CancellationToken cancellationToken)
     {
         return await cacheSession.PutFileAsync(
             context,
             contentHash,
-            filePath,
-            GetFileRealizationMode(filePath.Path),
+            new AbsolutePath(filePath),
+            GetFileRealizationMode(filePath),
             cancellationToken);
     }
 
     private async Task<PlaceFileResult> PlaceFileCoreAsync(
         Context context,
         ContentHash contentHash,
-        AbsolutePath filePath,
+        string filePath,
         CancellationToken cancellationToken)
     {
-        FileRealizationMode realizationMode = GetFileRealizationMode(filePath.Path);
+        FileRealizationMode realizationMode = GetFileRealizationMode(filePath);
         FileAccessMode accessMode = realizationMode == FileRealizationMode.CopyNoVerify
             ? FileAccessMode.Write
             : FileAccessMode.ReadOnly;
@@ -426,7 +426,7 @@ public sealed class CasCacheClient : CacheClient
         PlaceFileResult placeResult = await _twoLevelCacheSession.PlaceFileAsync(
             context,
             contentHash,
-            filePath,
+            new AbsolutePath(filePath),
             accessMode,
             FileReplacementMode.ReplaceExisting,
             realizationMode,
