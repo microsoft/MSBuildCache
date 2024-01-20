@@ -1,3 +1,6 @@
 <Project>
   <!-- Prevent the test projects from being affected by the root files -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
 </Project>
