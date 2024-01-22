@@ -142,6 +142,7 @@ jobs:
 
 - job: E2ETestMSBuildRepo
   displayName: E2E Tests using tip of MSBuild repo
+  condition: false # Disable until this is merged: https://github.com/dotnet/msbuild/pull/9673
   dependsOn: Build
   variables:
     MSBuildPath: $(Build.SourcesDirectory)\msbuild\artifacts\bin\bootstrap\net472\MSBuild\Current\Bin\amd64\MSBuild.exe
