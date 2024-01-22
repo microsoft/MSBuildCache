@@ -133,12 +133,22 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         VssBasicCredential token = AzDOHelpers.GetCredentials();
         Uri artifacts = AzDOHelpers.GetServiceUriFromEnv("artifacts");
 
-        var settings = new VssHttpRequestSettings(AzDOHelpers.SessionGuid);
+        int timeoutSeconds = Environment.GetEnvironmentVariable("MSBUILDCACHE_PIPELINECACHING_HTTP_TIMEOUT") switch
+        {
+            string s when int.TryParse(s, out int i) => i,
+            _ => 10,
+        };
+
+        var settings = new VssHttpRequestSettings(AzDOHelpers.SessionGuid)
+        {
+            SendTimeout = TimeSpan.FromSeconds(timeoutSeconds),
+        };
 
         _cacheClient = new PipelineCacheHttpClient(artifacts, token, settings);
 
         Uri blob = AzDOHelpers.GetServiceUriFromEnv("vsblob");
         _dedupHttpClient = new DedupStoreHttpClient(blob, token, settings);
+        _dedupHttpClient.SetRedirectTimeout(timeoutSeconds);
 
         // https://dev.azure.com/mseng/1ES/_workitems/edit/2060777
         if (hasher.Info.HashType == HashType.Dedup1024K)
