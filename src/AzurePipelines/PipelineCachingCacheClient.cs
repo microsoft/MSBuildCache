@@ -135,12 +135,22 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         VssBasicCredential token = AzDOHelpers.GetCredentials();
         Uri artifacts = AzDOHelpers.GetServiceUriFromEnv("artifacts");
 
-        var settings = new VssHttpRequestSettings(AzDOHelpers.SessionGuid);
+        int timeoutSeconds = Environment.GetEnvironmentVariable("MSBUILDCACHE_PIPELINECACHING_HTTP_TIMEOUT") switch
+        {
+            string s when int.TryParse(s, out int i) => i,
+            _ => 10,
+        };
+
+        var settings = new VssHttpRequestSettings(AzDOHelpers.SessionGuid)
+        {
+            SendTimeout = TimeSpan.FromSeconds(timeoutSeconds),
+        };
 
         _cacheClient = new PipelineCacheHttpClient(artifacts, token, settings);
 
         Uri blob = AzDOHelpers.GetServiceUriFromEnv("vsblob");
         _dedupHttpClient = new DedupStoreHttpClient(blob, token, settings);
+        _dedupHttpClient.SetRedirectTimeout(timeoutSeconds);
 
         // https://dev.azure.com/mseng/1ES/_workitems/edit/2060777
         if (hasher.Info.HashType == HashType.Dedup1024K)
@@ -150,7 +160,13 @@ internal sealed class PipelineCachingCacheClient : CacheClient
 
         var dedupHttpClientWithCache = new DedupStoreHttpClientWithCache(_dedupHttpClient, localCAS, logger, cacheChunks: true, cacheNodes: true);
 
-        var cacheClientContext = new DedupStoreClientContext(maxParallelism: 128);
+        int maxParallelism = Environment.GetEnvironmentVariable("MSBUILDCACHE_PIPELINECACHING_HTTP_PARALLELISM") switch
+        {
+            string s when int.TryParse(s, out int i) => i,
+            _ => 128,
+        };
+
+        var cacheClientContext = new DedupStoreClientContext(maxParallelism);
         _dedupClient = new DedupStoreClientWithDataport(dedupHttpClientWithCache, cacheClientContext, hasher.Info.HashType, canRedirect: true);
 
         _manifestClient = new DedupManifestArtifactClient(
