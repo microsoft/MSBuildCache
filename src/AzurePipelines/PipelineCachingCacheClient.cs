@@ -158,7 +158,13 @@ internal sealed class PipelineCachingCacheClient : CacheClient
 
         var dedupHttpClientWithCache = new DedupStoreHttpClientWithCache(_dedupHttpClient, localCAS, logger, cacheChunks: true, cacheNodes: true);
 
-        var cacheClientContext = new DedupStoreClientContext(maxParallelism: 128);
+        int maxParallelism = Environment.GetEnvironmentVariable("MSBUILDCACHE_PIPELINECACHING_HTTP_PARALLELISM") switch
+        {
+            string s when int.TryParse(s, out int i) => i,
+            _ => 128,
+        };
+
+        var cacheClientContext = new DedupStoreClientContext(maxParallelism);
         _dedupClient = new DedupStoreClientWithDataport(dedupHttpClientWithCache, cacheClientContext, hasher.Info.HashType, canRedirect: true);
 
         _manifestClient = new DedupManifestArtifactClient(
