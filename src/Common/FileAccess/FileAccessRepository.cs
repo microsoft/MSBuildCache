@@ -137,7 +137,7 @@ internal sealed class FileAccessRepository : IDisposable
 
                 uint processId = fileAccessData.ProcessId;
                 RequestedAccess requestedAccess = fileAccessData.RequestedAccess;
-                string path = PathHelper.RemoveLongPathPrefixes(fileAccessData.Path.AsSpan()).ToString();
+                string path = PathHelper.RemoveLongPathPrefixes(fileAccessData.Path);
                 uint error = fileAccessData.Error;
 
                 if (operation == ReportedFileOperation.Process)
