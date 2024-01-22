@@ -63,6 +63,8 @@ namespace Microsoft.MSBuildCache.AzurePipelines;
 internal sealed class PipelineCachingCacheClient : CacheClient
 #pragma warning restore CS1570 // XML comment has badly formed XML
 {
+    ////private readonly record struct ContentHashWithPath(ContentHash Hash, string Path);
+
     private const string InternalMetadataPathPrefix = "/???";
 
     private const string NodeBuildResultRelativePath = $"{InternalMetadataPathPrefix}/NodeBuildResult";
@@ -93,7 +95,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         IContentSession localCAS,
         ILogger logger,
         string universe,
-        AbsolutePath repoRoot,
+        string repoRoot,
         INodeContextRepository nodeContextRepository,
         Func<string, FileRealizationMode> getFileRealizationMode,
         int maxConcurrentCacheContentOperations,
@@ -163,7 +165,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
     protected override async Task AddNodeAsync(
         Context context,
         StrongFingerprint fingerprint,
-        IReadOnlyDictionary<AbsolutePath, ContentHash> outputs,
+        IReadOnlyDictionary<string, ContentHash> outputs,
         (ContentHash hash, byte[] bytes) nodeBuildResultBytes,
         (ContentHash hash, byte[] bytes)? pathSetBytes,
         CancellationToken cancellationToken)
@@ -208,39 +210,39 @@ internal sealed class PipelineCachingCacheClient : CacheClient
 
                 // 2. Link out unique content to the temp folder
 
-                Dictionary<ContentHash, AbsolutePath> tempFilesPerHash = outputs.Values.Distinct().ToDictionary(
+                Dictionary<ContentHash, string> tempFilesPerHash = outputs.Values.Distinct().ToDictionary(
                     hash => hash,
                     hash =>
                     {
                         string tempFilePath = Path.Combine(TempFolder, Guid.NewGuid().ToString("N") + ".tmp");
                         tempFilePaths.Add(tempFilePath);
-                        return new AbsolutePath(tempFilePath);
+                        return tempFilePath;
                     });
 
                 List<ContentHashWithPath> tempFiles = tempFilesPerHash
-                    .Select(kvp => new ContentHashWithPath(kvp.Key, kvp.Value))
+                    .Select(kvp => new ContentHashWithPath(kvp.Key, new AbsolutePath(kvp.Value)))
                     .ToList();
 
-                Dictionary<AbsolutePath, PlaceFileResult> placeResults = await TryPlaceFilesFromCacheAsync(context, tempFiles, cancellationToken);
+                Dictionary<string, PlaceFileResult> placeResults = await TryPlaceFilesFromCacheAsync(context, tempFiles, cancellationToken);
                 foreach (PlaceFileResult placeResult in placeResults.Values)
                 {
                     placeResult.ThrowIfFailure();
                 }
 
                 // 3. map all the relative paths to the temp files
-                foreach (KeyValuePair<AbsolutePath, ContentHash> output in outputs)
+                foreach (KeyValuePair<string, ContentHash> output in outputs)
                 {
-                    string relativePath = output.Key.Path.Replace(RepoRoot.Path, "", StringComparison.OrdinalIgnoreCase);
-                    extras.Add(relativePath.Replace("\\", "/", StringComparison.Ordinal), new FileInfo(tempFilesPerHash[output.Value].Path));
+                    string relativePath = output.Key.MakePathRelativeTo(RepoRoot)!;
+                    extras.Add(relativePath.Replace("\\", "/", StringComparison.Ordinal), new FileInfo(tempFilesPerHash[output.Value]));
                 }
             }
             else
             {
-                infos = outputs.Keys.Select(f => new FileInfo(f.Path)).ToArray();
+                infos = outputs.Keys.Select(f => new FileInfo(f)).ToArray();
             }
 
             var result = await WithHttpRetries(
-                () => _manifestClient.PublishAsync(RepoRoot.Path, infos, extras, new ArtifactPublishOptions(), manifestFileOutputPath: null, cancellationToken),
+                () => _manifestClient.PublishAsync(RepoRoot, infos, extras, new ArtifactPublishOptions(), manifestFileOutputPath: null, cancellationToken),
                 context: $"Publishing content for {fingerprint}",
                 cancellationToken);
 
@@ -371,15 +373,15 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         }
     }
 
-    private async Task<Dictionary<AbsolutePath, PlaceFileResult>> TryPlaceFilesFromCacheAsync(Context context, IReadOnlyList<ContentHashWithPath> files, CancellationToken cancellationToken)
+    private async Task<Dictionary<string, PlaceFileResult>> TryPlaceFilesFromCacheAsync(Context context, List<ContentHashWithPath> files, CancellationToken cancellationToken)
     {
         // cache expects destination directories already exist
         foreach (ContentHashWithPath file in files)
         {
-            CreateParentDirectory(file.Path);
+            CreateParentDirectory(file.Path.Path);
         }
 
-        Dictionary<AbsolutePath, PlaceFileResult> results = new();
+        Dictionary<string, PlaceFileResult> results = new();
         List<ContentHashWithPath> places = new();
 
         foreach (IGrouping<(byte algoId, FileRealizationMode mode), ContentHashWithPath>? filesGroup in files.GroupBy(f => (GetAlgorithmId(f.Hash), GetFileRealizationMode(f.Path.Path))))
@@ -415,7 +417,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
             foreach (Task<Indexed<PlaceFileResult>> resultTask in groupResults)
             {
                 Indexed<PlaceFileResult> result = await resultTask;
-                results.Add(places[result.Index].Path, result.Item);
+                results.Add(places[result.Index].Path.Path, result.Item);
             }
         }
 
@@ -471,7 +473,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         public Task<Stream?> GetNodeBuildResultAsync(Context context, CancellationToken cancellationToken) =>
             Task.FromResult((Stream?)new MemoryStream(_nodeBuildResultBytes));
 
-        public async Task PlaceFilesAsync(Context context, IReadOnlyDictionary<AbsolutePath, ContentHash> files, CancellationToken cancellationToken)
+        public async Task PlaceFilesAsync(Context context, IReadOnlyDictionary<string, ContentHash> files, CancellationToken cancellationToken)
         {
             _client.Tracer.Debug(context, $"Placing manifest `{_manifestId}`.");
 
@@ -480,18 +482,18 @@ internal sealed class PipelineCachingCacheClient : CacheClient
             ThrowIfDifferent(manifestFiles, requestFiles, $"Manifest `{_manifestId}` and PlaceFiles don't match:");
 
             // try to pull whole files from the cache
-            var places = files.Select(f => new ContentHashWithPath(f.Value, f.Key)).ToList();
+            var places = files.Select(f => new ContentHashWithPath(f.Value, new AbsolutePath(f.Key))).ToList();
 
-            Dictionary<AbsolutePath, PlaceFileResult> placeResults = await _client.TryPlaceFilesFromCacheAsync(context, places, cancellationToken);
+            Dictionary<string, PlaceFileResult> placeResults = await _client.TryPlaceFilesFromCacheAsync(context, places, cancellationToken);
 
-            Dictionary<AbsolutePath, ManifestItem> manifestItems = _manifest.Items.ToDictionary(i => _client.RepoRoot / new RelativePath(i.Path), i => i);
+            Dictionary<string, ManifestItem> manifestItems = _manifest.Items.ToDictionary(i => Path.Combine(_client.RepoRoot, i.Path), i => i);
             var itemsToDownload = new List<ManifestItem>();
-            var toAddToCacheAsWholeFile = new Dictionary<ContentHash, AbsolutePath>();
-            foreach (KeyValuePair<AbsolutePath, PlaceFileResult> placeResult in placeResults)
+            var toAddToCacheAsWholeFile = new Dictionary<ContentHash, string>();
+            foreach (KeyValuePair<string, PlaceFileResult> placeResult in placeResults)
             {
                 if (!placeResult.Value.Succeeded)
                 {
-                    AbsolutePath path = placeResult.Key;
+                    string path = placeResult.Key;
                     itemsToDownload.Add(manifestItems[path]);
 
                     ContentHash hash = files[path];
@@ -517,9 +519,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
             await File.WriteAllTextAsync(tempManifestFile.Path, JsonSerializer.Serialize(tempManifest), cancellationToken);
 #endif
 
-            var manifestOptions = DownloadDedupManifestArtifactOptions.CreateWithManifestPath(
-                tempManifestFile.Path,
-                _client.RepoRoot.Path);
+            var manifestOptions = DownloadDedupManifestArtifactOptions.CreateWithManifestPath(tempManifestFile.Path, _client.RepoRoot);
 
             await _client.WithHttpRetries(
                 async () =>
@@ -530,11 +530,11 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                 context: context.ToString()!,
                 cancellationToken);
 
-            foreach (KeyValuePair<ContentHash, AbsolutePath> addToCache in toAddToCacheAsWholeFile)
+            foreach (KeyValuePair<ContentHash, string> addToCache in toAddToCacheAsWholeFile)
             {
                 ContentHash hash = addToCache.Key;
-                AbsolutePath path = addToCache.Value;
-                await _client.LocalCacheSession.PutFileAsync(context, hash, path, _client.GetFileRealizationMode(path.Path), cancellationToken);
+                string path = addToCache.Value;
+                await _client.LocalCacheSession.PutFileAsync(context, hash, new AbsolutePath(path), _client.GetFileRealizationMode(path), cancellationToken);
             }
         }
     }
@@ -610,13 +610,13 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         return sorted;
     }
 
-    private SortedDictionary<RelativePath, DedupIdentifier> CreateNormalizedManifest(IReadOnlyDictionary<AbsolutePath, ContentHash> files)
+    private SortedDictionary<RelativePath, DedupIdentifier> CreateNormalizedManifest(IReadOnlyDictionary<string, ContentHash> files)
     {
         SortedDictionary<RelativePath, DedupIdentifier> sorted = new(RelativePathComparer.Instance);
 
-        foreach (KeyValuePair<AbsolutePath, ContentHash> f in files)
+        foreach (KeyValuePair<string, ContentHash> f in files)
         {
-            sorted.Add(new RelativePath(f.Key.Path.Replace(RepoRoot.Path, "", StringComparison.OrdinalIgnoreCase)), f.Value.ToBlobIdentifier().ToDedupIdentifier());
+            sorted.Add(new RelativePath(f.Key.MakePathRelativeTo(RepoRoot)!), f.Value.ToBlobIdentifier().ToDedupIdentifier());
         }
 
         return sorted;

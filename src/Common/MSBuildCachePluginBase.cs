@@ -44,6 +44,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 {
     private static readonly string PluginAssemblyDirectory = Path.GetDirectoryName(typeof(MSBuildCachePluginBase<TPluginSettings>).Assembly.Location)!;
 
+    // Keys are relative file paths
     private readonly ConcurrentDictionary<string, NodeContext> _outputProducer = new(StringComparer.OrdinalIgnoreCase);
 
     private string? _repoRoot;
@@ -166,13 +167,14 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
     protected virtual async Task<IInputHasher> CreateInputHasherAsync(PluginLoggerBase logger, CancellationToken cancellationToken)
     {
-        if (ContentHasher is null)
+        if (ContentHasher is null
+            || _pathNormalizer is null)
         {
             throw new InvalidOperationException();
         }
 
         IReadOnlyDictionary<string, byte[]> fileHashes = await GetSourceControlFileHashesAsync(logger, cancellationToken);
-        return new InputHasher(ContentHasher, fileHashes);
+        return new InputHasher(ContentHasher, _pathNormalizer, fileHashes);
     }
 
     protected virtual IFingerprintFactory CreateFingerprintFactory()
@@ -192,7 +194,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     protected abstract Task<ICacheClient> CreateCacheClientAsync(PluginLoggerBase logger, CancellationToken cancellationToken);
 
     protected FileRealizationMode GetFileRealizationMode(string path)
-        => IsDuplicateIdenticalOutputAbsolutePath(_pluginLogger!, path) ? FileRealizationMode.CopyNoVerify : FileRealizationMode.Any;
+        => IsDuplicateIdenticalOutputPath(_pluginLogger!, path) ? FileRealizationMode.CopyNoVerify : FileRealizationMode.Any;
 
     public async override Task BeginBuildAsync(CacheContext context, PluginLoggerBase logger, CancellationToken cancellationToken)
     {
@@ -281,11 +283,11 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             string[] inputs = new string[parserInfo.Inputs.Count];
             for (int i = 0; i < inputs.Length; i++)
             {
-                inputs[i] = parserInfo.Inputs[i].RelativePath;
+                inputs[i] = parserInfo.Inputs[i].AbsolutePath;
             }
 
             NodeDescriptor nodeDescriptor = _nodeDescriptorFactory.Create(node.ProjectInstance);
-            NodeContext nodeContext = new(Settings.LogDirectory, node, parserInfo.NormalizedProjectFilePath, nodeDescriptor.GlobalProperties, inputs, targetNames);
+            NodeContext nodeContext = new(Settings.LogDirectory, node, parserInfo.ProjectFileRelativePath, nodeDescriptor.GlobalProperties, inputs, targetNames);
 
             dumpParserInfoTasks.Add(DumpParserInfoAsync(logger, nodeContext, parserInfo));
             nodeContexts.Add(nodeDescriptor, nodeContext);
@@ -498,35 +500,31 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             return;
         }
 
-        List<string> normalizedFilesRead = new();
+        List<string> filesRead = new();
         using var observedInputsWriter = new StreamWriter(Path.Combine(nodeContext.LogDirectory, "observedInputs.txt"));
         foreach (string absolutePath in fileAccesses.Inputs)
         {
-            string? normalizedFilePath = absolutePath.MakePathRelativeTo(_repoRoot!);
-            if (normalizedFilePath == null)
-            {
-                // Ignore inputs outside the repository
-                continue;
-            }
+            filesRead.Add(absolutePath);
 
-            normalizedFilesRead.Add(normalizedFilePath);
+            string normalizedFilePath = _pathNormalizer.Normalize(absolutePath);
             await observedInputsWriter.WriteLineAsync(normalizedFilePath);
 
-            if (_outputProducer.TryGetValue(normalizedFilePath, out NodeContext? producerContext))
+            string? relativeFilePath = absolutePath.MakePathRelativeTo(_repoRoot);
+            if (relativeFilePath != null && _outputProducer.TryGetValue(relativeFilePath, out NodeContext? producerContext))
             {
                 if (!nodeContext.Node.IsDependentOn(producerContext.Node))
                 {
-                    logger.LogWarning($"Project `{nodeContext.Id}` read the output `{normalizedFilePath}` from project `{producerContext.Id}` without having dependency path between the two projects.");
+                    logger.LogWarning($"Project `{nodeContext.Id}` read the output `{relativeFilePath}` from project `{producerContext.Id}` without having dependency path between the two projects.");
                 }
 
-                if (IsDuplicateIdenticalOutputAbsolutePath(logger, absolutePath))
+                if (IsDuplicateIdenticalOutputPath(logger, absolutePath))
                 {
-                    logger.LogMessage($"Project `{nodeContext.Id}` read the output `{normalizedFilePath}` from project `{producerContext.Id}`, but that file may be re-written.");
+                    logger.LogMessage($"Project `{nodeContext.Id}` read the output `{relativeFilePath}` from project `{producerContext.Id}`, but that file may be re-written.");
                 }
             }
         }
 
-        Dictionary<string, string> normalizedOutputPaths = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, string> outputPathToRelativePath = new(StringComparer.OrdinalIgnoreCase);
         using var observedOutputsWriter = new StreamWriter(Path.Combine(nodeContext.LogDirectory, "observedOutputs.txt"));
         foreach (string output in fileAccesses.Outputs)
         {
@@ -554,11 +552,11 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
                     return false;
                 }
 
-                string? normalizedFilePath = output.MakePathRelativeTo(_repoRoot!);
-                if (normalizedFilePath != null)
+                string? relativeFilePath = output.MakePathRelativeTo(_repoRoot!);
+                if (relativeFilePath != null)
                 {
-                    normalizedOutputPaths.Add(output, normalizedFilePath);
-                    await observedOutputsWriter.WriteLineAsync(normalizedFilePath);
+                    outputPathToRelativePath.Add(output, relativeFilePath);
+                    await observedOutputsWriter.WriteLineAsync(relativeFilePath);
                 }
                 else
                 {
@@ -573,7 +571,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             }
         }
 
-        PathSet? pathSet = FingerprintFactory.GetPathSet(nodeContext, normalizedFilesRead);
+        PathSet? pathSet = FingerprintFactory.GetPathSet(nodeContext, filesRead);
 
         if (buildResult.OverallResult != BuildResultCode.Success)
         {
@@ -586,21 +584,21 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         NodeBuildResult nodeBuildResult = await _cacheClient.AddNodeAsync(
             nodeContext,
             pathSet,
-            normalizedOutputPaths.Keys,
+            outputPathToRelativePath.Keys,
             absolutePathToHash =>
             {
-                SortedDictionary<string, ContentHash> outputs = new(StringComparer.OrdinalIgnoreCase);
+                SortedDictionary<string, ContentHash> relativeOutputPaths = new(StringComparer.OrdinalIgnoreCase);
 
                 foreach (KeyValuePair<string, ContentHash> absolutePathAndHash in absolutePathToHash)
                 {
-                    outputs.Add(
-                        normalizedOutputPaths[absolutePathAndHash.Key], // so we map back to normalized paths
+                    relativeOutputPaths.Add(
+                        outputPathToRelativePath[absolutePathAndHash.Key],
                         absolutePathAndHash.Value);
                 }
 
-                CheckForDuplicateOutputs(logger, outputs, nodeContext);
+                CheckForDuplicateOutputs(logger, relativeOutputPaths, nodeContext);
 
-                return NodeBuildResult.FromBuildResult(outputs, buildResult, nodeContext.StartTimeUtc!.Value, nodeContext.EndTimeUtc!.Value, _buildId, _pathNormalizer);
+                return NodeBuildResult.FromBuildResult(relativeOutputPaths, buildResult, nodeContext.StartTimeUtc!.Value, nodeContext.EndTimeUtc!.Value, _buildId, _pathNormalizer);
             },
             cancellationToken);
 
@@ -645,7 +643,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         return nodeContext;
     }
 
-    private static async Task DumpParserInfoAsync(
+    private async Task DumpParserInfoAsync(
         PluginLoggerBase logger,
         NodeContext nodeContext,
         ParserInfo parserInfo)
@@ -658,7 +656,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
             jsonWriter.WriteStartObject();
 
-            jsonWriter.WriteString("normalizedProjectFilePath", parserInfo.NormalizedProjectFilePath);
+            jsonWriter.WriteString("projectFileRelativePath", parserInfo.ProjectFileRelativePath);
 
             jsonWriter.WriteStartArray("inputs");
 
@@ -666,7 +664,8 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             {
                 jsonWriter.WriteStartObject();
 
-                jsonWriter.WriteString("relativePath", input.RelativePath);
+                string normalizedPath = _pathNormalizer!.Normalize(input.AbsolutePath);
+                jsonWriter.WriteString("path", normalizedPath);
 
                 jsonWriter.WriteStartArray("predictorNames");
 
@@ -905,7 +904,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         logger.LogMessage(sb.ToString(), MessageImportance.High);
     }
 
-    private bool IsDuplicateIdenticalOutputAbsolutePath(PluginLoggerBase logger, string absolutePath)
+    private bool IsDuplicateIdenticalOutputPath(PluginLoggerBase logger, string absolutePath)
     {
         if (_identicalDuplicateOutputPatterns != null && _identicalDuplicateOutputPatterns.Count > 0)
         {
@@ -922,50 +921,50 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         return false;
     }
 
-    private void CheckForDuplicateOutputs(PluginLoggerBase logger, IReadOnlyDictionary<string, ContentHash> normalizedFilePathToHash, NodeContext nodeContext)
+    private void CheckForDuplicateOutputs(PluginLoggerBase logger, IReadOnlyDictionary<string, ContentHash> relativeFilePathToHash, NodeContext nodeContext)
     {
-        foreach (KeyValuePair<string, ContentHash> kvp in normalizedFilePathToHash)
+        foreach (KeyValuePair<string, ContentHash> kvp in relativeFilePathToHash)
         {
-            string normalizedFilePath = kvp.Key;
+            string relativeFilePath = kvp.Key;
             ContentHash newHash = kvp.Value;
 
             // If this is the first writer to this path, then we are done.
-            NodeContext previousNode = _outputProducer.GetOrAdd(normalizedFilePath, nodeContext);
+            NodeContext previousNode = _outputProducer.GetOrAdd(relativeFilePath, nodeContext);
             if (previousNode == nodeContext)
             {
                 return;
             }
 
             // This is only allowed if marked as a duplicate-identical output
-            if (!IsDuplicateIdenticalOutputAbsolutePath(logger, Path.Combine(_repoRoot!, normalizedFilePath)))
+            if (!IsDuplicateIdenticalOutputPath(logger, relativeFilePath))
             {
-                logger.LogError($"Node {nodeContext.Id} produced output {normalizedFilePath} which was already produced by another node {_outputProducer[normalizedFilePath].Id}.");
+                logger.LogError($"Node {nodeContext.Id} produced output {relativeFilePath} which was already produced by another node {_outputProducer[relativeFilePath].Id}.");
                 return;
             }
 
             // This should never happen as the previous node is a dependent of this node...
             if (previousNode.BuildResult == null)
             {
-                logger.LogError($"Node {nodeContext.Id} produced output {normalizedFilePath} which was already produced by another node {previousNode.Id}, however the hash of that first output is unknown.");
+                logger.LogError($"Node {nodeContext.Id} produced output {relativeFilePath} which was already produced by another node {previousNode.Id}, however the hash of that first output is unknown.");
                 return;
             }
 
             // compare the hash of the original output to this output and log/error accordingly.
-            ContentHash previousHash = previousNode.BuildResult!.Outputs[normalizedFilePath];
+            ContentHash previousHash = previousNode.BuildResult!.Outputs[relativeFilePath];
             if (previousHash != newHash)
             {
-                logger.LogError($"Node {nodeContext.Id} produced output {normalizedFilePath} with hash {newHash} which was already produced by another node {previousNode.Id} with a different hash {previousHash}.");
+                logger.LogError($"Node {nodeContext.Id} produced output {relativeFilePath} with hash {newHash} which was already produced by another node {previousNode.Id} with a different hash {previousHash}.");
                 return;
             }
 
             // Duplicate-identical outputs are only allowed if there is a strict ordering between the multiple writers.
             if (!nodeContext.Node.IsDependentOn(previousNode.Node))
             {
-                logger.LogWarning($"Node {nodeContext.Id} produced output {normalizedFilePath} which was already produced by another node {previousNode.Id}, but there is no ordering between the two nodes.");
+                logger.LogWarning($"Node {nodeContext.Id} produced output {relativeFilePath} which was already produced by another node {previousNode.Id}, but there is no ordering between the two nodes.");
                 return;
             }
 
-            logger.LogMessage($"Node {nodeContext.Id} produced duplicate-identical output {normalizedFilePath} which was already produced by another node {previousNode.Id}. Allowing as content is the same.");
+            logger.LogMessage($"Node {nodeContext.Id} produced duplicate-identical output {relativeFilePath} which was already produced by another node {previousNode.Id}. Allowing as content is the same.");
         }
     }
 }

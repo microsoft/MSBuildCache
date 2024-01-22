@@ -7,7 +7,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using BuildXL.Cache.ContentStore.Distributed.NuCache;
 using BuildXL.Cache.ContentStore.Hashing;
-using BuildXL.Cache.ContentStore.Interfaces.FileSystem;
 using BuildXL.Cache.ContentStore.Interfaces.Results;
 using BuildXL.Cache.ContentStore.Interfaces.Stores;
 using BuildXL.Cache.ContentStore.Interfaces.Tracing;
@@ -59,7 +58,7 @@ public sealed class MSBuildCacheLocalPlugin : MSBuildCachePluginBase
             cacheSession,
             remoteCache: null,
             ContentHasher,
-            new AbsolutePath(Settings.RepoRoot),
+            Settings.RepoRoot,
             NodeContextRepository,
             GetFileRealizationMode,
             Settings.MaxConcurrentCacheContentOperations,

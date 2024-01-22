@@ -51,7 +51,7 @@ internal sealed class GitFileHashProvider : ISourceControlFileHashProvider
     public async Task<IReadOnlyDictionary<string, byte[]>> GetFileHashesAsync(string repoRoot, CancellationToken cancellationToken)
     {
         // Kick off grabbing the hashes for the "main/root" module
-        Task<Dictionary<string, byte[]>> hashesTask = GetModuleFileHashesAsync(repoRoot, intermediatePath: null, cancellationToken);
+        Task<Dictionary<string, byte[]>> hashesTask = GetModuleFileHashesAsync(repoRoot, cancellationToken);
 
         // The common case is to not have any submodules, so just short-circuit
         if (!File.Exists(Path.Combine(repoRoot, ".gitmodules")))
@@ -70,7 +70,7 @@ internal sealed class GitFileHashProvider : ISourceControlFileHashProvider
 
         // Fetch all submodule file hashes in parallel.
         Task<Dictionary<string, byte[]>>[] subModuleHashesTasks = submodules
-            .Select(submodule => GetModuleFileHashesAsync(repoRoot, submodule, cancellationToken))
+            .Select(submodule => GetModuleFileHashesAsync(Path.Combine(repoRoot, submodule), cancellationToken))
             .ToArray();
 
         Dictionary<string, byte[]> hashes = await hashesTask;
@@ -96,16 +96,13 @@ internal sealed class GitFileHashProvider : ISourceControlFileHashProvider
         return hashes;
     }
 
-    private async Task<Dictionary<string, byte[]>> GetModuleFileHashesAsync(string repoRoot, string? intermediatePath, CancellationToken cancellationToken)
+    private async Task<Dictionary<string, byte[]>> GetModuleFileHashesAsync(string basePath, CancellationToken cancellationToken)
     {
-        // make sure there is a default entry in the dictionary for the current module/repository
-        intermediatePath ??= string.Empty;
-
         return await Git.RunAsync(
             _logger,
-            workingDir: Path.Combine(repoRoot, intermediatePath),
+            workingDir: basePath,
             "ls-files -z -cmos --exclude-standard",
-            (_, stdout) => Task.Run(() => ParseGitLsFiles(intermediatePath, stdout, (filesToRehash, fileHashes) => GitHashObjectAsync(repoRoot, filesToRehash, fileHashes, cancellationToken))),
+            (_, stdout) => Task.Run(() => ParseGitLsFiles(basePath, stdout, (filesToRehash, fileHashes) => GitHashObjectAsync(basePath, filesToRehash, fileHashes, cancellationToken))),
             (exitCode, result) =>
             {
                 if (exitCode != 0)
@@ -119,7 +116,7 @@ internal sealed class GitFileHashProvider : ISourceControlFileHashProvider
     }
 
     internal async Task<Dictionary<string, byte[]>> ParseGitLsFiles(
-        string intermediatePath,
+        string basePath,
         TextReader gitOutput,
         Func<List<string>, Dictionary<string, byte[]>, Task> hasher)
     {
@@ -143,7 +140,7 @@ internal sealed class GitFileHashProvider : ISourceControlFileHashProvider
             if (tabIdx == line.Length) // untracked files are just the path name.
             {
                 line.Replace('/', '\\');
-                string file = Path.Combine(intermediatePath, line.ToString());
+                string file = Path.Combine(basePath, line.ToString());
                 _logger.LogMessage($"Found untracked file {file}.");
                 filesToRehash.Add(file);
                 if (fileHashes.ContainsKey(file))
@@ -155,7 +152,7 @@ internal sealed class GitFileHashProvider : ISourceControlFileHashProvider
             {
                 int pathLength = line.Length - tabIdx - 1;
                 line.Replace('/', '\\', tabIdx + 1, pathLength);
-                string file = Path.Combine(intermediatePath, line.ToString(tabIdx + 1, pathLength));
+                string file = Path.Combine(basePath, line.ToString(tabIdx + 1, pathLength));
                 if (fileHashes.ContainsKey(file))
                 {
                     // If we already saw this it means it's a previously committed/added file that's been modified
@@ -196,27 +193,26 @@ internal sealed class GitFileHashProvider : ISourceControlFileHashProvider
         return fileHashes;
     }
 
-    internal Task GitHashObjectAsync(string repoRoot, List<string> filesToRehash, Dictionary<string, byte[]> filehashes, CancellationToken cancellationToken)
+    internal Task GitHashObjectAsync(string basePath, List<string> filesToRehash, Dictionary<string, byte[]> filehashes, CancellationToken cancellationToken)
     {
         return Git.RunAsync(
             _logger,
-            workingDir: repoRoot,
+            workingDir: basePath,
             "hash-object --stdin-paths",
             async (stdin, stdout) =>
             {
                 foreach (string file in filesToRehash)
                 {
-                    string fileFullLocalPath = Path.Combine(repoRoot, file);
                     string? gitHashOfFile;
 
-                    if (File.Exists(fileFullLocalPath))
+                    if (File.Exists(file))
                     {
-                        await stdin.WriteLineAsync(fileFullLocalPath);
+                        await stdin.WriteLineAsync(file);
                         gitHashOfFile = await stdout.ReadLineAsync();
 
                         if (string.IsNullOrWhiteSpace(gitHashOfFile))
                         {
-                            _logger.LogMessage($"git hash-object returned an empty string for {fileFullLocalPath}. Forcing a cache miss by using a Guid");
+                            _logger.LogMessage($"git hash-object returned an empty string for {file}. Forcing a cache miss by using a Guid");
 
                             // Guids are only 32 characters and git hashes are 40. Prepend 8 characters to match and to generally be recognizable.
                             gitHashOfFile = "bad00000" + Guid.NewGuid().ToString("N");

@@ -6,7 +6,7 @@ using System.IO;
 
 namespace Microsoft.MSBuildCache;
 
-internal static class PathHelper
+public static class PathHelper
 {
     public static string? MakePathRelativeTo(this string path, string basePath)
     {

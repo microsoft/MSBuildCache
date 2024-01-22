@@ -14,29 +14,31 @@ public class InputHasherTests
 {
     private static readonly IContentHasher ContentHasher = HashInfoLookup.Find(HashType.MD5).CreateContentHasher();
 
+    private static readonly PathNormalizer PathNormalizer = new PathNormalizer(@"X:\Repo", @"X:\Nuget");
+
     [TestMethod]
     public void ContainsPath()
     {
         Dictionary<string, byte[]> fileHashes = new(StringComparer.OrdinalIgnoreCase)
         {
-            { "1.txt", new byte[] { 0x01, 0x02, 0x03 } },
-            { "2.txt", new byte[] { 0x04, 0x05, 0x06 } },
-            { "3.txt", new byte[] { 0x07, 0x08, 0x09 } },
+            { @"X:\Repo\1.txt", new byte[] { 0x01, 0x02, 0x03 } },
+            { @"X:\Repo\2.txt", new byte[] { 0x04, 0x05, 0x06 } },
+            { @"X:\Repo\3.txt", new byte[] { 0x07, 0x08, 0x09 } },
         };
-        InputHasher hasher = new(ContentHasher, fileHashes);
+        InputHasher hasher = new(ContentHasher, PathNormalizer, fileHashes);
 
-        Assert.IsTrue(hasher.ContainsPath("1.txt"));
-        Assert.IsTrue(hasher.ContainsPath("2.txt"));
-        Assert.IsTrue(hasher.ContainsPath("3.txt"));
+        Assert.IsTrue(hasher.ContainsPath(@"X:\Repo\1.txt"));
+        Assert.IsTrue(hasher.ContainsPath(@"X:\Repo\2.txt"));
+        Assert.IsTrue(hasher.ContainsPath(@"X:\Repo\3.txt"));
 
-        Assert.IsFalse(hasher.ContainsPath("4.txt"));
-        Assert.IsFalse(hasher.ContainsPath("5.txt"));
-        Assert.IsFalse(hasher.ContainsPath("6.txt"));
+        Assert.IsFalse(hasher.ContainsPath(@"X:\Repo\4.txt"));
+        Assert.IsFalse(hasher.ContainsPath(@"X:\Repo\5.txt"));
+        Assert.IsFalse(hasher.ContainsPath(@"X:\Repo\6.txt"));
 
         // Case doesn't matter
-        Assert.IsTrue(hasher.ContainsPath("1.Txt"));
-        Assert.IsTrue(hasher.ContainsPath("2.tXt"));
-        Assert.IsTrue(hasher.ContainsPath("3.txT"));
+        Assert.IsTrue(hasher.ContainsPath(@"X:\Repo\1.Txt"));
+        Assert.IsTrue(hasher.ContainsPath(@"X:\Repo\2.tXt"));
+        Assert.IsTrue(hasher.ContainsPath(@"X:\Repo\3.txT"));
     }
 
     [TestMethod]
@@ -44,19 +46,19 @@ public class InputHasherTests
     {
         Dictionary<string, byte[]> fileHashes = new(StringComparer.OrdinalIgnoreCase)
         {
-            { "1.txt", new byte[] { 0x01, 0x02, 0x03 } },
-            { "2.txt", new byte[] { 0x04, 0x05, 0x06 } },
-            { "3.txt", new byte[] { 0x07, 0x08, 0x09 } },
+            { @"X:\Repo\1.txt", new byte[] { 0x01, 0x02, 0x03 } },
+            { @"X:\Repo\2.txt", new byte[] { 0x04, 0x05, 0x06 } },
+            { @"X:\Repo\3.txt", new byte[] { 0x07, 0x08, 0x09 } },
         };
-        InputHasher hasher = new(ContentHasher, fileHashes);
+        InputHasher hasher = new(ContentHasher, PathNormalizer, fileHashes);
 
-        Assert.IsNotNull(hasher.GetHash("1.txt"));
-        Assert.IsNotNull(hasher.GetHash("2.txt"));
-        Assert.IsNotNull(hasher.GetHash("3.txt"));
+        Assert.IsNotNull(hasher.GetHash(@"X:\Repo\1.txt"));
+        Assert.IsNotNull(hasher.GetHash(@"X:\Repo\2.txt"));
+        Assert.IsNotNull(hasher.GetHash(@"X:\Repo\3.txt"));
 
-        Assert.IsNull(hasher.GetHash("4.txt"));
-        Assert.IsNull(hasher.GetHash("5.txt"));
-        Assert.IsNull(hasher.GetHash("6.txt"));
+        Assert.IsNull(hasher.GetHash(@"X:\Repo\4.txt"));
+        Assert.IsNull(hasher.GetHash(@"X:\Repo\5.txt"));
+        Assert.IsNull(hasher.GetHash(@"X:\Repo\6.txt"));
 
         foreach (KeyValuePair<string, byte[]> kvp in fileHashes)
         {
@@ -79,15 +81,15 @@ public class InputHasherTests
             }
         }
 
-        CollectionAssert.AreNotEqual(hasher.GetHash("1.txt"), hasher.GetHash("2.txt"));
-        CollectionAssert.AreNotEqual(hasher.GetHash("1.txt"), hasher.GetHash("3.txt"));
+        CollectionAssert.AreNotEqual(hasher.GetHash(@"X:\Repo\1.txt"), hasher.GetHash(@"X:\Repo\2.txt"));
+        CollectionAssert.AreNotEqual(hasher.GetHash(@"X:\Repo\1.txt"), hasher.GetHash(@"X:\Repo\3.txt"));
 
         // Case doesn't matter
-        CollectionAssert.AreEqual(GetHashFreshHasher("1.txt"), GetHashFreshHasher("1.Txt"));
-        CollectionAssert.AreEqual(GetHashFreshHasher("2.txt"), GetHashFreshHasher("2.tXt"));
-        CollectionAssert.AreEqual(GetHashFreshHasher("3.txt"), GetHashFreshHasher("3.txT"));
+        CollectionAssert.AreEqual(GetHashFreshHasher(@"X:\Repo\1.txt"), GetHashFreshHasher(@"X:\Repo\1.Txt"));
+        CollectionAssert.AreEqual(GetHashFreshHasher(@"X:\Repo\2.txt"), GetHashFreshHasher(@"X:\Repo\2.tXt"));
+        CollectionAssert.AreEqual(GetHashFreshHasher(@"X:\Repo\3.txt"), GetHashFreshHasher(@"X:\Repo\3.txT"));
 
         // Using a new hasher to avoid caching
-        byte[]? GetHashFreshHasher(string relativePath) => new InputHasher(ContentHasher, fileHashes).GetHash(relativePath);
+        byte[]? GetHashFreshHasher(string relativePath) => new InputHasher(ContentHasher, PathNormalizer, fileHashes).GetHash(relativePath);
     }
 }

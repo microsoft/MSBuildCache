@@ -140,14 +140,20 @@ internal sealed class FileAccessRepository : IDisposable
                 string path = PathHelper.RemoveLongPathPrefixes(fileAccessData.Path);
                 uint error = fileAccessData.Error;
 
+                // Used to identify file accesses reconstructed from breakaway processes, such as csc.exe when using shared compilation.
+                bool isAnAugmentedFileAccess = fileAccessData.IsAnAugmentedFileAccess;
+
+                // Augmented file accesses may not be in a canonical form (may have "..\..\")
+                if (isAnAugmentedFileAccess)
+                {
+                    path = Path.GetFullPath(path);
+                }
+
                 if (operation == ReportedFileOperation.Process)
                 {
                     _logFileStream.WriteLine($"New process: PId {processId}, process name {path}, arguments {fileAccessData.ProcessArgs}");
                     _processTable?.Add(processId, fileAccessData.Path);
                 }
-
-                // Used to identify file accesses reconstructed from breakaway processes, such as csc.exe when using shared compilation.
-                bool isAnAugmentedFileAccess = fileAccessData.IsAnAugmentedFileAccess;
 
                 _logFileStream.WriteLine(isAnAugmentedFileAccess
                     ? $"{processId}, {desiredAccess}, {flagsAndAttributes}, {requestedAccess}, {operation}, {path}, {error} (Augmented)"

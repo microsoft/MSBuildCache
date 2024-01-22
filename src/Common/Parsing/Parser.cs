@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -14,7 +12,7 @@ using Microsoft.Build.Prediction.Predictors;
 
 namespace Microsoft.MSBuildCache.Parsing;
 
-internal record class ParserInfo(string NormalizedProjectFilePath, IReadOnlyList<PredictedInput> Inputs);
+internal record class ParserInfo(string ProjectFileRelativePath, IReadOnlyList<PredictedInput> Inputs);
 
 internal sealed class Parser
 {
@@ -29,8 +27,6 @@ internal sealed class Parser
 
     public IReadOnlyDictionary<ProjectGraphNode, ParserInfo> Parse(ProjectGraph graph)
     {
-        var normalizedFileCache = new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
         var predictionCollectorForProjects = new Dictionary<ProjectInstance, ProjectPredictionCollector>(graph.ProjectNodes.Count);
         foreach (ProjectGraphNode node in graph.ProjectNodes)
         {
@@ -41,7 +37,7 @@ internal sealed class Parser
                 continue;
             }
 
-            ProjectPredictionCollector predictionCollector = new(node, _repoRoot, normalizedFileCache);
+            ProjectPredictionCollector predictionCollector = new(node, _repoRoot);
             predictionCollectorForProjects.Add(node.ProjectInstance, predictionCollector);
         }
 

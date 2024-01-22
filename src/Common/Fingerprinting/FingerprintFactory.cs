@@ -82,7 +82,7 @@ public sealed class FingerprintFactory : IFingerprintFactory
                 List<FingerprintEntry> entries = new(_pluginSettingsFingerprintEntries)
                 {
                     // Add node information
-                    CreateFingerprintEntry(nodeContext.NormalizedProjectFilePath)
+                    CreateFingerprintEntry(nodeContext.ProjectFileRelativePath)
                 };
 
                 foreach (KeyValuePair<string, string> property in nodeContext.GlobalProperties)
@@ -96,7 +96,7 @@ public sealed class FingerprintFactory : IFingerprintFactory
                 entries.Add(CreateFingerprintEntry($"Targets: {targetList}"));
 
                 // Add predicted inputs
-                SortAndAddInputFileHashes(entries, nodeContext.Inputs);
+                SortAndAddInputFileHashes(entries, nodeContext.Inputs, pathsAreNormalized: false);
 
                 // Gather dependencies. Dependencies are sorted for a consistent hash ordering.
                 SortedDictionary<string, NodeContext> dependencies = new(StringComparer.Ordinal);
@@ -133,8 +133,8 @@ public sealed class FingerprintFactory : IFingerprintFactory
 
     public PathSet? GetPathSet(NodeContext nodeContext, IEnumerable<string> observedInputs)
     {
-        List<string> pathSetIncludedInputs = new();
-        List<string> pathSetExcludedInputs = new();
+        List<string> pathSetIncludedNormalizedInputs = new();
+        List<string> pathSetExcludedNormalizedInputs = new();
 
         HashSet<string> predictedInputsSet = new(StringComparer.OrdinalIgnoreCase);
         foreach (string input in nodeContext.Inputs)
@@ -151,31 +151,32 @@ public sealed class FingerprintFactory : IFingerprintFactory
                 continue;
             }
 
+            string normalizedInputPath = _pathNormalizer.Normalize(observedInput);
             if (_inputHasher.ContainsPath(observedInput))
             {
-                pathSetIncludedInputs.Add(observedInput);
+                pathSetIncludedNormalizedInputs.Add(normalizedInputPath);
             }
             else
             {
-                pathSetExcludedInputs.Add(observedInput);
+                pathSetExcludedNormalizedInputs.Add(normalizedInputPath);
             }
         }
 
         // Sort the collections for consistent ordering
-        pathSetIncludedInputs.Sort(StringComparer.OrdinalIgnoreCase);
-        pathSetExcludedInputs.Sort(StringComparer.OrdinalIgnoreCase);
+        pathSetIncludedNormalizedInputs.Sort(StringComparer.OrdinalIgnoreCase);
+        pathSetExcludedNormalizedInputs.Sort(StringComparer.OrdinalIgnoreCase);
 
         // To help with debugging, dump the files which were included and excluded from the PathSet.
-        File.WriteAllLines(Path.Combine(nodeContext.LogDirectory, "pathSetIncluded.txt"), pathSetIncludedInputs);
-        File.WriteAllLines(Path.Combine(nodeContext.LogDirectory, "pathSetExcluded.txt"), pathSetExcludedInputs);
+        File.WriteAllLines(Path.Combine(nodeContext.LogDirectory, "pathSetIncluded.txt"), pathSetIncludedNormalizedInputs);
+        File.WriteAllLines(Path.Combine(nodeContext.LogDirectory, "pathSetExcluded.txt"), pathSetExcludedNormalizedInputs);
 
         // If the PathSet is effectively empty, return null instead.
-        if (pathSetIncludedInputs.Count == 0)
+        if (pathSetIncludedNormalizedInputs.Count == 0)
         {
             return null;
         }
 
-        return new PathSet(pathSetIncludedInputs);
+        return new PathSet(pathSetIncludedNormalizedInputs);
     }
 
     public Fingerprint? GetStrongFingerprint(PathSet? pathSet)
@@ -191,7 +192,7 @@ public sealed class FingerprintFactory : IFingerprintFactory
                     }
 
                     List<FingerprintEntry> entries = new();
-                    SortAndAddInputFileHashes(entries, pathSet.FilesRead);
+                    SortAndAddInputFileHashes(entries, pathSet.FilesRead, pathsAreNormalized: true);
 
                     if (entries.Count == 0)
                     {
@@ -201,30 +202,24 @@ public sealed class FingerprintFactory : IFingerprintFactory
                     return CreateFingerprint(entries);
                 });
 
-    private void SortAndAddInputFileHashes(List<FingerprintEntry> entries, IEnumerable<string> files)
+    private void SortAndAddInputFileHashes(List<FingerprintEntry> entries, IReadOnlyList<string> files, bool pathsAreNormalized)
     {
-        List<string> filteredfiles = new();
+        // Sort for consistent hash ordering
+        SortedDictionary<string, byte[]?> filteredNormalizedFiles = new(StringComparer.OrdinalIgnoreCase);
         foreach (string file in files)
         {
-            if (_inputHasher.ContainsPath(file) && !_pluginSettings.IgnoredInputPatterns.Any(pattern => pattern.IsMatch(file)))
+            string absoluteFilePath = pathsAreNormalized ? _pathNormalizer.Unnormalize(file) : file;
+            if (_inputHasher.ContainsPath(absoluteFilePath) && !_pluginSettings.IgnoredInputPatterns.Any(pattern => pattern.IsMatch(absoluteFilePath)))
             {
-                filteredfiles.Add(file);
+                string normalizedFilePath = pathsAreNormalized ? file : _pathNormalizer.Normalize(file);
+                filteredNormalizedFiles.Add(normalizedFilePath, _inputHasher.GetHash(absoluteFilePath));
             }
         }
 
-        if (filteredfiles.Count == 0)
+        foreach (KeyValuePair<string, byte[]?> kvp in filteredNormalizedFiles)
         {
-            return;
+            entries.Add(new FingerprintEntry(kvp.Value, $"Input: {kvp.Key}"));
         }
-
-        // Sort for consistent hash ordering
-        filteredfiles.Sort(StringComparer.OrdinalIgnoreCase);
-
-        foreach (string file in filteredfiles)
-        {
-            entries.Add(new FingerprintEntry(_inputHasher.GetHash(file), $"Input: {file}"));
-        }
-
     }
 
     private Fingerprint? CreateFingerprint(List<FingerprintEntry> entries)
