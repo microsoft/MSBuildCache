@@ -239,7 +239,12 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                     .Select(kvp => new ContentHashWithPath(kvp.Key, new AbsolutePath(kvp.Value)))
                     .ToList();
 
-                Dictionary<string, PlaceFileResult> placeResults = await TryPlaceFilesFromCacheAsync(context, tempFiles, cancellationToken);
+                Dictionary<string, PlaceFileResult> placeResults = await TryPlaceFilesFromCacheAsync(
+                    context,
+                    tempFiles,
+                    realizationModeOverride: FileRealizationMode.Any, // hard links are fine for these
+                    cancellationToken);
+
                 foreach (PlaceFileResult placeResult in placeResults.Values)
                 {
                     placeResult.ThrowIfFailure();
@@ -389,7 +394,11 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         }
     }
 
-    private async Task<Dictionary<string, PlaceFileResult>> TryPlaceFilesFromCacheAsync(Context context, List<ContentHashWithPath> files, CancellationToken cancellationToken)
+    private async Task<Dictionary<string, PlaceFileResult>> TryPlaceFilesFromCacheAsync(
+        Context context,
+        List<ContentHashWithPath> files,
+        FileRealizationMode? realizationModeOverride,
+        CancellationToken cancellationToken)
     {
         // cache expects destination directories already exist
         foreach (ContentHashWithPath file in files)
@@ -400,7 +409,9 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         Dictionary<string, PlaceFileResult> results = new();
         List<ContentHashWithPath> places = new();
 
-        foreach (IGrouping<(byte algoId, FileRealizationMode mode), ContentHashWithPath>? filesGroup in files.GroupBy(f => (GetAlgorithmId(f.Hash), GetFileRealizationMode(f.Path.Path))))
+        var operationGroups = files.GroupBy(f => (GetAlgorithmId(f.Hash), realizationModeOverride ?? GetFileRealizationMode(f.Path.Path)));
+
+        foreach (IGrouping<(byte algoId, FileRealizationMode mode), ContentHashWithPath>? filesGroup in operationGroups)
         {
             FileRealizationMode realizationMode = filesGroup.Key.mode;
             FileAccessMode accessMode = realizationMode == FileRealizationMode.CopyNoVerify
@@ -500,7 +511,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
             // try to pull whole files from the cache
             var places = files.Select(f => new ContentHashWithPath(f.Value, new AbsolutePath(f.Key))).ToList();
 
-            Dictionary<string, PlaceFileResult> placeResults = await _client.TryPlaceFilesFromCacheAsync(context, places, cancellationToken);
+            Dictionary<string, PlaceFileResult> placeResults = await _client.TryPlaceFilesFromCacheAsync(context, places, realizationModeOverride: null, cancellationToken);
 
             Dictionary<string, ManifestItem> manifestItems = _manifest.Items.ToDictionary(i => Path.Combine(_client.RepoRoot, i.Path), i => i);
             var itemsToDownload = new List<ManifestItem>();
