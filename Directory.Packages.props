@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project>
   <PropertyGroup>
-    <ArtifactsPackageVersion>19.230.34229-buildid23092045</ArtifactsPackageVersion>
-    <BuildXLPackageVersion>0.1.0-20231201.2</BuildXLPackageVersion>
+    <ArtifactsPackageVersion>19.232.34508-buildid25403274</ArtifactsPackageVersion>
+    <BuildXLPackageVersion>0.1.0-20240121.1</BuildXLPackageVersion>
     <MSBuildPackageVersion>17.8.3</MSBuildPackageVersion>
   </PropertyGroup>
   <ItemGroup>
