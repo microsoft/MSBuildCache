@@ -16,6 +16,13 @@ internal sealed class FileAccessRepository : IDisposable
 {
     private readonly ConcurrentDictionary<NodeContext, FileAccessesState> _fileAccessStates = new();
 
+    // Use a shared process table for all nodes. This helps facilitate cases where "server" processes are used across projects such as vctip.exe.
+    // Otherwise if a file access happens in a node which didn't launch the process originally, the AllowFileAccessAfterProjectFinishProcessPatterns
+    // setting cannot be properly used since the process name isn't known at that point.
+    // Processes are removed from this table once they exit, so memory-wise this should in fact be better than a table per node, and we are not worried
+    // about collisions since process ids do not collide system-wide.
+    private readonly ConcurrentDictionary<ulong, string> _processTable = new();
+
     private readonly PluginLoggerBase _logger;
 
     private readonly PluginSettings _pluginSettings;
@@ -47,7 +54,7 @@ internal sealed class FileAccessRepository : IDisposable
         => GetFileAccessesState(nodeContext).FinishProject();
 
     private FileAccessesState GetFileAccessesState(NodeContext nodeContext)
-        => _fileAccessStates.GetOrAdd(nodeContext, nodeContext => new FileAccessesState(nodeContext, _logger, _pluginSettings));
+        => _fileAccessStates.GetOrAdd(nodeContext, nodeContext => new FileAccessesState(nodeContext, _logger, _pluginSettings, _processTable));
 
     private sealed class FileAccessesState : IDisposable
     {
@@ -59,10 +66,11 @@ internal sealed class FileAccessRepository : IDisposable
 
         private readonly PluginSettings _pluginSettings;
 
+        private readonly ConcurrentDictionary<ulong, string> _processTable;
+
         private readonly StreamWriter _logFileStream;
 
         private Dictionary<string, FileAccessInfo>? _fileTable = new(StringComparer.OrdinalIgnoreCase);
-        private Dictionary<ulong, string>? _processTable = new();
 
         private List<RemoveDirectoryOperation>? _deletedDirectories = new();
 
@@ -70,11 +78,16 @@ internal sealed class FileAccessRepository : IDisposable
 
         private bool _isFinished;
 
-        public FileAccessesState(NodeContext nodeContext, PluginLoggerBase logger, PluginSettings pluginSettings)
+        public FileAccessesState(
+            NodeContext nodeContext,
+            PluginLoggerBase logger,
+            PluginSettings pluginSettings,
+            ConcurrentDictionary<ulong, string> processTable)
         {
             _nodeContext = nodeContext;
             _logger = logger;
             _pluginSettings = pluginSettings;
+            _processTable = processTable;
 
             string logFilePath = Path.Combine(nodeContext.LogDirectory, "fileAccesses.log");
             _logFileStream = File.CreateText(logFilePath);
@@ -93,7 +106,7 @@ internal sealed class FileAccessRepository : IDisposable
                 {
                     string? processName = null;
                     Glob? processMatch = null;
-                    if (_processTable != null && _processTable.TryGetValue(fileAccessData.ProcessId, out processName))
+                    if (_processTable.TryGetValue(fileAccessData.ProcessId, out processName))
                     {
                         processMatch = IsAllowFileAccessAfterProjectFinishProcessPatterns(processName);
                     }
@@ -116,6 +129,7 @@ internal sealed class FileAccessRepository : IDisposable
                     }
                     else
                     {
+                        // HERE
                         throw new InvalidOperationException(
                             $"File access reported from process `{processName}` after the project finished. " +
                             $"This may lead to incorrect caching. Node Id: {_nodeContext.Id}, Path: {fileAccessData.Path}");
@@ -152,7 +166,7 @@ internal sealed class FileAccessRepository : IDisposable
                 if (operation == ReportedFileOperation.Process)
                 {
                     _logFileStream.WriteLine($"New process: PId {processId}, process name {path}, arguments {fileAccessData.ProcessArgs}");
-                    _processTable?.Add(processId, fileAccessData.Path);
+                    _processTable.TryAdd(processId, fileAccessData.Path);
                 }
 
                 _logFileStream.WriteLine(isAnAugmentedFileAccess
@@ -223,10 +237,7 @@ internal sealed class FileAccessRepository : IDisposable
                     }
                 }
 
-                if (_processTable != null)
-                {
-                    _ = _processTable.Remove(processData.ProcessId);
-                }
+                _processTable.TryRemove(processData.ProcessId, out _);
 
                 _logFileStream.WriteLine(
                     "Process exited. PId: {0}, Parent: {1}, Name: {2}, ExitCode: {3}, CreationTime: {4}, ExitTime: {5}",
@@ -258,7 +269,6 @@ internal sealed class FileAccessRepository : IDisposable
 
                     // Allow memory to be reclaimed
                     _fileTable = null;
-                    _processTable = null;
                     _deletedDirectories = null;
                 }
             }
