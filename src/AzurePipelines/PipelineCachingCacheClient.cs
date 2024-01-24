@@ -26,6 +26,7 @@ using Microsoft.VisualStudio.Services.BlobStore.Common;
 using Microsoft.VisualStudio.Services.BlobStore.Common.Telemetry;
 using Microsoft.VisualStudio.Services.BlobStore.WebApi;
 using Microsoft.VisualStudio.Services.BlobStore.WebApi.Cache;
+using Microsoft.VisualStudio.Services.CircuitBreaker;
 using Microsoft.VisualStudio.Services.Common;
 using Microsoft.VisualStudio.Services.Content.Common;
 using Microsoft.VisualStudio.Services.Content.Common.Tracing;
@@ -86,6 +87,8 @@ internal sealed class PipelineCachingCacheClient : CacheClient
     private readonly DedupStoreClientWithDataport _dedupClient;
     private readonly DedupManifestArtifactClient _manifestClient;
     private readonly Task _startupTask;
+    private readonly KeepUntilBlobReference _keepUntil = new KeepUntilBlobReference(DateTimeOffset.Now.AddHours(4));
+    private readonly HashType _hashType;
 
     public PipelineCachingCacheClient(
         Context rootContext,
@@ -153,6 +156,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         _dedupHttpClient.SetRedirectTimeout(timeoutSeconds);
 
         // https://dev.azure.com/mseng/1ES/_workitems/edit/2060777
+        _hashType = hasher.Info.HashType;
         if (hasher.Info.HashType == HashType.Dedup1024K)
         {
             _dedupHttpClient.RecommendedChunkCountPerCall = 8;
@@ -219,64 +223,153 @@ internal sealed class PipelineCachingCacheClient : CacheClient
 
             // If we are async publishing, then we need to grab content from the L1 and remap it.
             // If we are sync publishing, then we can point directly to it.
-            FileInfo[] infos;
+            PublishResult publishResult;
             if (EnableAsyncPublishing)
             {
-                infos = Array.Empty<FileInfo>();
+                // map the hash types
+                Dictionary<DedupIdentifier, ContentHash> dedupToHash = outputs.Values.ToDictionaryFirstKeyWins(
+                    hash => hash.ToBlobIdentifier().ToDedupIdentifier(),
+                    hash => hash);
 
-                // 2. Link out unique content to the temp folder
+                // open a stream to get the length of all content
+                Dictionary<DedupIdentifier, long> dedupToSize = new();
+                foreach (ContentHash hash in dedupToHash.Values)
+                {
+                    StreamWithLength? streamWithLength = await LocalCacheSession
+                        .OpenStreamAsync(context, hash, cancellationToken)
+                        .ThrowIfFailureAsync(r => r.StreamWithLength)!;
+                    DedupIdentifier dedupId = hash.ToBlobIdentifier().ToDedupIdentifier();
+                    dedupToSize.Add(dedupId, streamWithLength.Value.Length);
+                    dedupToHash.Add(dedupId, hash);
+                }
 
-                Dictionary<ContentHash, string> tempFilesPerHash = outputs.Values.Distinct().ToDictionary(
-                    hash => hash,
-                    hash =>
+                // create the manifest and add extras to local cache
+                Manifest manifest;
+                {
+                    var items = new List<ManifestItem>(outputs.Count + extras.Count);
+
+                    // put extras in local cache to simplify the code below
+                    foreach (KeyValuePair<string, FileInfo> extra in extras)
                     {
-                        string tempFilePath = Path.Combine(TempFolder, Guid.NewGuid().ToString("N") + ".tmp");
-                        tempFilePaths.Add(tempFilePath);
-                        return tempFilePath;
-                    });
+                        DedupNode node = await ChunkerHelper.CreateFromFileAsync(FileSystem.Instance, extra.Key, cancellationToken, configureAwait: false);
+                        DedupIdentifier dedupId = node.GetDedupIdentifier();
+                        dedupToSize[dedupId] = extra.Value.Length;
+                        dedupToHash[dedupId] = node.ToContentHash(_hashType);
+                        await LocalCacheSession.PutFileAsync(context, node.ToContentHash(_hashType), new AbsolutePath(extra.Value.FullName), FileRealizationMode.Any, cancellationToken);
+                        items.Add(new ManifestItem(extra.Key, new DedupInfo(dedupId.ValueString, node.TransitiveContentBytes)));
+                    }
 
-                List<ContentHashWithPath> tempFiles = tempFilesPerHash
-                    .Select(kvp => new ContentHashWithPath(kvp.Key, new AbsolutePath(kvp.Value)))
-                    .ToList();
+                    foreach (KeyValuePair<string, ContentHash> output in outputs)
+                    {
+                        string relativePath = output.Key.MakePathRelativeTo(RepoRoot)!.Replace("\\", "/", StringComparison.Ordinal);
+                        DedupIdentifier dedupId = output.Value.ToBlobIdentifier().ToDedupIdentifier();
+                        items.Add(new ManifestItem(
+                            relativePath,
+                            new DedupInfo(dedupId.ValueString, (ulong)dedupToSize[dedupId])));
+                    }
+                    items.Sort((i1, i2) => StringComparer.Ordinal.Compare(i1.Path, i2.Path));
 
-                Dictionary<string, PlaceFileResult> placeResults = await TryPlaceFilesFromCacheAsync(context, tempFiles, cancellationToken);
-                foreach (PlaceFileResult placeResult in placeResults.Values)
-                {
-                    placeResult.ThrowIfFailure();
+                    manifest = new Manifest(items);
                 }
 
-                // 3. map all the relative paths to the temp files
-                foreach (KeyValuePair<string, ContentHash> output in outputs)
+                // Store the manifest in local cache to simplify the code below
+                using MemoryStream manifestStream = new(JsonSerializer.Serialize(manifest).GetUTF8Bytes());
+                PutResult manifestResult = await LocalCacheSession.PutStreamAsync(context, _hashType, manifestStream, cancellationToken);
+                manifestResult.ThrowIfFailure();
+                ContentHash manifestHash = manifestResult.ContentHash;
+                DedupIdentifier manifestId = manifestHash.ToBlobIdentifier().ToDedupIdentifier();
+                dedupToSize[manifestId] = manifestStream.Length;
+                dedupToHash[manifestId] = manifestHash;
+
+                // now that we have the hashes and sizes, we can efficiently ask the service what it already has
+                IDedupUploadSession uploadSession = _dedupClient.CreateUploadSession(
+                    _keepUntil,
+                    tracer: _azureDevopsTracer,
+                    FileSystem.Instance);
+
+                // upload whatever is needed (outputs, extras, and manifest)
                 {
-                    string relativePath = output.Key.MakePathRelativeTo(RepoRoot)!;
-                    extras.Add(relativePath.Replace("\\", "/", StringComparison.Ordinal), new FileInfo(tempFilesPerHash[output.Value]));
+                    Dictionary<DedupIdentifier, CheckIfUploadNeededResult> uploadCheckResults =
+                        await uploadSession.CheckIfUploadIsNeededAsync(dedupToSize, cancellationToken);
+
+                    IEnumerable<DedupIdentifier> hashesToupload = uploadCheckResults
+                        .Where(kvp => kvp.Value == CheckIfUploadNeededResult.UploadNeeded)
+                        .Select(kvp => kvp.Key);
+
+                    // what it doesn't have, we'll need to materialize to upload
+                    Dictionary<ContentHash, string> tempFilesPerHash = hashesToupload.ToDictionary(
+                        hash => dedupToHash[hash],
+                        hash =>
+                        {
+                            string tempFilePath = Path.Combine(TempFolder, Guid.NewGuid().ToString("N") + ".tmp");
+                            tempFilePaths.Add(tempFilePath);
+                            return tempFilePath;
+                        });
+
+                    List<ContentHashWithPath> tempFiles = tempFilesPerHash
+                        .Select(kvp => new ContentHashWithPath(kvp.Key, new AbsolutePath(kvp.Value)))
+                        .ToList();
+
+                    Dictionary<string, PlaceFileResult> placeResults = await TryPlaceFilesFromCacheAsync(context, tempFiles, cancellationToken);
+                    foreach (KeyValuePair<string, PlaceFileResult> placeResult in placeResults)
+                    {
+                        // Everything should already be in the L1
+                        placeResult.Value.ThrowIfFailure();
+                    }
+
+                    // upload the files in batches of DedupNode.MaxDirectChildrenPerNode == 512
+                    foreach (List<KeyValuePair<ContentHash, string>> page in tempFilesPerHash.GetPages(DedupNode.MaxDirectChildrenPerNode))
+                    {
+                        Dictionary<DedupIdentifier, string> paths = page.ToDictionary(kvp => kvp.Key.ToBlobIdentifier().ToDedupIdentifier(), kvp => kvp.Value);
+                        var files = new List<DedupNode>(page.Count);
+                        foreach (KeyValuePair<ContentHash, string> kvp in page)
+                        {
+                            // UploadAsync requires "filled" nodes.
+                            // For single-chunk files, they are already filled as they have no children nodes.
+                            // For multi-chunk files, we need to re-chunk them here as the LocalCAS
+                            //   only stores the hash of the top node and not the inner node tree that upload needs.
+                            DedupIdentifier dedupId = kvp.Key.ToBlobIdentifier().ToDedupIdentifier();
+                            if (dedupId.AlgorithmId == ChunkDedupIdentifier.ChunkAlgorithmId)
+                            {
+                                files.Add(new DedupNode(new ChunkInfo(0, (uint)dedupToSize[dedupId], dedupId.AlgorithmResult)));
+                            }
+                            else
+                            {
+                                DedupNode node = await ChunkFileAsync(kvp.Value, cancellationToken);
+                                files.Add(node);
+                            }
+                        }
+                        var rootNode = new DedupNode(files);
+                        await uploadSession.UploadAsync(rootNode, paths, cancellationToken);
+                    }
                 }
+
+                publishResult
             }
             else
             {
-                infos = outputs.Keys.Select(f => new FileInfo(f)).ToArray();
+                FileInfo[] infos = outputs.Keys.Select(f => new FileInfo(f)).ToArray();
+                publishResult = await WithHttpRetries(
+                    () => _manifestClient.PublishAsync(RepoRoot, infos, extras, new ArtifactPublishOptions(), manifestFileOutputPath: null, cancellationToken),
+                    context: $"Publishing content for {fingerprint}",
+                    cancellationToken);
             }
-
-            var result = await WithHttpRetries(
-                () => _manifestClient.PublishAsync(RepoRoot, infos, extras, new ArtifactPublishOptions(), manifestFileOutputPath: null, cancellationToken),
-                context: $"Publishing content for {fingerprint}",
-                cancellationToken);
 
             // double check
             {
-                using var manifestStream = new MemoryStream(await GetBytes(context, result.ManifestId, cancellationToken));
+                using var manifestStream = new MemoryStream(await GetBytes(context, publishResult.ManifestId, cancellationToken));
                 Manifest manifest = JsonSerializer.Deserialize<Manifest>(manifestStream)!;
                 var manifestFiles = CreateNormalizedManifest(manifest);
                 var outputFiles = CreateNormalizedManifest(outputs);
-                ThrowIfDifferent(manifestFiles, outputFiles, $"With {nameof(EnableAsyncPublishing)}:{EnableAsyncPublishing}, Manifest `{result.ManifestId}` and Outputs don't match:");
+                ThrowIfDifferent(manifestFiles, outputFiles, $"With {nameof(EnableAsyncPublishing)}:{EnableAsyncPublishing}, Manifest `{publishResult.ManifestId}` and Outputs don't match:");
             }
 
             var key = ComputeKey(fingerprint, forWrite: true);
             var entry = new CreatePipelineCacheArtifactContract(
                 new VisualStudio.Services.PipelineCache.WebApi.Fingerprint(key.Split(KeySegmentSeperator)),
-                result.ManifestId,
-                result.RootId,
-                result.ProofNodes,
+                publishResult.ManifestId,
+                publishResult.RootId,
+                publishResult.ProofNodes,
                 ContentFormatConstants.Files);
 
             CreateResult createResult = await WithHttpRetries(
@@ -376,6 +469,9 @@ internal sealed class PipelineCachingCacheClient : CacheClient
             }
         }
     }
+
+    private static Task<DedupNode> ChunkFileAsync(string path, CancellationToken cancellationToken) =>
+        ChunkerHelper.CreateFromFileAsync(FileSystem.Instance, path, cancellationToken, configureAwait: false);
 
     private static byte GetAlgorithmId(ContentHash hash)
     {
