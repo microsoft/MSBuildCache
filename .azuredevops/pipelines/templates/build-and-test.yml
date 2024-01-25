@@ -14,6 +14,7 @@ steps:
     projects: $(Build.SourcesDirectory)/MSBuildCache.sln
     feedsToUse: 'config'
     nugetConfigPath: '$(Build.SourcesDirectory)/nuget.config'
+    arguments: --configuration $(BuildConfiguration)
 
 - task: DotNetCoreCLI@2
   displayName: Build
