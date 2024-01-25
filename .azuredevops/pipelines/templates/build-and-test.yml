@@ -7,20 +7,11 @@ steps:
 - task: NuGetAuthenticate@1
   displayName: NuGet Authenticate
 
-- task: DotNetCoreCLI@2
-  displayName: Restore
-  inputs:
-    command: restore
-    projects: $(Build.SourcesDirectory)/MSBuildCache.sln
-    feedsToUse: 'config'
-    nugetConfigPath: '$(Build.SourcesDirectory)/nuget.config'
+- displayName: Restore
+  script: msbuild /t:restore $(Build.SourcesDirectory)/MSBuildCache.sln /bl:$(LogDirectory)/restore.binlog
 
-- task: DotNetCoreCLI@2
-  displayName: Build
-  inputs:
-    command: build
-    projects: $(Build.SourcesDirectory)/MSBuildCache.sln
-    arguments: -restore:false --configuration $(BuildConfiguration) -BinaryLogger:$(LogDirectory)/msbuild.binlog
+- displayName: Build
+  script: msbuild $(Build.SourcesDirectory)/MSBuildCache.sln /p:Configuration=$(BuildConfiguration) /bl:$(LogDirectory)/restore.binlog
 
 - task: DotNetCoreCLI@2
   displayName: Run Unit Tests
