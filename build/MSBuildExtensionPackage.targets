@@ -20,13 +20,18 @@
   </Target>
 
   <!-- Since this is an MSBuild extension which is loaded into the MSBuild process, much like a tool package we need to repackage our ProjectReferences and PackageReferences -->
-  <Target Name="IncludeReferenceCopyLocalPathsInBuildOutputInPackage" BeforeTargets="_GetBuildOutputFilesWithTfm" DependsOnTargets="ResolveReferences;ResolvePackageDependenciesForBuild;ResolveProjectReferences">
-    <ItemGroup>
+  <!-- When we are using ilrepack to directly merge the dependencies, we only need to copy the native files which don't get merged.-->
+  <Target Name="IncludeReferenceCopyLocalPathsInBuildOutputInPackage"
+          BeforeTargets="_GetBuildOutputFilesWithTfm"
+          DependsOnTargets="ResolveReferences;ResolvePackageDependenciesForBuild;ResolveProjectReferences"
+          >
+    <ItemGroup Condition=" '$(ILRepackEnabled)' != 'true' ">
       <BuildOutputInPackage Include="@(_ResolvedProjectReferencePaths)" TargetPath="%(RuntimeCopyLocalItems.DestinationSubDirectory)%(Filename)%(Extension)" />
-
       <BuildOutputInPackage Include="@(RuntimeCopyLocalItems-&gt;WithMetadataValue('AssetType', 'runtime'))" TargetPath="%(RuntimeCopyLocalItems.DestinationSubDirectory)%(Filename)%(Extension)" />
       <BuildOutputInPackage Include="@(RuntimeCopyLocalItems-&gt;WithMetadataValue('CopyLocal', 'true'))" TargetPath="%(RuntimeCopyLocalItems.DestinationSubDirectory)%(Filename)%(Extension)" />
-      
+    </ItemGroup>
+
+    <ItemGroup>
       <!-- Somewhat hard-code this as there isn't a good way to identify it -->
       <BuildOutputInPackage Include="@(None-&gt;WithMetadataValue('Link', 'native\amd64\rocksdb.dll'))" TargetPath="%(None.Link)" />
     </ItemGroup>
