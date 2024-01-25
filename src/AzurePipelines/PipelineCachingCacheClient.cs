@@ -31,6 +31,7 @@ using Microsoft.VisualStudio.Services.Content.Common;
 using Microsoft.VisualStudio.Services.Content.Common.Tracing;
 using Microsoft.VisualStudio.Services.PipelineCache.Common;
 using Microsoft.VisualStudio.Services.PipelineCache.WebApi;
+using BxlContentHashWithPath = BuildXL.Cache.ContentStore.Interfaces.Sessions.ContentHashWithPath;
 using FileInfo = System.IO.FileInfo;
 
 namespace Microsoft.MSBuildCache.AzurePipelines;
@@ -63,7 +64,7 @@ namespace Microsoft.MSBuildCache.AzurePipelines;
 internal sealed class PipelineCachingCacheClient : CacheClient
 #pragma warning restore CS1570 // XML comment has badly formed XML
 {
-    ////private readonly record struct ContentHashWithPath(ContentHash Hash, string Path);
+    private readonly record struct ContentHashWithPath(ContentHash Hash, string Path);
 
     private const string InternalMetadataPathPrefix = "/???";
 
@@ -236,7 +237,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                     });
 
                 List<ContentHashWithPath> tempFiles = tempFilesPerHash
-                    .Select(kvp => new ContentHashWithPath(kvp.Key, new AbsolutePath(kvp.Value)))
+                    .Select(kvp => new ContentHashWithPath(kvp.Key, kvp.Value))
                     .ToList();
 
                 Dictionary<string, PlaceFileResult> placeResults = await TryPlaceFilesFromCacheAsync(
@@ -403,13 +404,13 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         // cache expects destination directories already exist
         foreach (ContentHashWithPath file in files)
         {
-            CreateParentDirectory(file.Path.Path);
+            CreateParentDirectory(file.Path);
         }
 
-        Dictionary<string, PlaceFileResult> results = new();
-        List<ContentHashWithPath> places = new();
+        Dictionary<string, PlaceFileResult> results = new(files.Count);
+        List<BxlContentHashWithPath> places = new(files.Count);
 
-        var operationGroups = files.GroupBy(f => (GetAlgorithmId(f.Hash), realizationModeOverride ?? GetFileRealizationMode(f.Path.Path)));
+        var operationGroups = files.GroupBy(f => (GetAlgorithmId(f.Hash), realizationModeOverride ?? GetFileRealizationMode(f.Path)));
 
         foreach (IGrouping<(byte algoId, FileRealizationMode mode), ContentHashWithPath>? filesGroup in operationGroups)
         {
@@ -419,7 +420,10 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                 : FileAccessMode.ReadOnly;
 
             places.Clear();
-            places.AddRange(filesGroup);
+            foreach (ContentHashWithPath file in filesGroup)
+            {
+                places.Add(new BxlContentHashWithPath(file.Hash, new AbsolutePath(file.Path)));
+            }
 
             List<Task<Indexed<PlaceFileResult>>> groupResults = (await LocalCacheSession.PlaceFileAsync(
                 context, places, accessMode, FileReplacementMode.ReplaceExisting, realizationMode, cancellationToken)).ToList();
@@ -444,7 +448,8 @@ internal sealed class PipelineCachingCacheClient : CacheClient
             foreach (Task<Indexed<PlaceFileResult>> resultTask in groupResults)
             {
                 Indexed<PlaceFileResult> result = await resultTask;
-                results.Add(places[result.Index].Path.Path, result.Item);
+                string path = PathHelper.RemoveLongPathPrefixes(places[result.Index].Path.Path);
+                results.Add(path, result.Item);
             }
         }
 
@@ -509,7 +514,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
             ThrowIfDifferent(manifestFiles, requestFiles, $"Manifest `{_manifestId}` and PlaceFiles don't match:");
 
             // try to pull whole files from the cache
-            var places = files.Select(f => new ContentHashWithPath(f.Value, new AbsolutePath(f.Key))).ToList();
+            var places = files.Select(f => new ContentHashWithPath(f.Value, f.Key)).ToList();
 
             Dictionary<string, PlaceFileResult> placeResults = await _client.TryPlaceFilesFromCacheAsync(context, places, realizationModeOverride: null, cancellationToken);
 
@@ -611,18 +616,9 @@ internal sealed class PipelineCachingCacheClient : CacheClient
             cancellationToken);
     }
 
-    private sealed class RelativePathComparer : IComparer<RelativePath>
+    private static SortedDictionary<string, DedupIdentifier> CreateNormalizedManifest(Manifest m)
     {
-        public static readonly RelativePathComparer Instance = new();
-        private RelativePathComparer() { }
-
-        public int Compare(RelativePath? x, RelativePath? y) =>
-            StringComparer.OrdinalIgnoreCase.Compare(x?.Path, y?.Path);
-    }
-
-    private static SortedDictionary<RelativePath, DedupIdentifier> CreateNormalizedManifest(Manifest m)
-    {
-        SortedDictionary<RelativePath, DedupIdentifier> sorted = new(RelativePathComparer.Instance);
+        SortedDictionary<string, DedupIdentifier> sorted = new(StringComparer.OrdinalIgnoreCase);
 
         foreach (ManifestItem item in m.Items)
         {
@@ -631,27 +627,28 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                 continue;
             }
 
-            sorted.Add(new RelativePath(item.Path), DedupIdentifier.Create(item.Blob.Id));
+            sorted.Add(item.Path, DedupIdentifier.Create(item.Blob.Id));
         }
 
         return sorted;
     }
 
-    private SortedDictionary<RelativePath, DedupIdentifier> CreateNormalizedManifest(IReadOnlyDictionary<string, ContentHash> files)
+    private SortedDictionary<string, DedupIdentifier> CreateNormalizedManifest(IReadOnlyDictionary<string, ContentHash> files)
     {
-        SortedDictionary<RelativePath, DedupIdentifier> sorted = new(RelativePathComparer.Instance);
+        SortedDictionary<string, DedupIdentifier> sorted = new(StringComparer.OrdinalIgnoreCase);
 
         foreach (KeyValuePair<string, ContentHash> f in files)
         {
-            sorted.Add(new RelativePath(f.Key.MakePathRelativeTo(RepoRoot)!), f.Value.ToBlobIdentifier().ToDedupIdentifier());
+            string relativePath = $"/{f.Key.MakePathRelativeTo(RepoRoot)!.Replace("\\", "/", StringComparison.Ordinal)}";
+            sorted.Add(relativePath, f.Value.ToBlobIdentifier().ToDedupIdentifier());
         }
 
         return sorted;
     }
 
     private static void ThrowIfDifferent(
-        SortedDictionary<RelativePath, DedupIdentifier> left,
-        SortedDictionary<RelativePath, DedupIdentifier> right,
+        SortedDictionary<string, DedupIdentifier> left,
+        SortedDictionary<string, DedupIdentifier> right,
         string message
     )
     {
@@ -660,10 +657,10 @@ internal sealed class PipelineCachingCacheClient : CacheClient
             return;
         }
 
-        SortedSet<(RelativePath, DedupIdentifier)> leftOnly = new(left.Select(kvp => (kvp.Key, kvp.Value)));
-        SortedSet<(RelativePath, DedupIdentifier)> rightOnly = new(right.Select(kvp => (kvp.Key, kvp.Value)));
+        SortedSet<(string, DedupIdentifier)> leftOnly = new(left.Select(kvp => (kvp.Key, kvp.Value)));
+        SortedSet<(string, DedupIdentifier)> rightOnly = new(right.Select(kvp => (kvp.Key, kvp.Value)));
 
-        SortedSet<(RelativePath, DedupIdentifier)> both = new(leftOnly);
+        SortedSet<(string, DedupIdentifier)> both = new(leftOnly);
         both.IntersectWith(rightOnly);
 
         leftOnly.ExceptWith(both);
