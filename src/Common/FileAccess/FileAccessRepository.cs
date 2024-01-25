@@ -100,6 +100,7 @@ internal sealed class FileAccessRepository : IDisposable
 
         public void AddFileAccess(FileAccessData fileAccessData)
         {
+            string path = PathHelper.RemoveLongPathPrefixes(fileAccessData.Path);
             lock (_stateLock)
             {
                 if (_isFinished)
@@ -111,7 +112,7 @@ internal sealed class FileAccessRepository : IDisposable
                         processMatch = IsAllowFileAccessAfterProjectFinishProcessPatterns(processName);
                     }
 
-                    Glob? fileMatch = IsAllowFileAccessAfterProjectFinishFilePatterns(fileAccessData.Path);
+                    Glob? fileMatch = IsAllowFileAccessAfterProjectFinishFilePatterns(path);
 
                     processName ??= $"ProcessId: {fileAccessData.ProcessId}";
 
@@ -119,20 +120,19 @@ internal sealed class FileAccessRepository : IDisposable
                     {
                         _logger.LogWarning(
                             $"File access reported from process after the project finished, but process matched {nameof(_pluginSettings.AllowFileAccessAfterProjectFinishProcessPatterns)} `{processMatch}`. " +
-                            $"This may lead to incorrect caching. Node Id: {_nodeContext.Id}, Process Id: {fileAccessData.ProcessId} ProcessPath: `{processName}` File Path: `{fileAccessData.Path}`");
+                            $"This may lead to incorrect caching. Node Id: {_nodeContext.Id}, Process Id: {fileAccessData.ProcessId} ProcessPath: `{processName}` File Path: `{path}`");
                     }
                     else if (fileMatch != null)
                     {
                         _logger.LogWarning(
                             $"File access reported from process after the project finished, but file path matched {nameof(_pluginSettings.AllowFileAccessAfterProjectFinishFilePatterns)} `{fileMatch}`. " +
-                            $"This may lead to incorrect caching. Node Id: {_nodeContext.Id}, Process Id: {fileAccessData.ProcessId} ProcessPath: `{processName}` File Path: `{fileAccessData.Path}`");
+                            $"This may lead to incorrect caching. Node Id: {_nodeContext.Id}, Process Id: {fileAccessData.ProcessId} ProcessPath: `{processName}` File Path: `{path}`");
                     }
                     else
                     {
-                        // HERE
                         throw new InvalidOperationException(
                             $"File access reported from process `{processName}` after the project finished. " +
-                            $"This may lead to incorrect caching. Node Id: {_nodeContext.Id}, Path: {fileAccessData.Path}");
+                            $"This may lead to incorrect caching. Node Id: {_nodeContext.Id}, Path: {path}");
                     }
                 }
 
@@ -151,7 +151,6 @@ internal sealed class FileAccessRepository : IDisposable
 
                 uint processId = fileAccessData.ProcessId;
                 RequestedAccess requestedAccess = fileAccessData.RequestedAccess;
-                string path = PathHelper.RemoveLongPathPrefixes(fileAccessData.Path);
                 uint error = fileAccessData.Error;
 
                 // Used to identify file accesses reconstructed from breakaway processes, such as csc.exe when using shared compilation.
@@ -166,7 +165,7 @@ internal sealed class FileAccessRepository : IDisposable
                 if (operation == ReportedFileOperation.Process)
                 {
                     _logFileStream.WriteLine($"New process: PId {processId}, process name {path}, arguments {fileAccessData.ProcessArgs}");
-                    _processTable.TryAdd(processId, fileAccessData.Path);
+                    _processTable.TryAdd(processId, path);
                 }
 
                 _logFileStream.WriteLine(isAnAugmentedFileAccess
