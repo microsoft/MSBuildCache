@@ -57,7 +57,7 @@ public static class PathHelper
     /// \\?\ - removes the file name limit of 260 chars. It makes it 32735 (+ a null terminator)
     /// \??\ - this is a native Win32 FS path WinNt32
     /// </summary>
-    internal static string RemoveLongPathPrefixes(string absolutePath)
+    public static string RemoveLongPathPrefixes(string absolutePath)
     {
         if (absolutePath.Length < 4 || absolutePath[0] != '\\')
         {
