@@ -7,9 +7,9 @@ steps:
 - task: NuGetAuthenticate@1
   displayName: NuGet Authenticate
 
-- displayName: Restore & Build
-  script: |
+- script: |
     dotnet build $(Build.SourcesDirectory)/MSBuildCache.sln arguments: --configuration $(BuildConfiguration) -BinaryLogger:$(LogDirectory)/msbuild.binlog
+  displayName: Restore & Build
 
 - task: DotNetCoreCLI@2
   displayName: Run Unit Tests
