@@ -254,8 +254,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                 // 3. map all the relative paths to the temp files
                 foreach (KeyValuePair<string, ContentHash> output in outputs)
                 {
-                    string relativePath = output.Key.MakePathRelativeTo(RepoRoot)!;
-                    extras.Add(relativePath.Replace("\\", "/", StringComparison.Ordinal), new FileInfo(tempFilesPerHash[output.Value]));
+                    extras.Add(ConvertAbsolutePathToUriPath(output.Key), new FileInfo(tempFilesPerHash[output.Value]));
                 }
             }
             else
@@ -518,7 +517,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
 
             Dictionary<string, PlaceFileResult> placeResults = await _client.TryPlaceFilesFromCacheAsync(context, places, realizationModeOverride: null, cancellationToken);
 
-            Dictionary<string, ManifestItem> manifestItems = _manifest.Items.ToDictionary(i => Path.Combine(_client.RepoRoot, i.Path), i => i);
+            Dictionary<string, ManifestItem> manifestItems = _manifest.Items.ToDictionary(i => _client.ConvertUriPathToAbsolutePath(i.Path), i => i);
             var itemsToDownload = new List<ManifestItem>();
             var toAddToCacheAsWholeFile = new Dictionary<ContentHash, string>();
             foreach (KeyValuePair<string, PlaceFileResult> placeResult in placeResults)
@@ -639,8 +638,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
 
         foreach (KeyValuePair<string, ContentHash> f in files)
         {
-            string relativePath = $"/{f.Key.MakePathRelativeTo(RepoRoot)!.Replace("\\", "/", StringComparison.Ordinal)}";
-            sorted.Add(relativePath, f.Value.ToBlobIdentifier().ToDedupIdentifier());
+            sorted.Add(ConvertAbsolutePathToUriPath(f.Key), f.Value.ToBlobIdentifier().ToDedupIdentifier());
         }
 
         return sorted;
@@ -735,5 +733,38 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         _dedupHttpClient.Dispose();
         _cacheClient.Dispose();
         await base.DisposeAsync();
+    }
+
+    private string ConvertUriPathToAbsolutePath(string path)
+    {
+        // Trim off the leading '/' so it isn't interpreted as absolute
+        if (path.Length > 0 && path[0] == '/')
+        {
+            path = path.Substring(1);
+        }
+
+        // Replace '/' with the platform-specific directory separator
+        if (Path.DirectorySeparatorChar != '/')
+        {
+            path = path.Replace('/', Path.DirectorySeparatorChar);
+        }
+
+        // Make the path absolute
+        return Path.Combine(RepoRoot, path);
+    }
+
+    private string ConvertAbsolutePathToUriPath(string path)
+    {
+        // Make the path relative
+        path = path.MakePathRelativeTo(RepoRoot)!;
+
+        // Replace platform-specific directory separator with '/'
+        if (Path.DirectorySeparatorChar != '/')
+        {
+            path = path.Replace(Path.DirectorySeparatorChar, '/');
+        }
+
+        // Prepend a '/'
+        return $"/{path}";
     }
 }
