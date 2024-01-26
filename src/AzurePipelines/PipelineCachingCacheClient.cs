@@ -26,7 +26,6 @@ using Microsoft.VisualStudio.Services.BlobStore.Common;
 using Microsoft.VisualStudio.Services.BlobStore.Common.Telemetry;
 using Microsoft.VisualStudio.Services.BlobStore.WebApi;
 using Microsoft.VisualStudio.Services.BlobStore.WebApi.Cache;
-using Microsoft.VisualStudio.Services.CircuitBreaker;
 using Microsoft.VisualStudio.Services.Common;
 using Microsoft.VisualStudio.Services.Content.Common;
 using Microsoft.VisualStudio.Services.Content.Common.Tracing;
@@ -240,7 +239,6 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                         .ThrowIfFailureAsync(r => r.StreamWithLength)!;
                     DedupIdentifier dedupId = hash.ToBlobIdentifier().ToDedupIdentifier();
                     dedupToSize.Add(dedupId, streamWithLength.Value.Length);
-                    dedupToHash.Add(dedupId, hash);
                 }
 
                 // create the manifest and add extras to local cache
@@ -281,23 +279,26 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                 dedupToSize[manifestId] = manifestStream.Length;
                 dedupToHash[manifestId] = manifestHash;
 
-                // now that we have the hashes and sizes, we can efficiently ask the service what it already has
+                // now that we have everything in the L1, we can efficiently ask the service what it already has
                 IDedupUploadSession uploadSession = _dedupClient.CreateUploadSession(
                     _keepUntil,
                     tracer: _azureDevopsTracer,
                     FileSystem.Instance);
 
-                // upload whatever is needed (outputs, extras, and manifest)
+                // upload whatever (outputs, extras, and manifest) is needed
+                Dictionary<DedupIdentifier, CheckIfUploadNeededResult> uploadCheckResults =
+                    await uploadSession.CheckIfUploadIsNeededAsync(dedupToSize, cancellationToken);
+
+                IEnumerable<DedupIdentifier> hashesToupload = uploadCheckResults
+                    .Where(kvp => kvp.Value == CheckIfUploadNeededResult.UploadNeeded)
+                    .Select(kvp => kvp.Key);
+
+                var pageRoots = new List<DedupNode>();
+                // upload the files in batches of DedupNode.MaxDirectChildrenPerNode == 512
+                foreach (List<DedupIdentifier> hashPage in hashesToupload.GetPages(DedupNode.MaxDirectChildrenPerNode))
                 {
-                    Dictionary<DedupIdentifier, CheckIfUploadNeededResult> uploadCheckResults =
-                        await uploadSession.CheckIfUploadIsNeededAsync(dedupToSize, cancellationToken);
-
-                    IEnumerable<DedupIdentifier> hashesToupload = uploadCheckResults
-                        .Where(kvp => kvp.Value == CheckIfUploadNeededResult.UploadNeeded)
-                        .Select(kvp => kvp.Key);
-
-                    // what it doesn't have, we'll need to materialize to upload
-                    Dictionary<ContentHash, string> tempFilesPerHash = hashesToupload.ToDictionary(
+                    // we'll need to materialize to upload because the cache won't give us its path to the content
+                    Dictionary<ContentHash, string> tempFilesPerHash = hashPage.ToDictionary(
                         hash => dedupToHash[hash],
                         hash =>
                         {
@@ -306,10 +307,12 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                             return tempFilePath;
                         });
 
+                    // munge to a different format
                     List<ContentHashWithPath> tempFiles = tempFilesPerHash
                         .Select(kvp => new ContentHashWithPath(kvp.Key, new AbsolutePath(kvp.Value)))
                         .ToList();
 
+                    // materialize the files
                     Dictionary<string, PlaceFileResult> placeResults = await TryPlaceFilesFromCacheAsync(context, tempFiles, cancellationToken);
                     foreach (KeyValuePair<string, PlaceFileResult> placeResult in placeResults)
                     {
@@ -317,34 +320,54 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                         placeResult.Value.ThrowIfFailure();
                     }
 
-                    // upload the files in batches of DedupNode.MaxDirectChildrenPerNode == 512
-                    foreach (List<KeyValuePair<ContentHash, string>> page in tempFilesPerHash.GetPages(DedupNode.MaxDirectChildrenPerNode))
+                    // compute the merkle tree
+                    Dictionary<DedupIdentifier, string> paths = tempFilesPerHash.ToDictionary(kvp => kvp.Key.ToBlobIdentifier().ToDedupIdentifier(), kvp => kvp.Value);
+                    var files = new List<DedupNode>(tempFilesPerHash.Count);
+                    foreach (KeyValuePair<ContentHash, string> kvp in tempFilesPerHash)
                     {
-                        Dictionary<DedupIdentifier, string> paths = page.ToDictionary(kvp => kvp.Key.ToBlobIdentifier().ToDedupIdentifier(), kvp => kvp.Value);
-                        var files = new List<DedupNode>(page.Count);
-                        foreach (KeyValuePair<ContentHash, string> kvp in page)
+                        // UploadAsync requires "filled" nodes.
+                        // For single-chunk files, they are already filled as they have no children nodes.
+                        // For multi-chunk files, we need to re-chunk them here as the LocalCAS
+                        //   only stores the hash of the top node and not the inner node tree that upload needs.
+                        DedupIdentifier dedupId = kvp.Key.ToBlobIdentifier().ToDedupIdentifier();
+                        if (dedupId.AlgorithmId == ChunkDedupIdentifier.ChunkAlgorithmId)
                         {
-                            // UploadAsync requires "filled" nodes.
-                            // For single-chunk files, they are already filled as they have no children nodes.
-                            // For multi-chunk files, we need to re-chunk them here as the LocalCAS
-                            //   only stores the hash of the top node and not the inner node tree that upload needs.
-                            DedupIdentifier dedupId = kvp.Key.ToBlobIdentifier().ToDedupIdentifier();
-                            if (dedupId.AlgorithmId == ChunkDedupIdentifier.ChunkAlgorithmId)
-                            {
-                                files.Add(new DedupNode(new ChunkInfo(0, (uint)dedupToSize[dedupId], dedupId.AlgorithmResult)));
-                            }
-                            else
-                            {
-                                DedupNode node = await ChunkFileAsync(kvp.Value, cancellationToken);
-                                files.Add(node);
-                            }
+                            files.Add(new DedupNode(new ChunkInfo(0, (uint)dedupToSize[dedupId], dedupId.AlgorithmResult)));
                         }
-                        var rootNode = new DedupNode(files);
-                        await uploadSession.UploadAsync(rootNode, paths, cancellationToken);
+                        else
+                        {
+                            DedupNode node = await ChunkFileAsync(kvp.Value, cancellationToken);
+                            files.Add(node);
+                        }
                     }
+
+                    // create the root node and upload
+                    var pageRootNode = new DedupNode(files);
+                    await uploadSession.UploadAsync(pageRootNode, paths, cancellationToken);
                 }
 
-                publishResult
+
+                while (pageRoots.Count > 1)
+                {
+                    var newPageRoots = new List<DedupNode>();
+                    foreach (List<DedupNode> page in pageRoots.GetPages(DedupNode.MaxDirectChildrenPerNode))
+                    {
+                        var pageRootNode = new DedupNode(page);
+                        newPageRoots.Add(pageRootNode);
+                    }
+                    pageRoots = newPageRoots;
+                }
+
+                DedupNode root = pageRoots.Single();
+
+                HashSet<DedupNode> proofNodes = ProofHelper.CreateProofNodes(
+                    uploadSession.AllNodes,
+                    uploadSession.ParentLookup,
+                    dedupToSize.Keys);
+
+                string[] proofNodesSerialized = proofNodes.Select(n => Convert.ToBase64String(n.Serialize())).ToArray();
+
+                publishResult = new PublishResult(manifestId, root.GetDedupIdentifier(), proofNodesSerialized, manifest.Items.Count, (long)root.TransitiveContentBytes);
             }
             else
             {
