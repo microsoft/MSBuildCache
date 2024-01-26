@@ -8,7 +8,7 @@
         <ItemGroup>
             <InputAssemblies 
                 Include="$(OutputPath)$(AssemblyName)$(TargetExt);$(OutputPath)*.dll" 
-                Exclude="$(OutputPath)grpc_*.dll;$(OutputPath)Grpc.Core.dll;@(PluginAssemblies->'$(OutputPath)%(Filename)%(Extension)', ';')"
+                Exclude="$(OutputPath)grpc_*.dll;@(PluginAssemblies->'$(OutputPath)%(Filename)%(Extension)', ';')"
             />
         </ItemGroup>
 
