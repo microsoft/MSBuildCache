@@ -5,6 +5,7 @@
     <Platforms>$(Platform)</Platforms>
     <TargetFrameworks>net472;net8.0</TargetFrameworks>
   </PropertyGroup>
+  <Import Project="..\ILRepack.props" />
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis" />
   </ItemGroup>
