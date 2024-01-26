@@ -10,7 +10,7 @@
   </ItemGroup>
   <ItemGroup Condition="'$(MSBuildLibraries)' == '' ">
     <PackageReference Include="Microsoft.Build" IncludeAssets="Compile" />
-    <PackageReference Include="Microsoft.Build.Framework" IncludeAssets="Compile" />
+    <PackageReference Include="Microsoft.Build.Framework" IncludeAssets="Compile" GeneratePathProperty="true"/>
     <PackageReference Include="Microsoft.Build.Utilities.Core" IncludeAssets="Compile" />
   </ItemGroup>
 </Project>
