@@ -17,6 +17,11 @@
             <IlRepackVerbose Condition="'$(IlRepackVerbose)' == ''">false</IlRepackVerbose>
         </PropertyGroup>
 
+        <PropertyGroup Condition="'$(TargetFramework)' == 'net472'">
+            <IlRepackKeyFile>$(AssemblyOriginatorKeyFile)</IlRepackKeyFile>
+            <IlDelaySign>$(DelaySign)</IlDelaySign>
+        </PropertyGroup>
+
         <ILRepack
             Parallel="true"
             Internalize="false"
@@ -26,6 +31,8 @@
             Verbose="$(IlRepackVerbose)"
             LibraryPath="@(LibraryPaths)"
             Union="true"
+            KeyFile="$(IlRepackKeyFile)"
+            DelaySign="$(IlDelaySign)"
         />
     </Target>
 </Project>
