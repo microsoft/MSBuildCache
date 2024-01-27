@@ -4,17 +4,17 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Reflection;
 using Microsoft.Build.Experimental.ProjectCache;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Microsoft.MSBuildCache.Tests;
 
+// Make sure that types used by the plugin interface are limited to the assemblies we expect
 [TestClass]
-public class PluginTypeCheckTests
+public class PluginInterfaceTypeCheckTests
 {
-    private static readonly HashSet<string> PluginAssemblies = new HashSet<string>()
+    public static readonly HashSet<string> PluginInterfaceNuGetAssemblies = new HashSet<string>()
     {
         // specific CODESYNC[DO_NOT_ILMERGE_ASSEMBLIES]
         "Microsoft.Build.dll",
@@ -23,31 +23,7 @@ public class PluginTypeCheckTests
         "System.Collections.Immutable.dll",
     };
 
-    [TestMethod]
-    public void PluginAssembliesNotMerged()
-    {
-        Dictionary<string, AssemblyName> references = typeof(MSBuildCachePluginBase).Assembly
-            .GetReferencedAssemblies()
-            .Where(a => a.Name is not null)
-            .ToDictionary(
-                a => a.Name!,
-                a => a
-            );
-
-        foreach (string expectedRefFileName in PluginAssemblies)
-        {
-            string expectedRef = Path.GetFileNameWithoutExtension(expectedRefFileName);
-            Assert.IsNotNull(references.FirstOrDefault(a => a.Value.FullName.IndexOf(expectedRef, StringComparison.Ordinal) > 0));
-        }
-    }
-
-    [TestMethod]
-    public void ProjectCachePluginBase()
-    {
-        CheckAssembliesForType(typeof(ProjectCachePluginBase));
-    }
-
-    private static readonly HashSet<string> ExpectedAssemblies = new HashSet<string>(PluginAssemblies)
+    private static readonly HashSet<string> PluginInterfaceAssemblies = new HashSet<string>(PluginInterfaceNuGetAssemblies)
     {
         // general
         "mscorlib.dll",
@@ -55,9 +31,15 @@ public class PluginTypeCheckTests
         "System.Core.dll",
     };
 
+    [TestMethod]
+    public void ProjectCachePluginBase()
+    {
+        CheckAssembliesForType(typeof(ProjectCachePluginBase));
+    }
+
     private static void AssertAssembly(Type t)
     {
-        Assert.IsTrue(ExpectedAssemblies.Contains(Path.GetFileName(t.Assembly.Location)),
+        Assert.IsTrue(PluginInterfaceAssemblies.Contains(Path.GetFileName(t.Assembly.Location)),
             $"Type {t.FullName} is in assembly {t.Assembly.Location} which is not expected");
     }
 
