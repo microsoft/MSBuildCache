@@ -256,19 +256,20 @@ internal sealed class FileAccessRepository : IDisposable
             lock (_stateLock)
             {
                 _isFinished = true;
+                _logFileStream.WriteLine("Project finished");
 
                 fileTable = _fileTable!;
                 deletedDirectories = _deletedDirectories!;
+
+                // Allow memory to be reclaimed
+                _fileTable = null;
+                _deletedDirectories = null;
 
                 if (_pluginSettings.AllowFileAccessAfterProjectFinishFilePatterns.Count == 0 &&
                     _pluginSettings.AllowFileAccessAfterProjectFinishProcessPatterns.Count == 0 &&
                     _pluginSettings.AllowProcessCloseAfterProjectFinishProcessPatterns.Count == 0)
                 {
                     _logFileStream.Dispose();
-
-                    // Allow memory to be reclaimed
-                    _fileTable = null;
-                    _deletedDirectories = null;
                 }
             }
 
