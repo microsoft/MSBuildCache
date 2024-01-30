@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <PropertyGroup Condition="('$(TargetFramework)' == 'net472') and ('$(Configuration)' == 'Release')">
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <ILRepackEnabled>true</ILRepackEnabled>
   </PropertyGroup>
 
@@ -13,7 +13,10 @@
   </ItemGroup>
 
   <ItemGroup Condition=" '$(ILRepackEnabled)' == 'true' ">
-    <PackageReference Include="ILRepack.Lib.MSBuild.Task"/>
+    <PackageReference Include="ILRepack">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
 
     <!-- BuildXL.Cache.ContentStore.Distributed.dll depends on this but doesn't list it-->
     <PackageReference Include="System.Private.ServiceModel"/>

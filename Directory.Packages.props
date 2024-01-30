@@ -8,7 +8,7 @@
   <ItemGroup>
     <PackageVersion Include="coverlet.collector" Version="3.1.2" />
     <PackageVersion Include="DotNet.Glob" Version="2.0.3" />
-    <PackageVersion Include="ILRepack.Lib.MSBuild.Task" Version="2.0.26" />
+    <PackageVersion Include="ILRepack" Version="2.0.27" />
     <PackageVersion Include="Microsoft.Bcl.AsyncInterfaces" Version="7.0.0" />
     <PackageVersion Include="Microsoft.Bcl.HashCode" Version="1.1.1" />
     <PackageVersion Include="Microsoft.Build" Version="$(MSBuildPackageVersion)" />

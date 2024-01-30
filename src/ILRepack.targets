@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-    <Target Name="ILRepacker" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <Target Name="ILRepacker" AfterTargets="Build" Condition="'$(ILRepack)' != ''">
         <ItemGroup>
             <LibraryPaths Include="$(OutputPath)"/>
             <LibraryPaths Include="$(PkgMicrosoft_Build_Framework)\lib\net472"/>
@@ -14,25 +14,16 @@
         </ItemGroup>
 
         <PropertyGroup>
-            <IlRepackVerbose Condition="'$(IlRepackVerbose)' == ''">false</IlRepackVerbose>
+            <IlRepackCommand>$(ILRepack) /allowduplicateresources /wildcards /union /parallel /out:$(OutputPath)$(AssemblyName)$(TargetExt) @(LibraryPaths->'/lib:%(FullPath)', ' ')</IlRepackCommand>
+            <IlRepackCommand Condition="'$(IlRepackVerbose)' == 'true'">$(IlRepackCommand) /verbose</IlRepackCommand>
+            <IlRepackCommand Condition="'$(DelaySign)' == 'true'">$(IlRepackCommand) /delaysign</IlRepackCommand>
+            <IlRepackCommand Condition="'$(AssemblyOriginatorKeyFile)' != ''">$(IlRepackCommand) /keyfile:$(AssemblyOriginatorKeyFile)</IlRepackCommand>
+            <IlRepackCommand>$(IlRepackCommand) @(InputAssemblies->'%(FullPath)', ' ')</IlRepackCommand>
         </PropertyGroup>
 
-        <PropertyGroup Condition="'$(TargetFramework)' == 'net472'">
-            <IlRepackKeyFile>$(AssemblyOriginatorKeyFile)</IlRepackKeyFile>
-            <IlDelaySign>$(DelaySign)</IlDelaySign>
-        </PropertyGroup>
-
-        <ILRepack
-            Parallel="true"
-            Internalize="false"
-            InputAssemblies="@(InputAssemblies)"
-            TargetKind="SameAsPrimaryAssembly"
-            OutputFile="$(OutputPath)$(AssemblyName)$(TargetExt)"
-            Verbose="$(IlRepackVerbose)"
-            LibraryPath="@(LibraryPaths)"
-            Union="true"
-            KeyFile="$(IlRepackKeyFile)"
-            DelaySign="$(IlDelaySign)"
+        <Exec
+            Command="$(IlRepackCommand)"
+            IgnoreStandardErrorWarningFormat="true"
         />
     </Target>
 </Project>
