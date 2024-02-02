@@ -60,6 +60,12 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </PackageReference>
+
+    <!-- BuildXL.Cache.ContentStore.Distributed.dll depends on this but doesn't list it-->
+    <PackageReference Include="System.Private.ServiceModel"/>
+    <PackageReference Include="protobuf-net"/>
+    <PackageReference Include="protobuf-net.Core"/>
+    <PackageReference Include="protobuf-net.Grpc"/>
   </ItemGroup>
 
   <Target Name="ILRepacker" AfterTargets="Build" Condition="'$(ILRepack)' != ''">
@@ -71,7 +77,7 @@
     <ItemGroup>
       <InputAssemblies 
         Include="$(OutputPath)$(AssemblyName)$(TargetExt);$(OutputPath)*.dll" 
-        Exclude="@(DoNotMergeAssemblies->'$(OutputPath)%(Filename)%(Extension)', ';');@(PluginAssemblies->'$(OutputPath)%(Filename)%(Extension)', ';')"
+        Exclude="$(OutputPath)grpc_*.dll;@(PluginAssemblies->'$(OutputPath)%(Filename)%(Extension)', ';')"
     />
     </ItemGroup>
 
