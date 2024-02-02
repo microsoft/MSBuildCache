@@ -36,4 +36,56 @@
       <BuildOutputInPackage Include="@(None-&gt;WithMetadataValue('Link', 'native\amd64\rocksdb.dll'))" TargetPath="%(None.Link)" />
     </ItemGroup>
   </Target>
+
+  <!-- ILRepack -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <ILRepackEnabled>true</ILRepackEnabled>
+  </PropertyGroup>
+
+  <ItemGroup Condition=" '$(ILRepackEnabled)' == 'true' ">
+    <!-- Make sure the types of the API between plug-in and MsBuild in in `Exclude`. CODESYNC[DO_NOT_ILMERGE_ASSEMBLIES] -->
+    <PluginAssemblies Include="System.Collections.Immutable.dll" />
+    <PluginAssemblies Include="Microsoft.Build.dll" />
+    <PluginAssemblies Include="Microsoft.Build.Framework.dll" />
+    <PluginAssemblies Include="Microsoft.Build.Utilities.Core.dll" />
+
+    <!-- we don't use a distributed cache and these pull in a lot of other binaries -->
+    <DoNotMergeAssemblies Include="BuildXL.Cache.ContentStore.Distributed.dll" />
+    <DoNotMergeAssemblies Include="grpc_csharp_ext.x64.dll" />
+    <DoNotMergeAssemblies Include="grpc_csharp_ext.x86.dll" />
+  </ItemGroup>
+
+  <ItemGroup Condition=" '$(ILRepackEnabled)' == 'true' ">
+    <PackageReference Include="ILRepack">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <Target Name="ILRepacker" AfterTargets="Build" Condition="'$(ILRepack)' != ''">
+    <ItemGroup>
+      <LibraryPaths Include="$(OutputPath)"/>
+      <LibraryPaths Include="$(PkgMicrosoft_Build_Framework)\lib\net472"/>
+    </ItemGroup>
+
+    <ItemGroup>
+      <InputAssemblies 
+        Include="$(OutputPath)$(AssemblyName)$(TargetExt);$(OutputPath)*.dll" 
+        Exclude="@(DoNotMergeAssemblies->'$(OutputPath)%(Filename)%(Extension)', ';');@(PluginAssemblies->'$(OutputPath)%(Filename)%(Extension)', ';')"
+    />
+    </ItemGroup>
+
+    <PropertyGroup>
+      <IlRepackCommand>$(ILRepack) /allowduplicateresources /union /parallel /out:$(OutputPath)$(AssemblyName)$(TargetExt) @(LibraryPaths->'/lib:%(FullPath)', ' ')</IlRepackCommand>
+      <IlRepackCommand Condition="'$(IlRepackVerbose)' == 'true'">$(IlRepackCommand) /verbose</IlRepackCommand>
+      <IlRepackCommand Condition="'$(DelaySign)' == 'true'">$(IlRepackCommand) /delaysign</IlRepackCommand>
+      <IlRepackCommand Condition="'$(AssemblyOriginatorKeyFile)' != ''">$(IlRepackCommand) /keyfile:$(AssemblyOriginatorKeyFile)</IlRepackCommand>
+      <IlRepackCommand>$(IlRepackCommand) @(InputAssemblies->'%(FullPath)', ' ')</IlRepackCommand>
+    </PropertyGroup>
+
+    <Exec
+      Command="$(IlRepackCommand)"
+      IgnoreStandardErrorWarningFormat="true"
+    />
+  </Target>
 </Project>

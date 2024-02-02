@@ -8,7 +8,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Common\Microsoft.MSBuildCache.Common.csproj" />
   </ItemGroup>
-  <Import Project="..\ILRepack.props" />
   <ItemGroup>
     <PackageReference Include="Microsoft.BuildXL.Cache.Hashing" />
     <PackageReference Include="Microsoft.BuildXL.Cache.Interfaces"  />
@@ -38,5 +37,4 @@
     <FilesToSign Include="$(TargetPath)" Authenticode="Microsoft400" StrongName="StrongName" />
   </ItemGroup>
   <Import Project="$(RepoRoot)build\MSBuildExtensionPackage.targets" />
-  <Import Project="..\ILRepack.targets" />
 </Project>

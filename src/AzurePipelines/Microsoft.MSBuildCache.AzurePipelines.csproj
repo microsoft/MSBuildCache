@@ -5,7 +5,6 @@
     <Platforms>$(Platform)</Platforms>
     <TargetFrameworks>net472;net8.0</TargetFrameworks>
   </PropertyGroup>
-  <Import Project="..\ILRepack.props" />
   <ItemGroup>
     <ProjectReference Include="..\Common\Microsoft.MSBuildCache.Common.csproj" />
   </ItemGroup>
@@ -36,5 +35,4 @@
     <FilesToSign Include="$(TargetPath)" Authenticode="Microsoft400" StrongName="StrongName" />
   </ItemGroup>
   <Import Project="$(RepoRoot)build\MSBuildExtensionPackage.targets" />
-  <Import Project="..\ILRepack.targets" />
 </Project>

@@ -9,7 +9,7 @@ steps:
 
 - script: |
     dotnet build $(Build.SourcesDirectory)/MSBuildCache.sln --configuration $(BuildConfiguration) -BinaryLogger:$(LogDirectory)/msbuild.binlog
-  displayName: Restore & Build
+  displayName: Build
 
 - task: DotNetCoreCLI@2
   displayName: Run Unit Tests
