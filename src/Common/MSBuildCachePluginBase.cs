@@ -912,7 +912,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             {
                 if (pattern.IsMatch(absolutePath))
                 {
-                    logger.LogMessage($"Absolute path `{absolutePath}` matches identical-global glob pattern `{pattern}`.");
+                    logger.LogMessage($"Absolute path `{absolutePath}` matches identical-global glob pattern `{pattern}`.", MessageImportance.Low);
                     return true;
                 }
             }
