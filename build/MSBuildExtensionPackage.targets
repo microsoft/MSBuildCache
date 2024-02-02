@@ -48,11 +48,6 @@
     <PluginAssemblies Include="Microsoft.Build.dll" />
     <PluginAssemblies Include="Microsoft.Build.Framework.dll" />
     <PluginAssemblies Include="Microsoft.Build.Utilities.Core.dll" />
-
-    <!-- we don't use a distributed cache and these pull in a lot of other binaries -->
-    <DoNotMergeAssemblies Include="BuildXL.Cache.ContentStore.Distributed.dll" />
-    <DoNotMergeAssemblies Include="grpc_csharp_ext.x64.dll" />
-    <DoNotMergeAssemblies Include="grpc_csharp_ext.x86.dll" />
   </ItemGroup>
 
   <ItemGroup Condition=" '$(ILRepackEnabled)' == 'true' ">
