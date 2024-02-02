@@ -9,12 +9,12 @@
         <ItemGroup>
             <InputAssemblies 
                 Include="$(OutputPath)$(AssemblyName)$(TargetExt);$(OutputPath)*.dll" 
-                Exclude="$(OutputPath)grpc_*.dll;@(PluginAssemblies->'$(OutputPath)%(Filename)%(Extension)', ';')"
+                Exclude="@(DoNotMergeAssemblies->'$(OutputPath)%(Filename)%(Extension)', ';');@(PluginAssemblies->'$(OutputPath)%(Filename)%(Extension)', ';')"
             />
         </ItemGroup>
 
         <PropertyGroup>
-            <IlRepackCommand>$(ILRepack) /allowduplicateresources /wildcards /union /parallel /out:$(OutputPath)$(AssemblyName)$(TargetExt) @(LibraryPaths->'/lib:%(FullPath)', ' ')</IlRepackCommand>
+            <IlRepackCommand>$(ILRepack) /allowduplicateresources /union /parallel /out:$(OutputPath)$(AssemblyName)$(TargetExt) @(LibraryPaths->'/lib:%(FullPath)', ' ')</IlRepackCommand>
             <IlRepackCommand Condition="'$(IlRepackVerbose)' == 'true'">$(IlRepackCommand) /verbose</IlRepackCommand>
             <IlRepackCommand Condition="'$(DelaySign)' == 'true'">$(IlRepackCommand) /delaysign</IlRepackCommand>
             <IlRepackCommand Condition="'$(AssemblyOriginatorKeyFile)' != ''">$(IlRepackCommand) /keyfile:$(AssemblyOriginatorKeyFile)</IlRepackCommand>
