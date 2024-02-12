@@ -912,7 +912,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             {
                 if (pattern.IsMatch(absolutePath))
                 {
-                    logger.LogMessage($"Absolute path `{absolutePath}` matches identical-global glob pattern `{pattern}`.");
+                    logger.LogMessage($"Absolute path `{absolutePath}` matches identical-global glob pattern `{pattern}`.", MessageImportance.Low);
                     return true;
                 }
             }
@@ -936,7 +936,8 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             }
 
             // This is only allowed if marked as a duplicate-identical output
-            if (!IsDuplicateIdenticalOutputPath(logger, relativeFilePath))
+            string absoluteFilePath = Path.Combine(_repoRoot!, relativeFilePath);
+            if (!IsDuplicateIdenticalOutputPath(logger, absoluteFilePath))
             {
                 logger.LogError($"Node {nodeContext.Id} produced output {relativeFilePath} which was already produced by another node {_outputProducer[relativeFilePath].Id}.");
                 return;
@@ -950,7 +951,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             }
 
             // compare the hash of the original output to this output and log/error accordingly.
-            ContentHash previousHash = previousNode.BuildResult!.Outputs[relativeFilePath];
+            ContentHash previousHash = previousNode.BuildResult.Outputs[relativeFilePath];
             if (previousHash != newHash)
             {
                 logger.LogError($"Node {nodeContext.Id} produced output {relativeFilePath} with hash {newHash} which was already produced by another node {previousNode.Id} with a different hash {previousHash}.");

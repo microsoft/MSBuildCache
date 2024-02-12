@@ -11,6 +11,13 @@ namespace Microsoft.MSBuildCache.SourceControl;
 
 public static class Git
 {
+#if NETFRAMEWORK
+    private static readonly object InputEncodingLock = new object();
+#endif
+
+    // UTF8 - NO BOM
+    private static readonly Encoding InputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+
     public static async Task<string> BranchNameAsync(PluginLoggerBase logger, string repoRoot)
     {
         string branchName = await RunAsync(logger, repoRoot, "rev-parse --abbrev-ref HEAD",
@@ -40,7 +47,30 @@ public static class Git
         process.StartInfo.StandardOutputEncoding = Encoding.UTF8;
 
         Stopwatch sw = Stopwatch.StartNew();
+
+#if NETFRAMEWORK
+        // In .NET Framework the StandardInputEncoding is always Console.InputEncoding and determines at process start time.
+        // Because we need to redirect StandardInputEncoding, temporarily set Console.InputEncoding to what we need until the
+        // process is started. Use a lock to avoid collisions.
+        lock (InputEncodingLock)
+        {
+            Encoding originalConsoleInputEncoding = Console.InputEncoding;
+            try
+            {
+                Console.InputEncoding = InputEncoding;
+
+                process.Start();
+            }
+            finally
+            {
+                Console.InputEncoding = originalConsoleInputEncoding;
+            }
+        }
+#else
+        process.StartInfo.StandardInputEncoding = InputEncoding;
+
         process.Start();
+#endif
 
         static void KillProcess(Process process)
         {
