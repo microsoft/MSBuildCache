@@ -185,14 +185,14 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     {
         if (ContentHasher == null
             || InputHasher == null
-            || NodeContextRepository == null
+            || _nodeContextRepository == null
             || Settings == null
             || _pathNormalizer == null)
         {
             throw new InvalidOperationException();
         }
 
-        return new FingerprintFactory(ContentHasher, InputHasher, NodeContextRepository, Settings, _pathNormalizer);
+        return new FingerprintFactory(ContentHasher, InputHasher, _nodeContextRepository, Settings, _pathNormalizer);
     }
 
     protected abstract Task<ICacheClient> CreateCacheClientAsync(PluginLoggerBase logger, CancellationToken cancellationToken);
@@ -289,11 +289,12 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             NodeDescriptor nodeDescriptor = _nodeDescriptorFactory.Create(node.ProjectInstance);
             NodeContext nodeContext = new(Settings.LogDirectory, node, parserInfo.ProjectFileRelativePath, nodeDescriptor.GlobalProperties, inputs, targetNames);
 
-            dumpParserInfoTasks.Add(DumpParserInfoAsync(logger, nodeContext, parserInfo));
+            dumpParserInfoTasks.Add(Task.Run(() => DumpParserInfoAsync(logger, nodeContext, parserInfo), cancellationToken));
             nodeContexts.Add(nodeDescriptor, nodeContext);
         }
 
         _nodeContextRepository = new NodeContextRepository(nodeContexts, _nodeDescriptorFactory);
+        Task dumpNodeContextsTask = DumpNodeContextsAsync(logger, nodeContexts);
         InputHasher = await inputHasherTask;
         FingerprintFactory = CreateFingerprintFactory();
         _fileAccessRepository = new FileAccessRepository(logger, Settings);
@@ -301,6 +302,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
         // Ensure all logs are written
         await Task.WhenAll(dumpParserInfoTasks);
+        await dumpNodeContextsTask;
 
         Initialized = true;
     }
@@ -360,7 +362,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             return CacheResult.IndicateNonCacheHit(CacheResultType.CacheNotApplicable);
         }
 
-        if (!NodeContextRepository.TryGetNodeContext(projectInstance, out NodeContext? nodeContext))
+        if (!_nodeContextRepository.TryGetNodeContext(projectInstance, out NodeContext? nodeContext))
         {
             return CacheResult.IndicateNonCacheHit(CacheResultType.CacheNotApplicable);
         }
@@ -480,7 +482,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         // In niche cases, eg traversal projects, the build may be successful despite a dependency failing. Ignore these cases since we can't properly fingerprint failed dependencies.
         foreach (ProjectGraphNode dependencyNode in nodeContext.Node.ProjectReferences)
         {
-            if (!NodeContextRepository.TryGetNodeContext(dependencyNode.ProjectInstance, out NodeContext? dependencyNodeContext))
+            if (!_nodeContextRepository.TryGetNodeContext(dependencyNode.ProjectInstance, out NodeContext? dependencyNodeContext))
             {
                 return;
             }
@@ -641,6 +643,73 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         }
 
         return nodeContext;
+    }
+
+    private async Task DumpNodeContextsAsync(PluginLoggerBase logger, Dictionary<NodeDescriptor, NodeContext> nodeContexts)
+    {
+        if (_nodeContextRepository is null)
+        {
+            throw new InvalidOperationException($"{nameof(_nodeContextRepository)} was unexpectedly null");
+        }
+
+        Task[] tasks = new Task[nodeContexts.Count];
+        int i = 0;
+        foreach (KeyValuePair<NodeDescriptor, NodeContext> kvp in nodeContexts)
+        {
+            tasks[i++] = Task.Run(() => DumpNodeContextAsync(kvp.Value));
+        }
+
+        await Task.WhenAll(tasks);
+
+        async Task DumpNodeContextAsync(NodeContext nodeContext)
+        {
+            string filePath = Path.Combine(nodeContext.LogDirectory, "nodeInfo.json");
+            try
+            {
+                using FileStream fileStream = File.Create(filePath);
+                await using var jsonWriter = new Utf8JsonWriter(fileStream, SerializationHelper.WriterOptions);
+
+                jsonWriter.WriteStartObject();
+
+                jsonWriter.WriteString("id", nodeContext.Id);
+                jsonWriter.WriteString("projectFileRelativePath", nodeContext.ProjectFileRelativePath);
+
+                jsonWriter.WriteStartObject("globalProperties");
+                foreach (KeyValuePair<string, string> kvp in nodeContext.GlobalProperties)
+                {
+                    jsonWriter.WriteString(kvp.Key, kvp.Value);
+                }
+
+                jsonWriter.WriteEndObject(); // globalProperties
+
+                jsonWriter.WriteStartArray("targetNames");
+                foreach (string targetName in nodeContext.TargetNames)
+                {
+                    jsonWriter.WriteStringValue(targetName);
+                }
+
+                jsonWriter.WriteEndArray(); // targetNames
+
+                jsonWriter.WriteStartArray("dependencies");
+                foreach (ProjectGraphNode dependencyNode in nodeContext.Node.ProjectReferences)
+                {
+                    if (!_nodeContextRepository.TryGetNodeContext(dependencyNode.ProjectInstance, out NodeContext? dependencyNodeContext))
+                    {
+                        return;
+                    }
+
+                    jsonWriter.WriteStringValue(dependencyNodeContext.Id);
+                }
+
+                jsonWriter.WriteEndArray(); // dependencies
+
+                jsonWriter.WriteEndObject();
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning($"Non-fatal exception while writing {filePath}. {ex.GetType().Name}: {ex.Message}");
+            }
+        }
     }
 
     private async Task DumpParserInfoAsync(
