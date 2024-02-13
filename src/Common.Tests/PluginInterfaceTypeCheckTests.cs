@@ -62,8 +62,6 @@ public class PluginInterfaceTypeCheckTests
             return;
         }
 
-        // Console.WriteLine($"Checking {t.FullName}");
-
         AssertAssembly(t);
         foreach (Type nested in t.GetNestedTypes(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
         {
