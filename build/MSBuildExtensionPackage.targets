@@ -20,15 +20,73 @@
   </Target>
 
   <!-- Since this is an MSBuild extension which is loaded into the MSBuild process, much like a tool package we need to repackage our ProjectReferences and PackageReferences -->
-  <Target Name="IncludeReferenceCopyLocalPathsInBuildOutputInPackage" BeforeTargets="_GetBuildOutputFilesWithTfm" DependsOnTargets="ResolveReferences;ResolvePackageDependenciesForBuild;ResolveProjectReferences">
-    <ItemGroup>
+  <!-- When we are using ilrepack to directly merge the dependencies, we only need to copy the native files which don't get merged.-->
+  <Target Name="IncludeReferenceCopyLocalPathsInBuildOutputInPackage"
+          BeforeTargets="_GetBuildOutputFilesWithTfm"
+          DependsOnTargets="ResolveReferences;ResolvePackageDependenciesForBuild;ResolveProjectReferences"
+          >
+    <ItemGroup Condition=" '$(ILRepackEnabled)' != 'true' ">
       <BuildOutputInPackage Include="@(_ResolvedProjectReferencePaths)" TargetPath="%(RuntimeCopyLocalItems.DestinationSubDirectory)%(Filename)%(Extension)" />
-
       <BuildOutputInPackage Include="@(RuntimeCopyLocalItems-&gt;WithMetadataValue('AssetType', 'runtime'))" TargetPath="%(RuntimeCopyLocalItems.DestinationSubDirectory)%(Filename)%(Extension)" />
       <BuildOutputInPackage Include="@(RuntimeCopyLocalItems-&gt;WithMetadataValue('CopyLocal', 'true'))" TargetPath="%(RuntimeCopyLocalItems.DestinationSubDirectory)%(Filename)%(Extension)" />
-      
+    </ItemGroup>
+
+    <ItemGroup>
       <!-- Somewhat hard-code this as there isn't a good way to identify it -->
       <BuildOutputInPackage Include="@(None-&gt;WithMetadataValue('Link', 'native\amd64\rocksdb.dll'))" TargetPath="%(None.Link)" />
     </ItemGroup>
+  </Target>
+
+  <!-- ILRepack -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <ILRepackEnabled>true</ILRepackEnabled>
+  </PropertyGroup>
+
+  <ItemGroup Condition=" '$(ILRepackEnabled)' == 'true' ">
+    <!-- Make sure the types of the API between plug-in and MsBuild in in `Exclude`. CODESYNC[DO_NOT_ILMERGE_ASSEMBLIES] -->
+    <PluginAssemblies Include="System.Collections.Immutable.dll" />
+    <PluginAssemblies Include="Microsoft.Build.dll" />
+    <PluginAssemblies Include="Microsoft.Build.Framework.dll" />
+    <PluginAssemblies Include="Microsoft.Build.Utilities.Core.dll" />
+  </ItemGroup>
+
+  <ItemGroup Condition=" '$(ILRepackEnabled)' == 'true' ">
+    <PackageReference Include="ILRepack">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+
+    <!-- BuildXL.Cache.ContentStore.Distributed.dll depends on this but doesn't list it-->
+    <PackageReference Include="System.Private.ServiceModel"/>
+    <PackageReference Include="protobuf-net"/>
+    <PackageReference Include="protobuf-net.Core"/>
+    <PackageReference Include="protobuf-net.Grpc"/>
+  </ItemGroup>
+
+  <Target Name="ILRepacker" AfterTargets="Build" Condition="'$(ILRepack)' != ''">
+    <ItemGroup>
+      <LibraryPaths Include="$(OutputPath)"/>
+      <LibraryPaths Include="$(PkgMicrosoft_Build_Framework)\lib\net472"/>
+    </ItemGroup>
+
+    <ItemGroup>
+      <InputAssemblies 
+        Include="$(OutputPath)$(AssemblyName)$(TargetExt);$(OutputPath)*.dll" 
+        Exclude="$(OutputPath)grpc_*.dll;@(PluginAssemblies->'$(OutputPath)%(Filename)%(Extension)', ';')"
+    />
+    </ItemGroup>
+
+    <PropertyGroup>
+      <IlRepackCommand>$(ILRepack) /allowduplicateresources /union /parallel /out:$(OutputPath)$(AssemblyName)$(TargetExt) @(LibraryPaths->'/lib:%(FullPath)', ' ')</IlRepackCommand>
+      <IlRepackCommand Condition="'$(IlRepackVerbose)' == 'true'">$(IlRepackCommand) /verbose</IlRepackCommand>
+      <IlRepackCommand Condition="'$(DelaySign)' == 'true'">$(IlRepackCommand) /delaysign</IlRepackCommand>
+      <IlRepackCommand Condition="'$(AssemblyOriginatorKeyFile)' != ''">$(IlRepackCommand) /keyfile:$(AssemblyOriginatorKeyFile)</IlRepackCommand>
+      <IlRepackCommand>$(IlRepackCommand) @(InputAssemblies->'%(FullPath)', ' ')</IlRepackCommand>
+    </PropertyGroup>
+
+    <Exec
+      Command="$(IlRepackCommand)"
+      IgnoreStandardErrorWarningFormat="true"
+    />
   </Target>
 </Project>
