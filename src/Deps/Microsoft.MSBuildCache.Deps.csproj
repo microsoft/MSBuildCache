@@ -65,13 +65,6 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
 
-    <!-- Ilrepack has trouble finding this -->
-    <PackageReference Include="System.Text.Json" GeneratePathProperty="true" Condition="'$(MSBuildRuntimeType)' == 'Core'">
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
-    <PackageReference Include="System.Diagnostics.DiagnosticSource" GeneratePathProperty="true" Condition="'$(MSBuildRuntimeType)' == 'Core'">
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>
@@ -89,12 +82,17 @@
           Inputs="$(OutputPath)$(AssemblyName)$(TargetExt);DoNotInternalize.txt"
           Outputs="$(OutputPath)$(AssemblyName)$(TargetExt).merged"
   >
-    <ItemGroup>
-      <LibraryPaths Include="$(OutputPath)" />
-      <LibraryPaths Include="$(PkgMicrosoft_Build_Framework)\lib\net472" Condition="'$(MSBuildRuntimeType)' != 'Core'" />
-      <LibraryPaths Include="$(PkgSystem_Text_Json)\lib\net7.0" Condition="'$(MSBuildRuntimeType)' == 'Core'" />
-      <LibraryPaths Include="$(PkgSystem_Diagnostics_DiagnosticSource)\lib\net7.0" Condition="'$(MSBuildRuntimeType)' == 'Core'" />
+
+        <!-- Ilrepack has trouble finding this -->
+    <ItemGroup Condition="'$(TargetFramework)' != 'net472'">
+      <LibraryArgs Include="/lib:%(ReferencePath.RootDir)%(ReferencePath.Directory)"/>
     </ItemGroup>
+
+    <WriteLinestoFile 
+      File="$(OutputPath)$(AssemblyName)$(TargetExt).libs.txt"
+      Overwrite="true"
+      Lines="@(LibraryArgs)"
+      />
 
     <ItemGroup>
       <InputAssemblies
@@ -108,7 +106,8 @@
       <IlRepackCommand>$(IlRepackCommand) /internalize:DoNotInternalize.txt /renameInternalized</IlRepackCommand>
       <IlRepackCommand>$(IlRepackCommand) /repackdrop</IlRepackCommand>
       <IlRepackCommand>$(IlRepackCommand) /out:$(OutputPath)$(AssemblyName)$(TargetExt)</IlRepackCommand>
-      <IlRepackCommand>$(IlRepackCommand) @(LibraryPaths->'/lib:%(FullPath)', ' ')</IlRepackCommand>
+      <IlRepackCommand>$(IlRepackCommand) /lib:$(OutputPath)</IlRepackCommand>
+      <IlRepackCommand>$(IlRepackCommand) @$(OutputPath)$(AssemblyName)$(TargetExt).libs.txt</IlRepackCommand>
       <IlRepackCommand>$(IlRepackCommand) /verbose</IlRepackCommand>
       <!-- <IlRepackCommand Condition="'$(IlRepackVerbose)' == 'true'">$(IlRepackCommand) /verbose</IlRepackCommand> -->
       <IlRepackCommand Condition="'$(DelaySign)' == 'true'">$(IlRepackCommand) /delaysign</IlRepackCommand>
@@ -116,7 +115,7 @@
       <IlRepackCommand>$(IlRepackCommand) @(InputAssemblies->'%(FullPath)', ' ')</IlRepackCommand>
     </PropertyGroup>
 
-    <Exec Command="$(IlRepackCommand)" IgnoreStandardErrorWarningFormat="true" StandardOutputImportance="low"/>
+    <Exec Command='$(IlRepackCommand)' IgnoreStandardErrorWarningFormat="true" StandardOutputImportance="low"/>
 
     <Copy SourceFiles="$(OutputPath)$(AssemblyName)$(TargetExt)" DestinationFiles="$(IntermediateOutputPath)$(AssemblyName)$(TargetExt)" />
 
