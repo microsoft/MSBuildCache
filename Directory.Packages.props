@@ -24,6 +24,7 @@
     <PackageVersion Include="Microsoft.BuildXL.Utilities.Core" Version="$(BuildXLPackageVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis" Version="3.8.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="6.0.3" />
+    <PackageVersion Include="Microsoft.NETCore.App.Ref" Version="8.0.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.3.2" />
     <PackageVersion Include="Microsoft.VisualStudio.Services.BlobStore.Client" Version="$(ArtifactsPackageVersion)" />
     <PackageVersion Include="Microsoft.VisualStudio.Services.BlobStore.Client.Cache" Version="$(ArtifactsPackageVersion)" />

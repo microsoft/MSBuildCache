@@ -7,11 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Common\Microsoft.MSBuildCache.Common.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-    <PackageReference Include="Microsoft.VisualStudio.Services.PipelineCache.WebApi" />
-    <PackageReference Include="Microsoft.VisualStudio.Services.BlobStore.Client" />
-    <PackageReference Include="Microsoft.VisualStudio.Services.BlobStore.Client.Cache" />
+    <Reference Include="System.Net.Http" Condition="'$(TargetFramework)' == 'net472'"/>
   </ItemGroup>
   <ItemGroup>
     <None Include="build\*">

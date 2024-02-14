@@ -8,20 +8,14 @@
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="DotNet.Glob" />
-    <PackageReference Include="Microsoft.Bcl.HashCode" />
-    <PackageReference Include="Microsoft.Build.Prediction" />
-    <PackageReference Include="Microsoft.BuildXL.Cache.Hashing" />
-    <PackageReference Include="Microsoft.BuildXL.Cache.Interfaces"  />
-    <PackageReference Include="Microsoft.BuildXL.Cache.Libraries" />
-    <!-- Microsoft.Extensions.Logging.Abstractions is an undeclared dependency of BuildXL.Cache.Libraries. TODO: Remove once BuildXL.Cache.Libraries fixes this -->
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
-    <PackageReference Include="System.Threading.Channels" />
+    <ProjectReference Include="..\Deps\Microsoft.MSBuildCache.Deps.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- TODO: Inlcude these in the package to automatically include them for depending projects -->
     <None Include="build\*" />
     <None Include="buildMultiTargeting\*" />
+    <Reference Include="System.Net.Http" Condition="'$(TargetFramework)' == 'net472'"/>
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Microsoft.MSBuildCache.Common.Tests" />

@@ -1,0 +1,129 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Only supports x64 due to the RocksDB dependency -->
+    <Platform>x64</Platform>
+    <Platforms>x64</Platforms>
+    <TargetFrameworks>net472;net8.0</TargetFrameworks>
+    <RootNamespace>Microsoft.MSBuildCache.Deps</RootNamespace>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+    <NoWarn>$(NoWarn);CS0649;CA1018;CA1813;CA1852</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ILRepack">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+
+    <PackageReference Include="DotNet.Glob">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Bcl.HashCode">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Build.Prediction">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.BuildXL.Cache.Hashing">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.BuildXL.Cache.Interfaces">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.BuildXL.Cache.Libraries">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <!-- Microsoft.Extensions.Logging.Abstractions is an undeclared dependency of BuildXL.Cache.Libraries. TODO: Remove once BuildXL.Cache.Libraries fixes this -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="System.Threading.Channels">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+
+    <PackageReference Include="Microsoft.VisualStudio.Services.PipelineCache.WebApi">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.VisualStudio.Services.BlobStore.Client">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.VisualStudio.Services.BlobStore.Client.Cache">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+
+    <!-- BuildXL.Cache.ContentStore.Distributed.dll depends on this but doesn't list it-->
+    <PackageReference Include="System.Private.ServiceModel">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="protobuf-net">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="protobuf-net.Core">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="protobuf-net.Grpc">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Make sure the types of the API between plug-in and MsBuild in in `Exclude`. CODESYNC[DO_NOT_ILMERGE_ASSEMBLIES] -->
+    <PluginAssemblies Include="System.Collections.Immutable.dll" />
+    <PluginAssemblies Include="Microsoft.Build.dll" />
+    <PluginAssemblies Include="Microsoft.Build.Framework.dll" />
+    <PluginAssemblies Include="Microsoft.Build.Utilities.Core.dll" />
+    <!-- and their dependencies -->
+    <PluginAssemblies Include="Microsoft.Bcl.AsyncInterfaces.dll" />
+    <PluginAssemblies Include="System.Threading.Tasks.Extensions.dll" />
+  </ItemGroup>
+
+  <Target Name="ILRepacker" AfterTargets="Build" Condition="'$(ILRepack)' != ''" 
+          Inputs="$(OutputPath)$(AssemblyName)$(TargetExt);DoNotInternalize.txt"
+          Outputs="$(OutputPath)$(AssemblyName)$(TargetExt).merged"
+  >
+
+        <!-- Ilrepack has trouble finding this -->
+    <ItemGroup Condition="'$(TargetFramework)' != 'net472'">
+      <LibraryArgs Include="/lib:%(ReferencePath.RootDir)%(ReferencePath.Directory)"/>
+    </ItemGroup>
+
+    <WriteLinestoFile 
+      File="$(OutputPath)$(AssemblyName)$(TargetExt).libs.txt"
+      Overwrite="true"
+      Lines="@(LibraryArgs)"
+      />
+
+    <ItemGroup>
+      <InputAssemblies
+        Include="$(OutputPath)$(AssemblyName)$(TargetExt);$(OutputPath)*.dll"
+        Exclude="$(OutputPath)grpc_*.dll;@(PluginAssemblies->'$(OutputPath)%(Filename)%(Extension)', ';')"
+      />
+    </ItemGroup>
+
+    <PropertyGroup>
+      <IlRepackCommand>$(ILRepack) /allowduplicateresources /union /parallel</IlRepackCommand>
+      <IlRepackCommand>$(IlRepackCommand) /internalize:DoNotInternalize.txt /renameInternalized</IlRepackCommand>
+      <IlRepackCommand>$(IlRepackCommand) /repackdrop</IlRepackCommand>
+      <IlRepackCommand>$(IlRepackCommand) /out:$(OutputPath)$(AssemblyName)$(TargetExt)</IlRepackCommand>
+      <IlRepackCommand>$(IlRepackCommand) /lib:$(OutputPath)</IlRepackCommand>
+      <IlRepackCommand>$(IlRepackCommand) @$(OutputPath)$(AssemblyName)$(TargetExt).libs.txt</IlRepackCommand>
+      <IlRepackCommand>$(IlRepackCommand) /verbose</IlRepackCommand>
+      <!-- <IlRepackCommand Condition="'$(IlRepackVerbose)' == 'true'">$(IlRepackCommand) /verbose</IlRepackCommand> -->
+      <IlRepackCommand Condition="'$(DelaySign)' == 'true'">$(IlRepackCommand) /delaysign</IlRepackCommand>
+      <IlRepackCommand Condition="'$(AssemblyOriginatorKeyFile)' != ''">$(IlRepackCommand) /keyfile:$(AssemblyOriginatorKeyFile)</IlRepackCommand>
+      <IlRepackCommand>$(IlRepackCommand) @(InputAssemblies->'%(FullPath)', ' ')</IlRepackCommand>
+    </PropertyGroup>
+
+    <Exec Command='$(IlRepackCommand)' IgnoreStandardErrorWarningFormat="true" StandardOutputImportance="low"/>
+
+    <Copy SourceFiles="$(OutputPath)$(AssemblyName)$(TargetExt)" DestinationFiles="$(IntermediateOutputPath)$(AssemblyName)$(TargetExt)" />
+
+    <WriteLinestoFile File="$(OutputPath)$(AssemblyName)$(TargetExt).merged" Overwrite="true"/>
+  </Target>
+
+  <!-- Signing -->
+  <ItemGroup>
+    <FilesToSign Include="$(TargetPath)" Authenticode="Microsoft400" StrongName="StrongName" />
+  </ItemGroup>
+</Project>
