@@ -25,12 +25,6 @@
           BeforeTargets="_GetBuildOutputFilesWithTfm"
           DependsOnTargets="ResolveReferences;ResolvePackageDependenciesForBuild;ResolveProjectReferences"
           >
-    <ItemGroup Condition=" '$(ILRepackEnabled)' != 'true' ">
-      <BuildOutputInPackage Include="@(_ResolvedProjectReferencePaths)" TargetPath="%(RuntimeCopyLocalItems.DestinationSubDirectory)%(Filename)%(Extension)" />
-      <BuildOutputInPackage Include="@(RuntimeCopyLocalItems-&gt;WithMetadataValue('AssetType', 'runtime'))" TargetPath="%(RuntimeCopyLocalItems.DestinationSubDirectory)%(Filename)%(Extension)" />
-      <BuildOutputInPackage Include="@(RuntimeCopyLocalItems-&gt;WithMetadataValue('CopyLocal', 'true'))" TargetPath="%(RuntimeCopyLocalItems.DestinationSubDirectory)%(Filename)%(Extension)" />
-    </ItemGroup>
-
     <ItemGroup>
       <!-- Somewhat hard-code this as there isn't a good way to identify it -->
       <BuildOutputInPackage Include="@(None-&gt;WithMetadataValue('Link', 'native\amd64\rocksdb.dll'))" TargetPath="%(None.Link)" />

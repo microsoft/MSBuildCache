@@ -1,4 +1,7 @@
 steps:
+- script: git clean -xdf
+  displayName: 'Clean the repository'
+  
 - task: UseDotNet@2
   displayName: 'Install .NET $(DotNetVersion)'
   inputs:

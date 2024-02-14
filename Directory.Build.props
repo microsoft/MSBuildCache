@@ -35,6 +35,9 @@
 
     <!-- BuildXL packages are pre-release but this package itself is not pre-release -->
     <NoWarn>$(NoWarn);NU5104</NoWarn>
+
+    <!-- Analyzer is confused by ilrepack -->
+    <NoWarn>$(NoWarn);IDE0005</NoWarn>
   </PropertyGroup>
 
   <!-- Packaging -->
