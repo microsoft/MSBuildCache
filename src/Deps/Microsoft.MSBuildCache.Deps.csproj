@@ -10,6 +10,11 @@
     <NoWarn>$(NoWarn);CS0649;CA1018;CA1813;CA1852</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="ILRepack">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+
     <PackageReference Include="DotNet.Glob">
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
@@ -46,11 +51,6 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
 
-    <PackageReference Include="ILRepack">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
-    </PackageReference>
-
     <!-- BuildXL.Cache.ContentStore.Distributed.dll depends on this but doesn't list it-->
     <PackageReference Include="System.Private.ServiceModel">
       <PrivateAssets>all</PrivateAssets>
@@ -66,12 +66,12 @@
     </PackageReference>
 
     <!-- Ilrepack has trouble finding this -->
-    <PackageReference Include="System.Text.Json" GeneratePathProperty="true" Condition="'$(MSBuildRuntimeType)' == 'Core'">
+    <!-- <PackageReference Include="System.Text.Json" GeneratePathProperty="true" Condition="'$(MSBuildRuntimeType)' == 'Core'" VersionOverride="">
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="System.Diagnostics.DiagnosticSource" GeneratePathProperty="true" Condition="'$(MSBuildRuntimeType)' == 'Core'">
       <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
+    </PackageReference> -->
   </ItemGroup>
 
   <ItemGroup>
