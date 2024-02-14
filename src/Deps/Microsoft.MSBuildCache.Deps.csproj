@@ -66,12 +66,12 @@
     </PackageReference>
 
     <!-- Ilrepack has trouble finding this -->
-    <!-- <PackageReference Include="System.Text.Json" GeneratePathProperty="true" Condition="'$(MSBuildRuntimeType)' == 'Core'" VersionOverride="">
+    <PackageReference Include="System.Text.Json" GeneratePathProperty="true" Condition="'$(MSBuildRuntimeType)' == 'Core'">
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="System.Diagnostics.DiagnosticSource" GeneratePathProperty="true" Condition="'$(MSBuildRuntimeType)' == 'Core'">
       <PrivateAssets>all</PrivateAssets>
-    </PackageReference> -->
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>
@@ -109,7 +109,8 @@
       <IlRepackCommand>$(IlRepackCommand) /repackdrop</IlRepackCommand>
       <IlRepackCommand>$(IlRepackCommand) /out:$(OutputPath)$(AssemblyName)$(TargetExt)</IlRepackCommand>
       <IlRepackCommand>$(IlRepackCommand) @(LibraryPaths->'/lib:%(FullPath)', ' ')</IlRepackCommand>
-      <IlRepackCommand Condition="'$(IlRepackVerbose)' == 'true'">$(IlRepackCommand) /verbose</IlRepackCommand>
+      <IlRepackCommand>$(IlRepackCommand) /verbose</IlRepackCommand>
+      <!-- <IlRepackCommand Condition="'$(IlRepackVerbose)' == 'true'">$(IlRepackCommand) /verbose</IlRepackCommand> -->
       <IlRepackCommand Condition="'$(DelaySign)' == 'true'">$(IlRepackCommand) /delaysign</IlRepackCommand>
       <IlRepackCommand Condition="'$(AssemblyOriginatorKeyFile)' != ''">$(IlRepackCommand) /keyfile:$(AssemblyOriginatorKeyFile)</IlRepackCommand>
       <IlRepackCommand>$(IlRepackCommand) @(InputAssemblies->'%(FullPath)', ' ')</IlRepackCommand>
