@@ -283,7 +283,7 @@ public abstract class CacheClient : ICacheClient
 
             Tracer.Debug(context, $"Computed PathSet {pathSetBytesHash.ToShortString()} to the cache for {nodeContext.Id}");
 
-            Fingerprint? strongFingerprint = _fingerprintFactory.GetStrongFingerprint(pathSet);
+            Fingerprint? strongFingerprint = await _fingerprintFactory.GetStrongFingerprintAsync(pathSet);
             selector = strongFingerprint is null
                 ? EmptySelector
                 : new Selector(pathSetBytesHash, strongFingerprint.Hash);
@@ -303,7 +303,7 @@ public abstract class CacheClient : ICacheClient
             kvp => Path.Combine(RepoRoot, kvp.Key),
             kvp => kvp.Value);
 
-        Fingerprint? weakFingerprint = _fingerprintFactory.GetWeakFingerprint(nodeContext);
+        Fingerprint? weakFingerprint = await _fingerprintFactory.GetWeakFingerprintAsync(nodeContext);
         if (weakFingerprint is null)
         {
             throw new CacheException($"Weak fingerprint is null for {nodeContext.Id}");
@@ -354,7 +354,7 @@ public abstract class CacheClient : ICacheClient
 
         Tracer.Debug(context, $"{nameof(GetNodeAsync)}: {nodeContext.Id}");
 
-        Fingerprint? weakFingerprint = _fingerprintFactory.GetWeakFingerprint(nodeContext);
+        Fingerprint? weakFingerprint = await _fingerprintFactory.GetWeakFingerprintAsync(nodeContext);
         if (weakFingerprint == null)
         {
             Tracer.Debug(context, $"Weak fingerprint is null for {nodeContext.Id}");
@@ -449,7 +449,7 @@ public abstract class CacheClient : ICacheClient
             }
 
             // Create a strong fingerprint from the PathSet and see if it matches the selector's strong fingerprint.
-            Fingerprint? possibleStrongFingerprint = _fingerprintFactory.GetStrongFingerprint(pathSet);
+            Fingerprint? possibleStrongFingerprint = await _fingerprintFactory.GetStrongFingerprintAsync(pathSet);
             if (possibleStrongFingerprint != null && ByteArrayComparer.ArraysEqual(possibleStrongFingerprint.Hash, selectorStrongFingerprint))
             {
                 Tracer.Debug(context, $"Matched matching selector with PathSet hash {pathSetHash} for weak fingerprint {weakFingerprint}");

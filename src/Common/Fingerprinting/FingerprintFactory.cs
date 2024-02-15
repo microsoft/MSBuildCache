@@ -7,11 +7,12 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using BuildXL.Cache.ContentStore.Hashing;
 using BuildXL.Cache.ContentStore.Interfaces.Extensions;
-using Microsoft.MSBuildCache.Hashing;
-using Microsoft.Build.Graph;
 using DotNet.Globbing;
+using Microsoft.Build.Graph;
+using Microsoft.MSBuildCache.Hashing;
 
 namespace Microsoft.MSBuildCache.Fingerprinting;
 
@@ -24,8 +25,8 @@ public sealed class FingerprintFactory : IFingerprintFactory
     // Cache computed fingerprints which may be accessed multiple times. Note that this implies that fingerprint calculation
     // is based on data which is unchanging after it's computed. The weak fingerprints are based on dependencies' results, but
     // it's assumed that dependencies will always finish first.
-    private readonly ConcurrentDictionary<NodeContext, Fingerprint?> _weakFingerprintCache = new();
-    private readonly ConcurrentDictionary<PathSet, Fingerprint?> _strongFingerprintCache = new();
+    private readonly ConcurrentDictionary<NodeContext, Task<Fingerprint?>> _weakFingerprintCache = new();
+    private readonly ConcurrentDictionary<PathSet, Task<Fingerprint?>> _strongFingerprintCache = new();
 
     private readonly ConcurrentDictionary<string, byte[]> _stringHashCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly IContentHasher _contentHasher;
@@ -74,10 +75,10 @@ public sealed class FingerprintFactory : IFingerprintFactory
         AddSettingToFingerprint(pluginSettings.AllowProcessCloseAfterProjectFinishProcessPatterns, nameof(pluginSettings.AllowProcessCloseAfterProjectFinishProcessPatterns));
     }
 
-    public Fingerprint? GetWeakFingerprint(NodeContext nodeContext)
-        => _weakFingerprintCache.GetOrAdd(
+    public async Task<Fingerprint?> GetWeakFingerprintAsync(NodeContext nodeContext)
+        => await _weakFingerprintCache.GetOrAdd(
             nodeContext,
-            nodeContext =>
+            async nodeContext =>
             {
                 List<FingerprintEntry> entries = new(_pluginSettingsFingerprintEntries)
                 {
@@ -96,7 +97,7 @@ public sealed class FingerprintFactory : IFingerprintFactory
                 entries.Add(CreateFingerprintEntry($"Targets: {targetList}"));
 
                 // Add predicted inputs
-                SortAndAddInputFileHashes(entries, nodeContext.Inputs, pathsAreNormalized: false);
+                await SortAndAddInputFileHashesAsync(entries, nodeContext.Inputs, pathsAreNormalized: false);
 
                 // Gather dependencies. Dependencies are sorted for a consistent hash ordering.
                 SortedDictionary<string, NodeContext> dependencies = new(StringComparer.Ordinal);
@@ -179,12 +180,12 @@ public sealed class FingerprintFactory : IFingerprintFactory
         return new PathSet(pathSetIncludedNormalizedInputs);
     }
 
-    public Fingerprint? GetStrongFingerprint(PathSet? pathSet)
+    public async Task<Fingerprint?> GetStrongFingerprintAsync(PathSet? pathSet)
         => pathSet == null
             ? null
-            : _strongFingerprintCache.GetOrAdd(
+            : await _strongFingerprintCache.GetOrAdd(
                 pathSet,
-                pathSet =>
+                async pathSet =>
                 {
                     if (pathSet?.FilesRead == null || pathSet.FilesRead.Count == 0)
                     {
@@ -192,7 +193,7 @@ public sealed class FingerprintFactory : IFingerprintFactory
                     }
 
                     List<FingerprintEntry> entries = new();
-                    SortAndAddInputFileHashes(entries, pathSet.FilesRead, pathsAreNormalized: true);
+                    await SortAndAddInputFileHashesAsync(entries, pathSet.FilesRead, pathsAreNormalized: true);
 
                     if (entries.Count == 0)
                     {
@@ -202,17 +203,41 @@ public sealed class FingerprintFactory : IFingerprintFactory
                     return CreateFingerprint(entries);
                 });
 
-    private void SortAndAddInputFileHashes(List<FingerprintEntry> entries, IReadOnlyList<string> files, bool pathsAreNormalized)
+    private async Task SortAndAddInputFileHashesAsync(List<FingerprintEntry> entries, IReadOnlyList<string> files, bool pathsAreNormalized)
     {
         // Sort for consistent hash ordering
         SortedDictionary<string, byte[]?> filteredNormalizedFiles = new(StringComparer.OrdinalIgnoreCase);
+        List<Task<(string, byte[]?)>> pendingHashingTasks = new();
         foreach (string file in files)
         {
             string absoluteFilePath = pathsAreNormalized ? _pathNormalizer.Unnormalize(file) : file;
-            if (_inputHasher.ContainsPath(absoluteFilePath) && !_pluginSettings.IgnoredInputPatterns.Any(pattern => pattern.IsMatch(absoluteFilePath)))
+            if (_pluginSettings.IgnoredInputPatterns.Count > 0
+                && !_pluginSettings.IgnoredInputPatterns.Any(pattern => pattern.IsMatch(absoluteFilePath)))
             {
                 string normalizedFilePath = pathsAreNormalized ? file : _pathNormalizer.Normalize(file);
-                filteredNormalizedFiles.Add(normalizedFilePath, _inputHasher.GetHash(absoluteFilePath));
+
+                ValueTask<byte[]?> hashTask = _inputHasher.GetHashAsync(absoluteFilePath);
+
+                // If the hashing task is synchronous or already complete, add it directly.
+                // Otherwise, stash the task for later.
+                if (hashTask.IsCompletedSuccessfully)
+                {
+                    byte[]? hash = hashTask.Result;
+                    filteredNormalizedFiles.Add(normalizedFilePath, hash);
+                }
+                else
+                {
+                    pendingHashingTasks.Add(WrapHashingTask(normalizedFilePath, hashTask.AsTask()));
+                }
+            }
+        }
+
+        if (pendingHashingTasks.Count > 0)
+        {
+            // Wait for each of the hashing tasks to complete and then add them to the collection
+            foreach ((string normalizedFilePath, byte[]? hash) in await Task.WhenAll(pendingHashingTasks))
+            {
+                filteredNormalizedFiles.Add(normalizedFilePath, hash);
             }
         }
 
@@ -220,6 +245,8 @@ public sealed class FingerprintFactory : IFingerprintFactory
         {
             entries.Add(new FingerprintEntry(kvp.Value, $"Input: {kvp.Key}"));
         }
+
+        static async Task<(string, byte[]?)> WrapHashingTask(string normalizedFilePath, Task<byte[]?> hashTask) => (normalizedFilePath, await hashTask);
     }
 
     private Fingerprint? CreateFingerprint(List<FingerprintEntry> entries)

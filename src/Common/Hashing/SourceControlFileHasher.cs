@@ -5,14 +5,15 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading.Tasks;
 using BuildXL.Cache.ContentStore.Hashing;
 
 namespace Microsoft.MSBuildCache.Hashing;
 
 /// <summary>
-/// This class provides hash values for file, patterns with wildcards.
+/// This class provides hash values for file under source control.
 /// </summary>
-internal sealed class InputHasher : IInputHasher
+internal sealed class SourceControlFileHasher : IInputHasher
 {
     private readonly ConcurrentDictionary<string, byte[]?> _cachedCalculatedHashes = new(StringComparer.OrdinalIgnoreCase);
 
@@ -22,7 +23,7 @@ internal sealed class InputHasher : IInputHasher
 
     private readonly IReadOnlyDictionary<string, byte[]> _fileHashes;
 
-    public InputHasher(
+    public SourceControlFileHasher(
         IContentHasher contentHasher,
         PathNormalizer pathNormalizer,
         IReadOnlyDictionary<string, byte[]> fileHashes)
@@ -33,17 +34,20 @@ internal sealed class InputHasher : IInputHasher
     }
 
     /// <inheritdoc />
-    public bool ContainsPath(string absolutePath)
-        => _fileHashes.ContainsKey(absolutePath); // Note: Wildcarded paths are not handled.
+    public bool ContainsPath(string absolutePath) => _fileHashes.ContainsKey(absolutePath);
 
     /// <inheritdoc />
-    public byte[]? GetHash(string absolutePath)
-        => _cachedCalculatedHashes.GetOrAdd(
+    public ValueTask<byte[]?> GetHashAsync(string absolutePath)
+    {
+        byte[]? hash = _cachedCalculatedHashes.GetOrAdd(
             absolutePath,
             path => _fileHashes.TryGetValue(path, out byte[]? contentHash)
                 ? CalculateHashForFilePathAndContent(path, contentHash)
                 : null);
+        return new ValueTask<byte[]?>(hash);
+    }
 
+    // Filenames sometimes matter and impact build results, so consider the file path as well as the content for hashing.
     private byte[]? CalculateHashForFilePathAndContent(string filePath, byte[] contentHash)
     {
         string normalizedFilePath = _pathNormalizer.Normalize(filePath);

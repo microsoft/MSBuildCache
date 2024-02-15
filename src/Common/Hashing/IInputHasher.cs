@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using System.Threading.Tasks;
+
 namespace Microsoft.MSBuildCache.Hashing;
 
 public interface IInputHasher
@@ -16,5 +18,5 @@ public interface IInputHasher
     /// <returns>
     /// Returns null if no matching files are found.
     /// </returns>
-    byte[]? GetHash(string absolutePath);
+    ValueTask<byte[]?> GetHashAsync(string absolutePath);
 }

@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using BuildXL.Cache.ContentStore.Hashing;
 using Microsoft.MSBuildCache.Hashing;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -10,7 +11,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace Microsoft.MSBuildCache.Tests.Hashing;
 
 [TestClass]
-public class InputHasherTests
+public class SourceControlFileHasherTests
 {
     private static readonly IContentHasher ContentHasher = HashInfoLookup.Find(HashType.MD5).CreateContentHasher();
 
@@ -25,7 +26,7 @@ public class InputHasherTests
             { @"X:\Repo\2.txt", new byte[] { 0x04, 0x05, 0x06 } },
             { @"X:\Repo\3.txt", new byte[] { 0x07, 0x08, 0x09 } },
         };
-        InputHasher hasher = new(ContentHasher, PathNormalizer, fileHashes);
+        SourceControlFileHasher hasher = new(ContentHasher, PathNormalizer, fileHashes);
 
         Assert.IsTrue(hasher.ContainsPath(@"X:\Repo\1.txt"));
         Assert.IsTrue(hasher.ContainsPath(@"X:\Repo\2.txt"));
@@ -42,7 +43,7 @@ public class InputHasherTests
     }
 
     [TestMethod]
-    public void GetHash()
+    public async Task GetHash()
     {
         Dictionary<string, byte[]> fileHashes = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -50,15 +51,15 @@ public class InputHasherTests
             { @"X:\Repo\2.txt", new byte[] { 0x04, 0x05, 0x06 } },
             { @"X:\Repo\3.txt", new byte[] { 0x07, 0x08, 0x09 } },
         };
-        InputHasher hasher = new(ContentHasher, PathNormalizer, fileHashes);
+        SourceControlFileHasher hasher = new(ContentHasher, PathNormalizer, fileHashes);
 
-        Assert.IsNotNull(hasher.GetHash(@"X:\Repo\1.txt"));
-        Assert.IsNotNull(hasher.GetHash(@"X:\Repo\2.txt"));
-        Assert.IsNotNull(hasher.GetHash(@"X:\Repo\3.txt"));
+        Assert.IsNotNull(await hasher.GetHashAsync(@"X:\Repo\1.txt"));
+        Assert.IsNotNull(await hasher.GetHashAsync(@"X:\Repo\2.txt"));
+        Assert.IsNotNull(await hasher.GetHashAsync(@"X:\Repo\3.txt"));
 
-        Assert.IsNull(hasher.GetHash(@"X:\Repo\4.txt"));
-        Assert.IsNull(hasher.GetHash(@"X:\Repo\5.txt"));
-        Assert.IsNull(hasher.GetHash(@"X:\Repo\6.txt"));
+        Assert.IsNull(await hasher.GetHashAsync(@"X:\Repo\4.txt"));
+        Assert.IsNull(await hasher.GetHashAsync(@"X:\Repo\5.txt"));
+        Assert.IsNull(await hasher.GetHashAsync(@"X:\Repo\6.txt"));
 
         foreach (KeyValuePair<string, byte[]> kvp in fileHashes)
         {
@@ -66,30 +67,30 @@ public class InputHasherTests
             byte[] fileHash = kvp.Value;
 
             // The hash should not equal the content hash of the file. It should tak the file path into account too.
-            CollectionAssert.AreNotEqual(fileHash, hasher.GetHash(file));
+            CollectionAssert.AreNotEqual(fileHash, await hasher.GetHashAsync(file));
 
             foreach (string otherFile in fileHashes.Keys)
             {
                 if (file == otherFile)
                 {
-                    CollectionAssert.AreEqual(hasher.GetHash(file), hasher.GetHash(otherFile));
+                    CollectionAssert.AreEqual(await hasher.GetHashAsync(file), await hasher.GetHashAsync(otherFile));
                 }
                 else
                 {
-                    CollectionAssert.AreNotEqual(hasher.GetHash(file), hasher.GetHash(otherFile));
+                    CollectionAssert.AreNotEqual(await hasher.GetHashAsync(file), await hasher.GetHashAsync(otherFile));
                 }
             }
         }
 
-        CollectionAssert.AreNotEqual(hasher.GetHash(@"X:\Repo\1.txt"), hasher.GetHash(@"X:\Repo\2.txt"));
-        CollectionAssert.AreNotEqual(hasher.GetHash(@"X:\Repo\1.txt"), hasher.GetHash(@"X:\Repo\3.txt"));
+        CollectionAssert.AreNotEqual(await hasher.GetHashAsync(@"X:\Repo\1.txt"), await hasher.GetHashAsync(@"X:\Repo\2.txt"));
+        CollectionAssert.AreNotEqual(await hasher.GetHashAsync(@"X:\Repo\1.txt"), await hasher.GetHashAsync(@"X:\Repo\3.txt"));
 
         // Case doesn't matter
-        CollectionAssert.AreEqual(GetHashFreshHasher(@"X:\Repo\1.txt"), GetHashFreshHasher(@"X:\Repo\1.Txt"));
-        CollectionAssert.AreEqual(GetHashFreshHasher(@"X:\Repo\2.txt"), GetHashFreshHasher(@"X:\Repo\2.tXt"));
-        CollectionAssert.AreEqual(GetHashFreshHasher(@"X:\Repo\3.txt"), GetHashFreshHasher(@"X:\Repo\3.txT"));
+        CollectionAssert.AreEqual(await GetHashFreshHasherAsync(@"X:\Repo\1.txt"), await GetHashFreshHasherAsync(@"X:\Repo\1.Txt"));
+        CollectionAssert.AreEqual(await GetHashFreshHasherAsync(@"X:\Repo\2.txt"), await GetHashFreshHasherAsync(@"X:\Repo\2.tXt"));
+        CollectionAssert.AreEqual(await GetHashFreshHasherAsync(@"X:\Repo\3.txt"), await GetHashFreshHasherAsync(@"X:\Repo\3.txT"));
 
         // Using a new hasher to avoid caching
-        byte[]? GetHashFreshHasher(string relativePath) => new InputHasher(ContentHasher, PathNormalizer, fileHashes).GetHash(relativePath);
+        ValueTask<byte[]?> GetHashFreshHasherAsync(string relativePath) => new SourceControlFileHasher(ContentHasher, PathNormalizer, fileHashes).GetHashAsync(relativePath);
     }
 }

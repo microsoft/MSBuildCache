@@ -3,7 +3,9 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Security.Cryptography;
+using System.Threading.Tasks;
 using BuildXL.Cache.ContentStore.Hashing;
 
 namespace Microsoft.MSBuildCache.Hashing;
@@ -44,5 +46,17 @@ internal static class HashingExtensions
                 return null;
             }
         }
+    }
+
+    public static async Task<ContentHash> GetFileHashAsync(this IContentHasher contentHasher, string filePath)
+    {
+        using FileStream fileStream = new(
+            filePath,
+            FileMode.Open,
+            System.IO.FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 4096, // Copied from FileStream's DefaultBufferSize
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        return await contentHasher.GetContentHashAsync(fileStream);
     }
 }
