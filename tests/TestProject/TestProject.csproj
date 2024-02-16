@@ -10,6 +10,9 @@
   <ItemGroup>
     <PackageReference Include="$(MSBuildCachePackage)" Version="*-*" />
     <PackageReference Include="Microsoft.MSBuildCache.SharedCompilation" Version="*-*" />
+
+    <!-- Ensure package content copying code is exercised. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
 </Project>

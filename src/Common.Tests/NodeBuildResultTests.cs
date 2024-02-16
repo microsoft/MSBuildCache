@@ -45,6 +45,7 @@ public class NodeBuildResultTests
 
             NodeBuildResult nodeBuildResult = new(
                 maybeMixed,
+                new SortedDictionary<string, string>(),
                 new List<NodeTargetResult>(),
                 DateTime.UtcNow,
                 DateTime.UtcNow,

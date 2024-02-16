@@ -39,7 +39,8 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase
         if (Settings == null
             || NodeContextRepository == null
             || FingerprintFactory == null
-            || ContentHasher == null)
+            || ContentHasher == null
+            || NugetPackageRoot == null)
         {
             throw new InvalidOperationException();
         }
@@ -91,6 +92,7 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase
             (remoteCache, remoteCacheSession, twoLevelConfig),
             ContentHasher,
             Settings.RepoRoot,
+            NugetPackageRoot,
             NodeContextRepository,
             GetFileRealizationMode,
             Settings.MaxConcurrentCacheContentOperations,

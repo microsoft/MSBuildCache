@@ -13,17 +13,19 @@ namespace Microsoft.MSBuildCache;
 
 public sealed class NodeBuildResult
 {
-    public const uint CurrentVersion = 0;
+    public const uint CurrentVersion = 1;
 
     [JsonConstructor]
     public NodeBuildResult(
         SortedDictionary<string, ContentHash> outputs,
+        SortedDictionary<string, string> packageFilesToCopy,
         IReadOnlyList<NodeTargetResult> targetResults,
         DateTime startTimeUtc,
         DateTime endTimeUtc,
         string? buildId)
     {
         Outputs = outputs;
+        PackageFilesToCopy = packageFilesToCopy;
         TargetResults = targetResults;
         StartTimeUtc = startTimeUtc;
         EndTimeUtc = endTimeUtc;
@@ -35,6 +37,9 @@ public sealed class NodeBuildResult
     [JsonConverter(typeof(SortedDictionaryConverter))]
     public SortedDictionary<string, ContentHash> Outputs { get; }
 
+    // Use a sorted dictionary so the JSON output is deterministically sorted and easier to compare build-to-build.
+    public SortedDictionary<string, string> PackageFilesToCopy { get; }
+
     public IReadOnlyList<NodeTargetResult> TargetResults { get; }
 
     public DateTime StartTimeUtc { get; }
@@ -43,7 +48,14 @@ public sealed class NodeBuildResult
 
     public string? BuildId { get; }
 
-    public static NodeBuildResult FromBuildResult(SortedDictionary<string, ContentHash> outputs, BuildResult buildResult, DateTime creationTimeUtc, DateTime endTimeUtc, string? buildId, PathNormalizer pathNormalizer)
+    public static NodeBuildResult FromBuildResult(
+        SortedDictionary<string, ContentHash> outputs,
+        SortedDictionary<string, string> packageFilesToCopy,
+        BuildResult buildResult,
+        DateTime creationTimeUtc,
+        DateTime endTimeUtc,
+        string? buildId,
+        PathNormalizer pathNormalizer)
     {
         List<NodeTargetResult> targetResults = new(buildResult.ResultsByTarget.Count);
         foreach (KeyValuePair<string, TargetResult> kvp in buildResult.ResultsByTarget)
@@ -51,7 +63,7 @@ public sealed class NodeBuildResult
             targetResults.Add(NodeTargetResult.FromTargetResult(kvp.Key, kvp.Value, pathNormalizer));
         }
 
-        return new NodeBuildResult(outputs, targetResults, creationTimeUtc, endTimeUtc, buildId);
+        return new NodeBuildResult(outputs, packageFilesToCopy, targetResults, creationTimeUtc, endTimeUtc, buildId);
     }
 
     public CacheResult ToCacheResult(PathNormalizer pathNormalizer)

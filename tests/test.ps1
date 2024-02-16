@@ -40,8 +40,9 @@ function Run-Test {
     Write-Host "[$TestName] Starting test"
 
     Write-Host "[$TestName] Cleaning"
-    Remove-Item -Path "$ProjectDir\obj" -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item -Path "$ProjectDir\bin" -Recurse -Force -ErrorAction SilentlyContinue
+    Push-Location $ProjectDir
+    & git clean -fdx
+    Pop-Location
 
     Write-Host "[$TestName] Building"
     $ProcessOptions = @{

@@ -28,7 +28,8 @@ public sealed class MSBuildCacheAzurePipelinesPlugin : MSBuildCachePluginBase
         if (Settings == null
             || NodeContextRepository == null
             || FingerprintFactory == null
-            || ContentHasher == null)
+            || ContentHasher == null
+            || NugetPackageRoot == null)
         {
             throw new InvalidOperationException();
         }
@@ -56,6 +57,7 @@ public sealed class MSBuildCacheAzurePipelinesPlugin : MSBuildCachePluginBase
             cacheLogger,
             Settings.CacheUniverse,
             Settings.RepoRoot,
+            NugetPackageRoot,
             NodeContextRepository,
             GetFileRealizationMode,
             Settings.MaxConcurrentCacheContentOperations,

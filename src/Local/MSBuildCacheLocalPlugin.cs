@@ -27,7 +27,8 @@ public sealed class MSBuildCacheLocalPlugin : MSBuildCachePluginBase
         if (Settings == null
             || NodeContextRepository == null
             || FingerprintFactory == null
-            || ContentHasher == null)
+            || ContentHasher == null
+            || NugetPackageRoot == null)
         {
             throw new InvalidOperationException();
         }
@@ -58,6 +59,7 @@ public sealed class MSBuildCacheLocalPlugin : MSBuildCachePluginBase
             remoteCache: null,
             ContentHasher,
             Settings.RepoRoot,
+            NugetPackageRoot,
             NodeContextRepository,
             GetFileRealizationMode,
             Settings.MaxConcurrentCacheContentOperations,
