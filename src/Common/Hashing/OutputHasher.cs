@@ -2,7 +2,6 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
-using System.IO;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -19,13 +18,8 @@ internal sealed class OutputHasher : IAsyncDisposable
     private readonly Channel<HashOperationContext> _hashingChannel;
     private readonly Task[] _channelWorkerTasks;
 
-    public OutputHasher(IContentHasher hasher) : this(async (path, ct) =>
-    {
-        using (FileStream fileStream = File.Open(path, FileMode.Open, System.IO.FileAccess.Read, FileShare.Read))
-        {
-            return await hasher.GetContentHashAsync(fileStream);
-        }
-    })
+    public OutputHasher(IContentHasher hasher)
+        : this(async (path, ct) => await hasher.GetFileHashAsync(path))
     { }
 
     public OutputHasher(Func<string, CancellationToken, Task<ContentHash>> computeHashAsync)

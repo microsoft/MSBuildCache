@@ -110,6 +110,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         true,
         nameof(_pluginLogger),
         nameof(_repoRoot),
+        nameof(NugetPackageRoot),
         nameof(_pathNormalizer),
         nameof(ContentHasher),
         nameof(InputHasher),
@@ -123,6 +124,8 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         nameof(_identicalDuplicateOutputPatterns)
     )]
     protected bool Initialized { get; private set; }
+
+    protected string? NugetPackageRoot { get; private set; }
 
     protected TPluginSettings? Settings { get; private set; }
 
@@ -172,13 +175,18 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     protected virtual async Task<IInputHasher> CreateInputHasherAsync(PluginLoggerBase logger, CancellationToken cancellationToken)
     {
         if (ContentHasher is null
-            || _pathNormalizer is null)
+            || _pathNormalizer is null
+            || NugetPackageRoot is null)
         {
             throw new InvalidOperationException();
         }
 
-        IReadOnlyDictionary<string, byte[]> fileHashes = await GetSourceControlFileHashesAsync(logger, cancellationToken);
-        return new InputHasher(ContentHasher, _pathNormalizer, fileHashes);
+        IReadOnlyDictionary<string, byte[]> sourceControlFileHashes = await GetSourceControlFileHashesAsync(logger, cancellationToken);
+        SourceControlFileHasher sourceControlFileHasher = new(ContentHasher, _pathNormalizer, sourceControlFileHashes);
+
+        DirectoryFileHasher nugetPackageDirectoryHasher = new(NugetPackageRoot, ContentHasher);
+
+        return new CompositeInputHasher([sourceControlFileHasher, nugetPackageDirectoryHasher]);
     }
 
     protected virtual IFingerprintFactory CreateFingerprintFactory()
@@ -237,8 +245,8 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             return;
         }
 
-        string nugetPackageRoot = GetNuGetPackageRoot();
-        _pathNormalizer = new PathNormalizer(_repoRoot, nugetPackageRoot);
+        NugetPackageRoot = GetNuGetPackageRoot();
+        _pathNormalizer = new PathNormalizer(_repoRoot, NugetPackageRoot);
 
         if (Directory.Exists(Settings.LogDirectory))
         {
@@ -775,8 +783,8 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             await using var jsonWriter = new Utf8JsonWriter(fileStream, SerializationHelper.WriterOptions);
 
             jsonWriter.WriteStartObject();
-            WriteFingerprintJson(jsonWriter, "weak", FingerprintFactory.GetWeakFingerprint(nodeContext));
-            WriteFingerprintJson(jsonWriter, "strong", FingerprintFactory.GetStrongFingerprint(pathSet));
+            WriteFingerprintJson(jsonWriter, "weak", await FingerprintFactory.GetWeakFingerprintAsync(nodeContext));
+            WriteFingerprintJson(jsonWriter, "strong", await FingerprintFactory.GetStrongFingerprintAsync(pathSet));
             jsonWriter.WriteEndObject();
         }
         catch (Exception ex)
