@@ -47,12 +47,13 @@ public sealed class CasCacheClient : CacheClient
         (ICache cache, ICacheSession session, TwoLevelCacheConfiguration config)? remoteCache,
         IContentHasher hasher,
         string repoRoot,
+        string nugetPackageRoot,
         INodeContextRepository nodeContextRepository,
         Func<string, FileRealizationMode> getFileRealizationMode,
         int maxConcurrentCacheContentOperations,
         bool enableAsyncPublishing,
         bool enableAsyncMaterialization)
-        : base(rootContext, fingerprintFactory, hasher, repoRoot, nodeContextRepository, getFileRealizationMode, localCache, localCacheSession, maxConcurrentCacheContentOperations, enableAsyncPublishing, enableAsyncMaterialization)
+        : base(rootContext, fingerprintFactory, hasher, repoRoot, nugetPackageRoot, nodeContextRepository, getFileRealizationMode, localCache, localCacheSession, maxConcurrentCacheContentOperations, enableAsyncPublishing, enableAsyncMaterialization)
     {
         ICacheSession cacheSession;
         if (remoteCache == null)

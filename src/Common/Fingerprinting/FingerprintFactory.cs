@@ -211,8 +211,8 @@ public sealed class FingerprintFactory : IFingerprintFactory
         foreach (string file in files)
         {
             string absoluteFilePath = pathsAreNormalized ? _pathNormalizer.Unnormalize(file) : file;
-            if (_pluginSettings.IgnoredInputPatterns.Count > 0
-                && !_pluginSettings.IgnoredInputPatterns.Any(pattern => pattern.IsMatch(absoluteFilePath)))
+            if (_pluginSettings.IgnoredInputPatterns.Count == 0
+                || !_pluginSettings.IgnoredInputPatterns.Any(pattern => pattern.IsMatch(absoluteFilePath)))
             {
                 string normalizedFilePath = pathsAreNormalized ? file : _pathNormalizer.Normalize(file);
 

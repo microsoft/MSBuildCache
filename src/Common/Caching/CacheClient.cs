@@ -5,7 +5,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -20,6 +19,7 @@ using BuildXL.Cache.ContentStore.UtilitiesCore;
 using BuildXL.Cache.MemoizationStore.Interfaces.Caches;
 using BuildXL.Cache.MemoizationStore.Interfaces.Sessions;
 using Microsoft.Build.Graph;
+using Microsoft.CopyOnWrite;
 using Microsoft.MSBuildCache.Fingerprinting;
 using Microsoft.MSBuildCache.Hashing;
 using Fingerprint = Microsoft.MSBuildCache.Fingerprinting.Fingerprint;
@@ -34,17 +34,21 @@ public abstract class CacheClient : ICacheClient
     private readonly ConcurrentDictionary<NodeContext, Task> _publishingTasks = new();
     private readonly ConcurrentDictionary<NodeContext, Task> _materializationTasks = new();
     private readonly ConcurrentDictionary<string, bool> _directoryCreationCache = new();
+    private readonly ICopyOnWriteFilesystem _copyOnWriteFilesystem = CopyOnWriteFilesystemFactory.GetInstance();
     private readonly IContentHasher _hasher;
     private readonly IFingerprintFactory _fingerprintFactory;
     private readonly INodeContextRepository _nodeContextRepository;
     private readonly bool _enableAsyncMaterialization;
     private readonly ICache _localCache;
+    private readonly string _nugetPackageRoot;
+    private readonly bool _canCloneInNugetCachePath;
 
     protected CacheClient(
         Context rootContext,
         IFingerprintFactory fingerprintFactory,
         IContentHasher hasher,
         string repoRoot,
+        string nugetPackageRoot,
         INodeContextRepository nodeContextRepository,
         Func<string, FileRealizationMode> getFileRealizationMode,
         ICache localCache,
@@ -58,6 +62,7 @@ public abstract class CacheClient : ICacheClient
         _hasher = hasher;
         EmptySelector = new(hasher.Info.EmptyHash, EmptySelectorOutput);
         RepoRoot = repoRoot;
+        _nugetPackageRoot = nugetPackageRoot;
         _nodeContextRepository = nodeContextRepository;
         _localCache = localCache;
         LocalCacheSession = localCas;
@@ -83,6 +88,8 @@ public abstract class CacheClient : ICacheClient
         {
             _outputHasher = new OutputHasher(_hasher);
         }
+
+        _canCloneInNugetCachePath = _copyOnWriteFilesystem.CopyOnWriteLinkSupportedInDirectoryTree(_nugetPackageRoot);
     }
 
     protected Tracer Tracer { get; } = new Tracer(nameof(CacheClient));
@@ -299,9 +306,16 @@ public abstract class CacheClient : ICacheClient
             pathSetBytes = null;
         }
 
-        Dictionary<string, ContentHash> outputs = nodeBuildResult.Outputs.ToDictionary(
-            kvp => Path.Combine(RepoRoot, kvp.Key),
-            kvp => kvp.Value);
+        Dictionary<string, ContentHash> outputsToCache = new(nodeBuildResult.Outputs.Count - nodeBuildResult.PackageFilesToCopy.Count);
+        foreach (KeyValuePair<string, ContentHash> kvp in nodeBuildResult.Outputs)
+        {
+            // Avoid adding package file copies to the cache.
+            // TODO: This is too late for the local cache in the async publishing case as outputs are ingested into the local cache as part of hashing.
+            if (!nodeBuildResult.PackageFilesToCopy.ContainsKey(kvp.Key))
+            {
+                outputsToCache.Add(Path.Combine(RepoRoot, kvp.Key), kvp.Value);
+            }
+        }
 
         Fingerprint? weakFingerprint = await _fingerprintFactory.GetWeakFingerprintAsync(nodeContext);
         if (weakFingerprint is null)
@@ -318,7 +332,7 @@ public abstract class CacheClient : ICacheClient
         await AddNodeAsync(
             context,
             cacheStrongFingerprint,
-            outputs,
+            outputsToCache,
             (nodeBuildResultHash, nodeBuildResultBytes),
             pathSetBytes,
             cancellationToken);
@@ -394,10 +408,45 @@ public abstract class CacheClient : ICacheClient
             return (null, null);
         }
 
-        Func<CancellationToken, Task> placeFilesAsync = (ct) => cacheEntry.PlaceFilesAsync(
-            context,
-            nodeBuildResult.Outputs.ToDictionary(o => Path.Combine(RepoRoot, o.Key), o => o.Value),
-            ct);
+        Func<CancellationToken, Task> placeFilesAsync = async (ct) =>
+        {
+            List<Task> tasks = new(nodeBuildResult.PackageFilesToCopy.Count + 1);
+
+            Dictionary<string, ContentHash> outputsToPlace = new(nodeBuildResult.Outputs.Count - nodeBuildResult.PackageFilesToCopy.Count);
+            foreach (KeyValuePair<string, ContentHash> kvp in nodeBuildResult.Outputs)
+            {
+                string destinationAbsolutePath = Path.Combine(RepoRoot, kvp.Key);
+                if (nodeBuildResult.PackageFilesToCopy.TryGetValue(kvp.Key, out string? packageFile))
+                {
+                    tasks.Add(Task.Run(
+                        () =>
+                        {
+                            string sourceAbsolutePath = Path.Combine(_nugetPackageRoot, packageFile);
+                            CreateParentDirectory(destinationAbsolutePath);
+
+                            Tracer.Debug(context, $"Copying package file: {sourceAbsolutePath} => {destinationAbsolutePath}");
+                            if (_canCloneInNugetCachePath && _copyOnWriteFilesystem.CopyOnWriteLinkSupportedBetweenPaths(sourceAbsolutePath, destinationAbsolutePath, pathsAreFullyResolved: true))
+                            {
+                                _copyOnWriteFilesystem.CloneFile(sourceAbsolutePath, destinationAbsolutePath, CloneFlags.PathIsFullyResolved);
+                            }
+                            else
+                            {
+                                File.Copy(sourceAbsolutePath, destinationAbsolutePath, overwrite: true);
+                            }
+                        },
+                        ct));
+                }
+                else
+                {
+                    outputsToPlace.Add(destinationAbsolutePath, kvp.Value);
+                }
+            }
+
+            Task placeFilesTask = cacheEntry.PlaceFilesAsync(context, outputsToPlace, ct);
+            tasks.Add(placeFilesTask);
+
+            await Task.WhenAll(tasks);
+        };
 
         if (_enableAsyncMaterialization)
         {

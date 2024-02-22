@@ -25,6 +25,7 @@ using Microsoft.Build.Experimental.FileAccess;
 using Microsoft.Build.Experimental.ProjectCache;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Graph;
+using Microsoft.CopyOnWrite;
 using Microsoft.MSBuildCache.Caching;
 using Microsoft.MSBuildCache.FileAccess;
 using Microsoft.MSBuildCache.Fingerprinting;
@@ -247,6 +248,8 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
         NugetPackageRoot = GetNuGetPackageRoot();
         _pathNormalizer = new PathNormalizer(_repoRoot, NugetPackageRoot);
+
+        WarnOnCowWithDifferingVolumes(logger);
 
         if (Directory.Exists(Settings.LogDirectory))
         {
@@ -510,11 +513,36 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             return;
         }
 
+        // Package files are commonly just copied as outputs, so track the package inputs to compare with package outputs to avoid caching them.
+        Dictionary<ContentHash, string> hashesToPackageFiles = new();
+        List<Task<(byte[]?, string)>> packageFileHashingTasks = new();
+        static async Task<(byte[]?, string)> WrapHashingTask(Task<byte[]?> hashTask, string packageRootRelativeFilePath) => (await hashTask, packageRootRelativeFilePath);
+
         List<string> filesRead = new();
         using var observedInputsWriter = new StreamWriter(Path.Combine(nodeContext.LogDirectory, "observedInputs.txt"));
         foreach (string absolutePath in fileAccesses.Inputs)
         {
             filesRead.Add(absolutePath);
+
+            string? packageRootRelativeFilePath = absolutePath.MakePathRelativeTo(NugetPackageRoot);
+            if (packageRootRelativeFilePath != null)
+            {
+                ValueTask<byte[]?> hashingTask = InputHasher.GetHashAsync(absolutePath);
+                if (hashingTask.IsCompletedSuccessfully)
+                {
+                    byte[]? hashBytes = hashingTask.Result;
+                    if (hashBytes != null)
+                    {
+                        hashesToPackageFiles.Add(new ContentHash(HashType, hashBytes), packageRootRelativeFilePath);
+                    }
+                }
+                else
+                {
+                    packageFileHashingTasks.Add(WrapHashingTask(hashingTask.AsTask(), packageRootRelativeFilePath));
+                }
+
+                continue;
+            }
 
             string normalizedFilePath = _pathNormalizer.Normalize(absolutePath);
             await observedInputsWriter.WriteLineAsync(normalizedFilePath);
@@ -530,6 +558,18 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
                 if (IsDuplicateIdenticalOutputPath(logger, absolutePath))
                 {
                     logger.LogMessage($"Project `{nodeContext.Id}` read the output `{relativeFilePath}` from project `{producerContext.Id}`, but that file may be re-written.");
+                }
+            }
+        }
+
+        if (packageFileHashingTasks.Count > 0)
+        {
+            // Wait for each of the hashing tasks to complete and then add them to the collection
+            foreach ((byte[]? hashBytes, string packageRootRelativeFilePath) in await Task.WhenAll(packageFileHashingTasks))
+            {
+                if (hashBytes != null)
+                {
+                    hashesToPackageFiles.Add(new ContentHash(HashType, hashBytes), packageRootRelativeFilePath);
                 }
             }
         }
@@ -598,17 +638,27 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             absolutePathToHash =>
             {
                 SortedDictionary<string, ContentHash> relativeOutputPaths = new(StringComparer.OrdinalIgnoreCase);
+                SortedDictionary<string, string> packageFilesToCopy = new(StringComparer.OrdinalIgnoreCase);
 
-                foreach (KeyValuePair<string, ContentHash> absolutePathAndHash in absolutePathToHash)
+                foreach (KeyValuePair<string, ContentHash> kvp in absolutePathToHash)
                 {
-                    relativeOutputPaths.Add(
-                        outputPathToRelativePath[absolutePathAndHash.Key],
-                        absolutePathAndHash.Value);
+                    string outputAbsolutePath = kvp.Key;
+                    ContentHash outputHash = kvp.Value;
+                    string relativeOutputPath = outputPathToRelativePath[outputAbsolutePath];
+
+                    // Outputs contains *all* outputs, including package files to copy.
+                    relativeOutputPaths.Add(relativeOutputPath, outputHash);
+
+                    // If any output hash happens to match the hash of a package input, mark it for replay
+                    if (hashesToPackageFiles.TryGetValue(outputHash, out string? packageFilePath))
+                    {
+                        packageFilesToCopy.Add(relativeOutputPath, packageFilePath);
+                    }
                 }
 
                 CheckForDuplicateOutputs(logger, relativeOutputPaths, nodeContext);
 
-                return NodeBuildResult.FromBuildResult(relativeOutputPaths, buildResult, nodeContext.StartTimeUtc!.Value, nodeContext.EndTimeUtc!.Value, _buildId, _pathNormalizer);
+                return NodeBuildResult.FromBuildResult(relativeOutputPaths, packageFilesToCopy, buildResult, nodeContext.StartTimeUtc!.Value, nodeContext.EndTimeUtc!.Value, _buildId, _pathNormalizer);
             },
             cancellationToken);
 
@@ -923,6 +973,31 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         }
 
         return nugetPackageRoot;
+    }
+
+    private void WarnOnCowWithDifferingVolumes(PluginLoggerBase logger)
+    {
+        if (_repoRoot is null
+            || NugetPackageRoot is null
+            || Settings is null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        ICopyOnWriteFilesystem copyOnWriteFilesystem = CopyOnWriteFilesystemFactory.GetInstance();
+        if (copyOnWriteFilesystem.CopyOnWriteLinkSupportedInDirectoryTree(_repoRoot))
+        {
+            WarnIfCowNotSupportedBetweenRepoRootAndPath(NugetPackageRoot, "NuGet package root");
+            WarnIfCowNotSupportedBetweenRepoRootAndPath(Settings.LocalCacheRootPath, "local cache");
+        }
+
+        void WarnIfCowNotSupportedBetweenRepoRootAndPath(string path, string pathDescription)
+        {
+            if (!copyOnWriteFilesystem.CopyOnWriteLinkSupportedBetweenPaths(_repoRoot, path, pathsAreFullyResolved: true))
+            {
+                logger.LogWarning($"The repository path '{_repoRoot}' supports copy-on-write but the {pathDescription} '{path}' resides on a different volume. This may impact performance.");
+            }
+        }
     }
 
     private async Task<IReadOnlyDictionary<string, byte[]>> GetSourceControlFileHashesAsync(PluginLoggerBase logger, CancellationToken cancellationToken)
