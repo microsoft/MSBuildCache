@@ -533,7 +533,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
                     byte[]? hashBytes = hashingTask.Result;
                     if (hashBytes != null)
                     {
-                        hashesToPackageFiles.Add(new ContentHash(HashType, hashBytes), packageRootRelativeFilePath);
+                        hashesToPackageFiles[new ContentHash(HashType, hashBytes)] = packageRootRelativeFilePath;
                     }
                 }
                 else
@@ -569,7 +569,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             {
                 if (hashBytes != null)
                 {
-                    hashesToPackageFiles.Add(new ContentHash(HashType, hashBytes), packageRootRelativeFilePath);
+                    hashesToPackageFiles[new ContentHash(HashType, hashBytes)] = packageRootRelativeFilePath;
                 }
             }
         }
