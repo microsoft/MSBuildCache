@@ -22,15 +22,15 @@ public sealed class NodeContext
         string baseLogDirectory,
         ProjectGraphNode node,
         string projectFileRelativePath,
-        IReadOnlyDictionary<string, string> globalProperties,
+        IReadOnlyDictionary<string, string> filteredGlobalProperties,
         IReadOnlyList<string> inputs,
         HashSet<string> targetNames)
     {
-        Id = GenerateId(projectFileRelativePath, globalProperties);
+        Id = GenerateId(projectFileRelativePath, filteredGlobalProperties);
         _logDirectory = Path.Combine(baseLogDirectory, Id);
         Node = node;
         ProjectFileRelativePath = projectFileRelativePath;
-        GlobalProperties = globalProperties;
+        FilteredGlobalProperties = filteredGlobalProperties;
         Inputs = inputs;
         TargetNames = targetNames;
     }
@@ -56,7 +56,7 @@ public sealed class NodeContext
 
     public string ProjectFileRelativePath { get; }
 
-    public IReadOnlyDictionary<string, string> GlobalProperties { get; }
+    public IReadOnlyDictionary<string, string> FilteredGlobalProperties { get; }
 
     public IReadOnlyList<string> Inputs { get; }
 
@@ -85,13 +85,13 @@ public sealed class NodeContext
     /// <summary>
     /// Generate a stable Id which we can use for sorting and comparison purposes across builds.
     /// </summary>
-    private static string GenerateId(string projectFileRelativePath, IReadOnlyDictionary<string, string> globalProperties)
+    private static string GenerateId(string projectFileRelativePath, IReadOnlyDictionary<string, string> filteredGlobalProperties)
     {
         // In practice, the dictionary we're given is SortedDictionary<string, string>, so try casting.
-        if (globalProperties is not SortedDictionary<string, string> sortedProperties)
+        if (filteredGlobalProperties is not SortedDictionary<string, string> sortedProperties)
         {
             sortedProperties = new(StringComparer.OrdinalIgnoreCase);
-            foreach (KeyValuePair<string, string> kvp in globalProperties)
+            foreach (KeyValuePair<string, string> kvp in filteredGlobalProperties)
             {
                 sortedProperties.Add(kvp.Key, kvp.Value);
             }

@@ -10,18 +10,18 @@ public readonly struct NodeDescriptor : IEquatable<NodeDescriptor>
 {
     private readonly string _projectFullPath;
 
-    private readonly SortedDictionary<string, string> _globalProperties;
+    private readonly SortedDictionary<string, string> _filteredGlobalProperties;
 
-    public NodeDescriptor(string projectFullPath, SortedDictionary<string, string> globalProperties)
+    public NodeDescriptor(string projectFullPath, SortedDictionary<string, string> filteredGlobalProperties)
     {
         _projectFullPath = projectFullPath;
-        _globalProperties = globalProperties;
+        _filteredGlobalProperties = filteredGlobalProperties;
     }
 
     /// <summary>
     /// Sorted by StringComparison.OrdinalIgnoreCase.
     /// </summary>
-    public IReadOnlyDictionary<string, string> GlobalProperties => _globalProperties;
+    public IReadOnlyDictionary<string, string> FilteredGlobalProperties => _filteredGlobalProperties;
 
     public bool Equals(NodeDescriptor other)
     {
@@ -30,14 +30,14 @@ public readonly struct NodeDescriptor : IEquatable<NodeDescriptor>
             return false;
         }
 
-        if (_globalProperties.Count != other._globalProperties.Count)
+        if (_filteredGlobalProperties.Count != other._filteredGlobalProperties.Count)
         {
             return false;
         }
 
-        foreach (KeyValuePair<string, string> kvp in _globalProperties)
+        foreach (KeyValuePair<string, string> kvp in _filteredGlobalProperties)
         {
-            if (!other._globalProperties.TryGetValue(kvp.Key, out string? otherValue))
+            if (!other._filteredGlobalProperties.TryGetValue(kvp.Key, out string? otherValue))
             {
                 return false;
             }
@@ -62,7 +62,7 @@ public readonly struct NodeDescriptor : IEquatable<NodeDescriptor>
         HashCode hashCode = new();
         hashCode.Add(_projectFullPath, StringComparer.OrdinalIgnoreCase);
 
-        foreach (KeyValuePair<string, string> kvp in _globalProperties)
+        foreach (KeyValuePair<string, string> kvp in _filteredGlobalProperties)
         {
             hashCode.Add(kvp.Key, StringComparer.OrdinalIgnoreCase);
             hashCode.Add(kvp.Value, StringComparer.OrdinalIgnoreCase);
