@@ -26,7 +26,7 @@ public sealed class NodeContext
         IReadOnlyList<string> inputs,
         HashSet<string> targetNames)
     {
-        Id = GenerateId(projectFileRelativePath, node);
+        Id = GenerateId(projectFileRelativePath, globalProperties);
         _logDirectory = Path.Combine(baseLogDirectory, Id);
         Node = node;
         ProjectFileRelativePath = projectFileRelativePath;
@@ -85,9 +85,17 @@ public sealed class NodeContext
     /// <summary>
     /// Generate a stable Id which we can use for sorting and comparison purposes across builds.
     /// </summary>
-    private static string GenerateId(string projectFileRelativePath, ProjectGraphNode node)
+    private static string GenerateId(string projectFileRelativePath, IReadOnlyDictionary<string, string> globalProperties)
     {
-        SortedDictionary<string, string> sortedProperties = new(node.ProjectInstance.GlobalProperties, StringComparer.OrdinalIgnoreCase);
+        // In practice, the dictionary we're given is SortedDictionary<string, string>, so try casting.
+        if (globalProperties is not SortedDictionary<string, string> sortedProperties)
+        {
+            sortedProperties = new(StringComparer.OrdinalIgnoreCase);
+            foreach (KeyValuePair<string, string> kvp in globalProperties)
+            {
+                sortedProperties.Add(kvp.Key, kvp.Value);
+            }
+        }
 
 #pragma warning disable CA5351 // Do Not Use Broken Cryptographic Algorithms. This is not used for crypto.
         using MD5 hasher = MD5.Create();
