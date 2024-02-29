@@ -29,7 +29,7 @@ public sealed class NodeDescriptorFactory
     {
         // Sort to ensure a consistent hash for equivalent sets of properties.
         // This allocates with the assumption that the hash code is used multiple times.
-        SortedDictionary<string, string> sortedGlobalProperties = new(StringComparer.OrdinalIgnoreCase);
+        SortedDictionary<string, string> filteredGlobalProperties = new(StringComparer.OrdinalIgnoreCase);
         foreach (KeyValuePair<string, string> kvp in globalProperties)
         {
             if (kvp.Key.StartsWith(MSBuildProjectInstancePrefix, StringComparison.OrdinalIgnoreCase))
@@ -42,10 +42,10 @@ public sealed class NodeDescriptorFactory
                 continue;
             }
 
-            sortedGlobalProperties.Add(kvp.Key, kvp.Value);
+            filteredGlobalProperties.Add(kvp.Key, kvp.Value);
         }
 
-        return new NodeDescriptor(projectFullPath, sortedGlobalProperties);
+        return new NodeDescriptor(projectFullPath, filteredGlobalProperties);
     }
 
     // Adapts IDictionary to IReadOnlyDictionary

@@ -298,7 +298,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             }
 
             NodeDescriptor nodeDescriptor = _nodeDescriptorFactory.Create(node.ProjectInstance);
-            NodeContext nodeContext = new(Settings.LogDirectory, node, parserInfo.ProjectFileRelativePath, nodeDescriptor.GlobalProperties, inputs, targetNames);
+            NodeContext nodeContext = new(Settings.LogDirectory, node, parserInfo.ProjectFileRelativePath, nodeDescriptor.FilteredGlobalProperties, inputs, targetNames);
 
             dumpParserInfoTasks.Add(Task.Run(() => DumpParserInfoAsync(logger, nodeContext, parserInfo), cancellationToken));
             nodeContexts.Add(nodeDescriptor, nodeContext);
@@ -733,7 +733,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
                 jsonWriter.WriteString("projectFileRelativePath", nodeContext.ProjectFileRelativePath);
 
                 jsonWriter.WriteStartObject("globalProperties");
-                foreach (KeyValuePair<string, string> kvp in nodeContext.GlobalProperties)
+                foreach (KeyValuePair<string, string> kvp in nodeContext.FilteredGlobalProperties)
                 {
                     jsonWriter.WriteString(kvp.Key, kvp.Value);
                 }

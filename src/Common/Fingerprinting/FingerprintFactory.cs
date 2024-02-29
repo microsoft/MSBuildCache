@@ -86,7 +86,7 @@ public sealed class FingerprintFactory : IFingerprintFactory
                     CreateFingerprintEntry(nodeContext.ProjectFileRelativePath)
                 };
 
-                foreach (KeyValuePair<string, string> property in nodeContext.GlobalProperties)
+                foreach (KeyValuePair<string, string> property in nodeContext.FilteredGlobalProperties)
                 {
                     entries.Add(CreateFingerprintEntry($"{property.Key}={property.Value}"));
                 }
