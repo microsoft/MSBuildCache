@@ -753,7 +753,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
                 {
                     if (!_nodeContextRepository.TryGetNodeContext(dependencyNode.ProjectInstance, out NodeContext? dependencyNodeContext))
                     {
-                        return;
+                        continue;
                     }
 
                     jsonWriter.WriteStringValue(dependencyNodeContext.Id);
