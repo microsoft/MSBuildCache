@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
@@ -134,19 +135,27 @@ internal sealed class PipelineCachingCacheClient : CacheClient
             },
             SourceLevels.All);
 
-        VssBasicCredential token = AzDOHelpers.GetCredentials();
-        Uri artifacts = AzDOHelpers.GetServiceUriFromEnv("artifacts");
+
+        int connectionLimit = Environment.GetEnvironmentVariable("MSBUILDCACHE_PIPELINECACHING_SERVICEPOINT_CONNECTION_LIMIT") switch
+        {
+            string s when int.TryParse(s, out int i) => i,
+            _ => Math.Min(128, Environment.ProcessorCount * 4),
+        };
+        ServicePointManager.DefaultConnectionLimit = connectionLimit;
+
 
         int timeoutSeconds = Environment.GetEnvironmentVariable("MSBUILDCACHE_PIPELINECACHING_HTTP_TIMEOUT") switch
         {
             string s when int.TryParse(s, out int i) => i,
             _ => 10,
         };
-
         var settings = new VssHttpRequestSettings(AzDOHelpers.SessionGuid)
         {
             SendTimeout = TimeSpan.FromSeconds(timeoutSeconds),
         };
+
+        VssBasicCredential token = AzDOHelpers.GetCredentials();
+        Uri artifacts = AzDOHelpers.GetServiceUriFromEnv("artifacts");
 
         _cacheClient = new PipelineCacheHttpClient(artifacts, token, settings);
 
@@ -607,11 +616,11 @@ internal sealed class PipelineCachingCacheClient : CacheClient
     {
         using var ms = new MemoryStream();
         return await WithHttpRetries(async () =>
-        {
-            ms.Position = 0;
-            await _manifestClient.DownloadToStreamAsync(dedupId, ms, proxyUri: null, cancellationToken);
-            return ms.ToArray();
-        },
+            {
+                ms.Position = 0;
+                await _manifestClient.DownloadToStreamAsync(dedupId, ms, proxyUri: null, cancellationToken);
+                return ms.ToArray();
+            },
             context.ToString()!,
             cancellationToken);
     }

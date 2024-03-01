@@ -266,7 +266,7 @@ public abstract class CacheClient : ICacheClient
         return nodeBuildResult;
     }
 
-    public async Task AddNodeInternalAsync(
+    private async Task AddNodeInternalAsync(
         NodeContext nodeContext,
         PathSet? pathSet,
         NodeBuildResult nodeBuildResult,
@@ -360,7 +360,7 @@ public abstract class CacheClient : ICacheClient
         return result;
     }
 
-    public async Task<(PathSet?, NodeBuildResult?)> GetNodeInternalAsync(
+    private async Task<(PathSet?, NodeBuildResult?)> GetNodeInternalAsync(
         NodeContext nodeContext,
         CancellationToken cancellationToken)
     {
