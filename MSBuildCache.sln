@@ -19,6 +19,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		Directory.Build.rsp = Directory.Build.rsp
 		Directory.Build.targets = Directory.Build.targets
 		Directory.Packages.props = Directory.Packages.props
+		build\MSBuildExtensionPackage.targets = build\MSBuildExtensionPackage.targets
+		build\MSBuildReference.targets = build\MSBuildReference.targets
 		nuget.config = nuget.config
 		README.md = README.md
 		version.json = version.json
@@ -33,6 +35,8 @@ EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.MSBuildCache.Local", "src\Local\Microsoft.MSBuildCache.Local.csproj", "{F6586428-E047-42C8-B0AC-048DF6DFAF18}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.MSBuildCache.Repack.Tests", "src\Repack.Tests\Microsoft.MSBuildCache.Repack.Tests.csproj", "{3BCB6452-B087-4A03-8418-C79F2715DDE7}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.MSBuildCache.Deps", "src\Deps\Microsoft.MSBuildCache.Deps.csproj", "{DDADC9C6-1060-46F5-80CF-44B290443AF8}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -68,6 +72,10 @@ Global
 		{3BCB6452-B087-4A03-8418-C79F2715DDE7}.Debug|x64.Build.0 = Debug|x64
 		{3BCB6452-B087-4A03-8418-C79F2715DDE7}.Release|x64.ActiveCfg = Release|x64
 		{3BCB6452-B087-4A03-8418-C79F2715DDE7}.Release|x64.Build.0 = Release|x64
+		{DDADC9C6-1060-46F5-80CF-44B290443AF8}.Debug|x64.ActiveCfg = Debug|x64
+		{DDADC9C6-1060-46F5-80CF-44B290443AF8}.Debug|x64.Build.0 = Debug|x64
+		{DDADC9C6-1060-46F5-80CF-44B290443AF8}.Release|x64.ActiveCfg = Release|x64
+		{DDADC9C6-1060-46F5-80CF-44B290443AF8}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -80,6 +88,7 @@ Global
 		{97357681-C75E-445D-8547-46F312D01CED} = {EFFB5949-347C-4F28-8964-571D5C6B6209}
 		{F6586428-E047-42C8-B0AC-048DF6DFAF18} = {EFFB5949-347C-4F28-8964-571D5C6B6209}
 		{3BCB6452-B087-4A03-8418-C79F2715DDE7} = {EFFB5949-347C-4F28-8964-571D5C6B6209}
+		{DDADC9C6-1060-46F5-80CF-44B290443AF8} = {EFFB5949-347C-4F28-8964-571D5C6B6209}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {F1CDA78F-A666-431B-BF44-56DA7DF193BA}

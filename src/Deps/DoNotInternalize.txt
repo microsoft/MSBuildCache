@@ -1,0 +1,8 @@
+BuildXL.*
+DotNet\.Glob.*
+Microsoft\.VisualStudio\.Services.*
+Microsoft\.Build\.Prediction.*
+System\.Threading\.Channels.*
+System\.HashCode
+System\.Collections\.Generic.*
+System\.Linq\.AsyncEnumerable
