@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using Microsoft.MSBuildCache.AzureBlobStorage;
 using Microsoft.MSBuildCache.AzurePipelines;
 using Microsoft.MSBuildCache.Tests;
@@ -17,33 +16,29 @@ namespace Microsoft.MSBuildCache.Repack.Tests;
 [TestClass]
 public class RepackTests
 {
-    private static readonly Type[] TypesToCheck =
+    [DataTestMethod]
+    [DataRow(typeof(MSBuildCacheAzureBlobStoragePlugin))]
+    [DataRow(typeof(MSBuildCacheAzurePipelinesPlugin))]
+    [DataRow(typeof(MSBuildCacheLocalPlugin))]
+    [DataRow(typeof(SharedCompilation.ResolveFileAccesses))]
+    public void PluginInterfaceAssembliesNotMerged(Type typeToCheck)
     {
-        typeof(MSBuildCacheAzureBlobStoragePlugin),
-        typeof(MSBuildCacheAzurePipelinesPlugin),
-        typeof(MSBuildCacheLocalPlugin),
-        typeof(SharedCompilation.ResolveFileAccesses),
-    };
+#if DEBUG
+        // Using Assert.Inconclusive instead of removing the entire test for visibility that the test exists.
+        Assert.Inconclusive("This test only applies to Release builds.");
+#endif
 
-    [TestMethod]
-    public void PluginInterfaceAssembliesNotMerged()
-    {
-        foreach (Type type in TypesToCheck)
+        HashSet<string> references = typeToCheck.Assembly
+            .GetReferencedAssemblies()
+            .Where(a => a.Name is not null)
+            .Select(reference => reference.Name!)
+            .ToHashSet(StringComparer.Ordinal);
+
+        // Check to make sure that each of the interface assemblies are still actually referenced
+        foreach (string expectedRefFileName in PluginInterfaceTypeCheckTests.PluginInterfaceNuGetAssemblies)
         {
-            Dictionary<string, AssemblyName> references = type.Assembly
-                .GetReferencedAssemblies()
-                .Where(a => a.Name is not null)
-                .ToDictionary(
-                    a => a.Name!,
-                    a => a
-                );
-
-            // Check to make sure that each of the interface assemblies are still actually referenced
-            foreach (string expectedRefFileName in PluginInterfaceTypeCheckTests.PluginInterfaceNuGetAssemblies)
-            {
-                string expectedRef = Path.GetFileNameWithoutExtension(expectedRefFileName);
-                Assert.IsNotNull(references.FirstOrDefault(a => a.Value.FullName.IndexOf(expectedRef, StringComparison.Ordinal) > 0));
-            }
+            string expectedRef = Path.GetFileNameWithoutExtension(expectedRefFileName);
+            Assert.IsTrue(references.Contains(expectedRef));
         }
     }
 }

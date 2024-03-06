@@ -57,11 +57,12 @@ jobs:
 
   - checkout: self
 
-  - task: Cache@2
-    displayName: Cache Visual Studio
-    inputs:
-      key: '"vs-release" | "$(Agent.OS)"'
-      path: $(VsInstallDir)
+  # Avoiding Caching VS for now as the installer command we're using doesn't work for upgrades
+  # - task: Cache@2
+  #   displayName: Cache Visual Studio
+  #   inputs:
+  #     key: '"vs-release" | "$(Agent.OS)"'
+  #     path: $(VsInstallDir)
 
   - script: |
       del %TEMP%\vs_buildtools.exe
@@ -77,6 +78,10 @@ jobs:
       echo VS installer exit code: %ERRORLEVEL%
 
       del %TEMP%\vs_buildtools.exe
+
+      echo Copying installer logs
+      mkdir "$(LogDirectory)\VSSetup"
+      move "%TEMP%\dd_*" "$(LogDirectory)\VSSetup\"
 
       echo Current MSBuild version:
       "$(MSBuildPath)" --version
@@ -105,11 +110,12 @@ jobs:
 
   - checkout: self
 
-  - task: Cache@2
-    displayName: Cache Visual Studio
-    inputs:
-      key: '"vs-pre" | "$(Agent.OS)"'
-      path: $(VsInstallDir)
+  # Avoiding Caching VS for now as the installer command we're using doesn't work for upgrades
+  # - task: Cache@2
+  #   displayName: Cache Visual Studio
+  #   inputs:
+  #     key: '"vs-pre" | "$(Agent.OS)"'
+  #     path: $(VsInstallDir)
 
   - script: |
       del %TEMP%\vs_buildtools.exe
@@ -125,6 +131,10 @@ jobs:
       echo VS installer exit code: %ERRORLEVEL%
 
       del %TEMP%\vs_buildtools.exe
+
+      echo Copying installer logs
+      mkdir "$(LogDirectory)\VSSetup"
+      move "%TEMP%\dd_*" "$(LogDirectory)\VSSetup\"
 
       echo Current MSBuild version:
       "$(MSBuildPath)" --version

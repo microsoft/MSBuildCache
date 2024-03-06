@@ -14,7 +14,7 @@ contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additio
 
 ## Setup
 
-It is assumed that you are using VS v17.8 or later.
+It is assumed that you are using VS v17.9 or later.
 
 ## Building
 
