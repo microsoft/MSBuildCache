@@ -273,8 +273,8 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         Parser parser = new(logger, _repoRoot);
         IReadOnlyDictionary<ProjectGraphNode, ParserInfo> parserInfoForNodes = parser.Parse(graph);
 
-        // TODO: MSBuild should give this to us via CacheContext
-        var entryProjectTargets = Array.Empty<string>();
+        // In practice, the underlying type of the IReadOnlyCollection is a ICollection<string> so attempt to cast first. We're not mutating the collection so still abiding by the readonly-ness.
+        ICollection<string> entryProjectTargets = context.RequestedTargets as ICollection<string> ?? new List<string>(context.RequestedTargets);
         IReadOnlyDictionary<ProjectGraphNode, ImmutableList<string>> targetListPerNode = graph.GetTargetLists(entryProjectTargets);
 
         Dictionary<NodeDescriptor, NodeContext> nodeContexts = new(parserInfoForNodes.Count);
