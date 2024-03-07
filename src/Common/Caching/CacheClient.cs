@@ -22,6 +22,7 @@ using Microsoft.Build.Graph;
 using Microsoft.CopyOnWrite;
 using Microsoft.MSBuildCache.Fingerprinting;
 using Microsoft.MSBuildCache.Hashing;
+using Microsoft.VisualStudio.Services.Content.Common;
 using Fingerprint = Microsoft.MSBuildCache.Fingerprinting.Fingerprint;
 using WeakFingerprint = BuildXL.Cache.MemoizationStore.Interfaces.Sessions.Fingerprint;
 
@@ -34,6 +35,7 @@ public abstract class CacheClient : ICacheClient
     private readonly ConcurrentDictionary<NodeContext, Task> _publishingTasks = new();
     private readonly ConcurrentDictionary<NodeContext, Task> _materializationTasks = new();
     private readonly ConcurrentDictionary<string, bool> _directoryCreationCache = new();
+    private readonly RunOnce<(string, string)> _placeFromPackageOnce = new(consolidateExceptions: false);
     private readonly ICopyOnWriteFilesystem _copyOnWriteFilesystem = CopyOnWriteFilesystemFactory.GetInstance();
     private readonly IContentHasher _hasher;
     private readonly IFingerprintFactory _fingerprintFactory;
@@ -418,10 +420,10 @@ public abstract class CacheClient : ICacheClient
                 string destinationAbsolutePath = Path.Combine(RepoRoot, kvp.Key);
                 if (nodeBuildResult.PackageFilesToCopy.TryGetValue(kvp.Key, out string? packageFile))
                 {
-                    tasks.Add(Task.Run(
+                    string sourceAbsolutePath = Path.Combine(_nugetPackageRoot, packageFile);
+                    tasks.Add(_placeFromPackageOnce.RunOnceAsync((sourceAbsolutePath, destinationAbsolutePath), () => Task.Run(
                         () =>
                         {
-                            string sourceAbsolutePath = Path.Combine(_nugetPackageRoot, packageFile);
                             CreateParentDirectory(destinationAbsolutePath);
 
                             Tracer.Debug(context, $"Copying package file: {sourceAbsolutePath} => {destinationAbsolutePath}");
@@ -434,7 +436,7 @@ public abstract class CacheClient : ICacheClient
                                 File.Copy(sourceAbsolutePath, destinationAbsolutePath, overwrite: true);
                             }
                         },
-                        ct));
+                        ct)));
                 }
                 else
                 {
