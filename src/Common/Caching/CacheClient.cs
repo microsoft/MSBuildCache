@@ -421,6 +421,9 @@ public abstract class CacheClient : ICacheClient
                 if (nodeBuildResult.PackageFilesToCopy.TryGetValue(kvp.Key, out string? packageFile))
                 {
                     string sourceAbsolutePath = Path.Combine(_nugetPackageRoot, packageFile);
+
+                    // CloneFile throws when there are concurrent copies to the same destination.
+                    // We also use RunOnce to avoid copying the same file multiple times.
                     tasks.Add(_placeFromPackageOnce.RunOnceAsync((sourceAbsolutePath, destinationAbsolutePath), () => Task.Run(
                         () =>
                         {
