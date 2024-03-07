@@ -409,7 +409,7 @@ public abstract class CacheClient : ICacheClient
             return (null, null);
         }
 
-        Func<string, string, Task> copyPackageContentToDestinationAsync = async (sourceAbsolutePath, destinationAbsolutePath) =>
+        async Task CopyPackageContentToDestinationAsync(string sourceAbsolutePath, string destinationAbsolutePath)
         {
             // CloneFile throws when there are concurrent copies to the same destination.
             // We also use RunOnce to avoid copying the same file multiple times.
@@ -439,7 +439,7 @@ public abstract class CacheClient : ICacheClient
             }
         };
 
-        Func<CancellationToken, Task> placeFilesAsync = async (ct) =>
+        async Task PlaceFilesAsync(CancellationToken ct)
         {
             List<Task> tasks = new(nodeBuildResult.PackageFilesToCopy.Count + 1);
 
@@ -450,7 +450,7 @@ public abstract class CacheClient : ICacheClient
                 if (nodeBuildResult.PackageFilesToCopy.TryGetValue(kvp.Key, out string? packageFile))
                 {
                     string sourceAbsolutePath = Path.Combine(_nugetPackageRoot, packageFile);
-                    tasks.Add(Task.Run(() => copyPackageContentToDestinationAsync(sourceAbsolutePath, destinationAbsolutePath), cancellationToken));
+                    tasks.Add(Task.Run(() => CopyPackageContentToDestinationAsync(sourceAbsolutePath, destinationAbsolutePath), ct));
                 }
                 else
                 {
@@ -473,14 +473,14 @@ public abstract class CacheClient : ICacheClient
                 Task.Run(
                     async () =>
                     {
-                        await placeFilesAsync(CancellationToken.None);
+                        await PlaceFilesAsync(CancellationToken.None);
                         _materializationTasks.TryRemove(nodeContext, out _);
                     },
                     CancellationToken.None));
         }
         else
         {
-            await placeFilesAsync(cancellationToken);
+            await PlaceFilesAsync(cancellationToken);
         }
 
         return (pathSet, nodeBuildResult);
