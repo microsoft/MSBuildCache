@@ -5,7 +5,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using BuildXL.Cache.ContentStore.Hashing;
@@ -22,7 +21,7 @@ using Microsoft.Build.Graph;
 using Microsoft.CopyOnWrite;
 using Microsoft.MSBuildCache.Fingerprinting;
 using Microsoft.MSBuildCache.Hashing;
-using Microsoft.VisualStudio.Services.Content.Common;
+using JsonSerializer = System.Text.Json.JsonSerializer;
 using Fingerprint = Microsoft.MSBuildCache.Fingerprinting.Fingerprint;
 using WeakFingerprint = BuildXL.Cache.MemoizationStore.Interfaces.Sessions.Fingerprint;
 
@@ -35,7 +34,7 @@ public abstract class CacheClient : ICacheClient
     private readonly ConcurrentDictionary<NodeContext, Task> _publishingTasks = new();
     private readonly ConcurrentDictionary<NodeContext, Task> _materializationTasks = new();
     private readonly ConcurrentDictionary<string, bool> _directoryCreationCache = new();
-    private readonly RunOnce<(string, string)> _placeFromPackageOnce = new(consolidateExceptions: false);
+    private readonly VisualStudio.Services.Content.Common.RunOnce<string /* destination */, string /* source */> _placeFromPackageOnce = new(consolidateExceptions: false);
     private readonly ICopyOnWriteFilesystem _copyOnWriteFilesystem = CopyOnWriteFilesystemFactory.GetInstance();
     private readonly IContentHasher _hasher;
     private readonly IFingerprintFactory _fingerprintFactory;
@@ -410,6 +409,36 @@ public abstract class CacheClient : ICacheClient
             return (null, null);
         }
 
+        Func<string, string, Task> copyPackageContentToDestinationAsync = async (sourceAbsolutePath, destinationAbsolutePath) =>
+        {
+            // CloneFile throws when there are concurrent copies to the same destination.
+            // We also use RunOnce to avoid copying the same file multiple times.
+
+            string firstSourceAbsolutePath = await _placeFromPackageOnce.RunOnceAsync(
+                destinationAbsolutePath,
+                () => Task.Run(() =>
+                {
+                    CreateParentDirectory(destinationAbsolutePath);
+
+                    Tracer.Debug(context, $"Copying package file: {sourceAbsolutePath} => {destinationAbsolutePath}");
+                    if (_canCloneInNugetCachePath && _copyOnWriteFilesystem.CopyOnWriteLinkSupportedBetweenPaths(sourceAbsolutePath, destinationAbsolutePath, pathsAreFullyResolved: true))
+                    {
+                        _copyOnWriteFilesystem.CloneFile(sourceAbsolutePath, destinationAbsolutePath, CloneFlags.PathIsFullyResolved);
+                    }
+                    else
+                    {
+                        File.Copy(sourceAbsolutePath, destinationAbsolutePath, overwrite: true);
+                    }
+
+                    return sourceAbsolutePath;
+                }));
+
+            if (!firstSourceAbsolutePath.Equals(sourceAbsolutePath, StringComparison.OrdinalIgnoreCase))
+            {
+                Tracer.Warning(context, $"Package content `{sourceAbsolutePath}` was not copied to `{destinationAbsolutePath}` because package content `{firstSourceAbsolutePath}` already was.");
+            }
+        };
+
         Func<CancellationToken, Task> placeFilesAsync = async (ct) =>
         {
             List<Task> tasks = new(nodeBuildResult.PackageFilesToCopy.Count + 1);
@@ -421,25 +450,7 @@ public abstract class CacheClient : ICacheClient
                 if (nodeBuildResult.PackageFilesToCopy.TryGetValue(kvp.Key, out string? packageFile))
                 {
                     string sourceAbsolutePath = Path.Combine(_nugetPackageRoot, packageFile);
-
-                    // CloneFile throws when there are concurrent copies to the same destination.
-                    // We also use RunOnce to avoid copying the same file multiple times.
-                    tasks.Add(_placeFromPackageOnce.RunOnceAsync((sourceAbsolutePath, destinationAbsolutePath), () => Task.Run(
-                        () =>
-                        {
-                            CreateParentDirectory(destinationAbsolutePath);
-
-                            Tracer.Debug(context, $"Copying package file: {sourceAbsolutePath} => {destinationAbsolutePath}");
-                            if (_canCloneInNugetCachePath && _copyOnWriteFilesystem.CopyOnWriteLinkSupportedBetweenPaths(sourceAbsolutePath, destinationAbsolutePath, pathsAreFullyResolved: true))
-                            {
-                                _copyOnWriteFilesystem.CloneFile(sourceAbsolutePath, destinationAbsolutePath, CloneFlags.PathIsFullyResolved);
-                            }
-                            else
-                            {
-                                File.Copy(sourceAbsolutePath, destinationAbsolutePath, overwrite: true);
-                            }
-                        },
-                        ct)));
+                    tasks.Add(Task.Run(() => copyPackageContentToDestinationAsync(sourceAbsolutePath, destinationAbsolutePath), cancellationToken));
                 }
                 else
                 {
