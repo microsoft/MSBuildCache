@@ -115,7 +115,7 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase
             Universe: cacheUniverse,
             Namespace: "0",
             RetentionPolicyInDays: null);
-        return AzureBlobStorageCacheFactory.Create(context, cacheConfig, new StaticBlobCacheSecretsProvider(credentials));
+        return AzureBlobStorageCacheFactory.Create(context, cacheConfig, new StaticBlobCacheSecretsProvider(credentials)).Cache;
     }
 
     private static async Task<ICacheSession> StartCacheSessionAsync(Context context, ICache cache, string name)

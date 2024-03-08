@@ -2,7 +2,7 @@
 <Project>
   <PropertyGroup>
     <ArtifactsPackageVersion>19.232.34508-buildid25403274</ArtifactsPackageVersion>
-    <BuildXLPackageVersion>0.1.0-20240121.1</BuildXLPackageVersion>
+    <BuildXLPackageVersion>0.1.0-20240307.1</BuildXLPackageVersion>
     <MSBuildPackageVersion>17.9.5</MSBuildPackageVersion>
   </PropertyGroup>
   <ItemGroup>
