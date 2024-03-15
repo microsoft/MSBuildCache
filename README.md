@@ -8,6 +8,8 @@ This project provides plugin implementations for the experimental [MSBuild Proje
 
 ## Usage
 
+This feature requires Visual Studio 17.9 or later.
+
 To enable caching, simply add a `<PackageReference>` for the desired cache implementation and set various properties to configure it.
 
 For repos which build C# code, add a `<PackageReference>` to `Microsoft.MSBuildCache.SharedCompilation` for shared compilation support.
@@ -78,6 +80,28 @@ When configuring settings which are list types, you should always append to the 
 </PropertyGroup>
 ```
 
+### Execution cached builds
+
+Once configured, to execute builds with caching, simply run:
+
+```
+msbuild /graph /m /reportfileaccesses
+```
+
+It's also recommended to set some parameters like `/p:MSBuildCacheLogDirectory=$(LogDirectory)\MSBuildCache` as part of the MSBuild call, as opposed to with MSBuild properties in your `Directory.Build.props` for example.
+
+### Caching test execution
+
+Arbitrary MSBuild targets can be cached, and with [`Microsoft.Build.RunVSTest`](https://github.com/microsoft/MSBuildSdks/tree/main/src/RunTests), you can attach running vstest-based unit tests with the "Test" target.
+
+Once `Microsoft.Build.RunVSTest`, or some other target hooked to the Test target, you can get cache hits for tests by adding (`/t:Build;Test`), eg:
+
+```
+msbuild /graph /m /reportfileaccesses /t:Build;Test
+```
+
+This not only provides the benefits of caching unit test execution, but also executes tests concurrently with other, unrelated, projects in the graph.
+
 ## Plugins
 
 ### Microsoft.MSBuildCache.AzurePipelines
@@ -103,7 +127,7 @@ It is expected that this plugin is used within an Azure Pipeline. The `SYSTEM_AC
 [![NuGet Version](https://img.shields.io/nuget/v/Microsoft.MSBuildCache.Local.svg)](https://www.nuget.org/packages/Microsoft.MSBuildCache.Local)
 [![NuGet Downloads](https://img.shields.io/nuget/dt/Microsoft.MSBuildCache.Local.svg)](https://www.nuget.org/packages/Microsoft.MSBuildCache.Local)
 
-This implementation uses the local file system for the cache. In particular, it uses [BuildXL](https://github.com/microsoft/BuildXL)'s `LocalCache`. This is recommended for locally testing and debugging caching for your repo.
+This implementation uses the local file system for the cache. In particular, it uses [BuildXL](https://github.com/microsoft/BuildXL)'s `LocalCache`. This is recommended for locally testing and debugging caching for your repo. This implementation can also be useful if you have stateful build agents where the cache can be reused across builds.
 
 ### Microsoft.MSBuildCache.AzureBlobStorage
 [![NuGet Version](https://img.shields.io/nuget/v/Microsoft.MSBuildCache.AzureBlobStorage.svg)](https://www.nuget.org/packages/Microsoft.MSBuildCache.AzureBlobStorage)
