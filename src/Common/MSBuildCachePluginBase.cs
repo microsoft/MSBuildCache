@@ -11,6 +11,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -122,7 +123,8 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         nameof(_fileAccessRepository),
         nameof(_cacheClient),
         nameof(_ignoredOutputPatterns),
-        nameof(_identicalDuplicateOutputPatterns)
+        nameof(_identicalDuplicateOutputPatterns),
+        nameof(Settings)
     )]
     protected bool Initialized { get; private set; }
 
@@ -391,6 +393,26 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         {
             Interlocked.Increment(ref _cacheMissCount);
             return CacheResult.IndicateNonCacheHit(CacheResultType.CacheMiss);
+        }
+
+        if (Settings.ForceCacheMissPercentage != 0)
+        {
+            // use a hash of the project id so that it is repeatable
+
+#if NETFRAMEWORK
+            using SHA256 hasher = SHA256.Create();
+            byte[] projectHash = hasher.ComputeHash(Encoding.UTF8.GetBytes(nodeContext.Id));
+#else
+            byte[] projectHash = SHA256.HashData(Encoding.UTF8.GetBytes(nodeContext.Id));
+#endif
+
+            uint hashInt = BitConverter.ToUInt32(projectHash, 0);
+            if ((hashInt % 100) < Settings.ForceCacheMissPercentage)
+            {
+                logger.LogMessage($"Forcing an otherwise 'cache hit' to be a 'cache miss' because of ForceCacheMissPercentage.");
+                Interlocked.Increment(ref _cacheMissCount);
+                return CacheResult.IndicateNonCacheHit(CacheResultType.CacheMiss);
+            }
         }
 
         CheckForDuplicateOutputs(logger, nodeBuildResult.Outputs, nodeContext);
