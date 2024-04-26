@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using BuildXL.Cache.ContentStore.Hashing;
@@ -110,23 +111,24 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         _universe = $"pccc-{(int)hasher.Info.HashType}-{InternalSeed}-" + (string.IsNullOrEmpty(universe) ? "DEFAULT" : universe);
 
         _azureDevopsTracer = new CallbackAppTraceSource(
-            (message, level) =>
+            (rawMessage, level) =>
             {
+                TryExtractContext(rawMessage, out Context cacheContext, out string message);
                 message = $"PipelineCachingCacheClient [{level}]: {message}";
                 switch (level)
                 {
                     case SourceLevels.Critical:
                     case SourceLevels.Error:
-                        Tracer.Error(rootContext, message);
+                        Tracer.Error(cacheContext, message);
                         break;
                     case SourceLevels.Warning:
-                        Tracer.Warning(rootContext, message);
+                        Tracer.Warning(cacheContext, message);
                         break;
                     case SourceLevels.Information:
-                        Tracer.Info(rootContext, message);
+                        Tracer.Info(cacheContext, message);
                         break;
                     case SourceLevels.Verbose:
-                        Tracer.Debug(rootContext, message);
+                        Tracer.Debug(cacheContext, message);
                         break;
                     default:
                         throw new InvalidOperationException($"Unexpected SourceLevel:{level}");
@@ -265,7 +267,8 @@ internal sealed class PipelineCachingCacheClient : CacheClient
 
             var result = await WithHttpRetries(
                 () => _manifestClient.PublishAsync(RepoRoot, infos, extras, new ArtifactPublishOptions(), manifestFileOutputPath: null, cancellationToken),
-                context: $"Publishing content for {fingerprint}",
+                cacheContext: context,
+                message: $"Publishing content for {fingerprint}",
                 cancellationToken);
 
             // double check
@@ -287,7 +290,8 @@ internal sealed class PipelineCachingCacheClient : CacheClient
 
             CreateResult createResult = await WithHttpRetries(
                 () => _cacheClient.CreatePipelineCacheArtifactAsync(entry, null, cancellationToken),
-                context.ToString()!,
+                cacheContext: context,
+                message: $"Storing cache key for {fingerprint}",
                 cancellationToken);
             Tracer.Debug(context, $"Cache entry stored in scope `{createResult.ScopeUsed}`");
         }
@@ -357,7 +361,8 @@ internal sealed class PipelineCachingCacheClient : CacheClient
 
             var result = await WithHttpRetries(
                 () => _manifestClient.PublishAsync(TempFolder, infos, extras, new ArtifactPublishOptions(), manifestFileOutputPath: null, cancellationToken),
-                context.ToString()!,
+                cacheContext: context,
+                message: $"Publishing content for {fingerprint}",
                 cancellationToken);
 
             var entry = new CreatePipelineCacheArtifactContract(
@@ -369,7 +374,8 @@ internal sealed class PipelineCachingCacheClient : CacheClient
 
             CreateResult createResult = await WithHttpRetries(
                 () => _cacheClient.CreatePipelineCacheArtifactAsync(entry, null, cancellationToken),
-                context.ToString()!,
+                cacheContext: context,
+                message: $"Storing cache key for {fingerprint}",
                 cancellationToken);
 
             Tracer.Debug(context, $"SFP `{fingerprint}` stored in scope `{createResult.ScopeUsed}`");
@@ -559,7 +565,8 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                     await _client._manifestClient.DownloadAsyncWithManifestPath(manifestOptions, cancellationToken);
                     return 0;
                 },
-                context: context.ToString()!,
+                cacheContext: context,
+                message: $"Downloading for {_manifestId}",
                 cancellationToken);
 
             foreach (KeyValuePair<ContentHash, string> addToCache in toAddToCacheAsWholeFile)
@@ -607,12 +614,13 @@ internal sealed class PipelineCachingCacheClient : CacheClient
     {
         using var ms = new MemoryStream();
         return await WithHttpRetries(async () =>
-        {
-            ms.Position = 0;
-            await _manifestClient.DownloadToStreamAsync(dedupId, ms, proxyUri: null, cancellationToken);
-            return ms.ToArray();
-        },
-            context.ToString()!,
+            {
+                ms.Position = 0;
+                await _manifestClient.DownloadToStreamAsync(dedupId, ms, proxyUri: null, cancellationToken);
+                return ms.ToArray();
+            },
+            cacheContext: context,
+            message: $"Getting bytes of {dedupId}",
             cancellationToken);
     }
 
@@ -712,11 +720,12 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                     return null;
                 }
             },
-            $"Querying cache for '{key}'",
+            cacheContext: context,
+            message: $"Querying cache for '{key}'",
             cancellationToken);
     }
 
-    private Task<T> WithHttpRetries<T>(Func<Task<T>> taskFactory, string context, CancellationToken token)
+    private Task<T> WithHttpRetries<T>(Func<Task<T>> taskFactory, Context cacheContext, string message, CancellationToken token)
     {
         return AsyncHttpRetryHelper<T>.InvokeAsync(
                 taskFactory,
@@ -725,7 +734,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                 canRetryDelegate: _ => true, // retry on any exception
                 cancellationToken: token,
                 continueOnCapturedContext: false,
-                context: context);
+                context: EmbedCacheContext(cacheContext, message));
     }
 
     public override async ValueTask DisposeAsync()
@@ -767,5 +776,25 @@ internal sealed class PipelineCachingCacheClient : CacheClient
 
         // Prepend a '/'
         return $"/{path}";
+    }
+
+    private static string EmbedCacheContext(Context cacheContext, string message) =>
+        $"[[{cacheContext.TraceId}]]{message}";
+
+    private static readonly Regex extractCacheContext = new Regex(@"\[\[(.*)\]\](.*)", RegexOptions.Compiled);
+
+    private void TryExtractContext(string both, out Context context, out string message)
+    {
+        Match match = extractCacheContext.Match(both);
+        if (match.Success && Guid.TryParse(match.Captures[0].Value, out Guid contextGuid))
+        {
+            context = new Context(contextGuid, RootContext.Logger);
+            message = match.Captures[1].Value;
+        }
+        else
+        {
+            message = both;
+            context = RootContext;
+        }
     }
 }
