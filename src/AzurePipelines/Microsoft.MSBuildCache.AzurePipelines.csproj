@@ -6,6 +6,9 @@
     <TargetFrameworks>net472;net8.0</TargetFrameworks>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Microsoft.MSBuildCache.AzurePipelines.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Common\Microsoft.MSBuildCache.Common.csproj" />
   </ItemGroup>
   <ItemGroup>
