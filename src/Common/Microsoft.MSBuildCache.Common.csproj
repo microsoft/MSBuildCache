@@ -1,4 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- https://dev.to/yerac/include-both-nuget-package-references-and-project-reference-dll-using-dotnet-pack-2d8p -->
+  <Target DependsOnTargets="ResolveReferences" Name="CopyProjectReferencesToPackage">
+    <ItemGroup>
+      <BuildOutputInPackage Include="@(ReferenceCopyLocalPaths->WithMetadataValue('ReferenceSourceTarget', 'ProjectReference'))"/>
+    </ItemGroup>
+  </Target>
+
+
   <PropertyGroup>
     <!-- Only supports x64 due to the RocksDB dependency -->
     <Platform>x64</Platform>
@@ -6,9 +15,14 @@
     <TargetFrameworks>net472;net8.0</TargetFrameworks>
     <RootNamespace>Microsoft.MSBuildCache</RootNamespace>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);CopyProjectReferencesToPackage</TargetsForTfmSpecificBuildOutput>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Deps\Microsoft.MSBuildCache.Deps.csproj" />
+    <PackageReference Include="CopyOnWrite" />
+    <ProjectReference Include="..\Deps\Microsoft.MSBuildCache.Deps.csproj">
+      <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
+      <IncludeAssets>Microsoft.MSBuildCache.Deps.dll</IncludeAssets>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <!-- TODO: Inlcude these in the package to automatically include them for depending projects -->

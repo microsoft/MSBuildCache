@@ -20,7 +20,6 @@
   </Target>
 
   <!-- Since this is an MSBuild extension which is loaded into the MSBuild process, much like a tool package we need to repackage our ProjectReferences and PackageReferences -->
-  <!-- When we are using ilrepack to directly merge the dependencies, we only need to copy the native files which don't get merged.-->
   <Target Name="IncludeReferenceCopyLocalPathsInBuildOutputInPackage"
           BeforeTargets="_GetBuildOutputFilesWithTfm"
           DependsOnTargets="ResolveReferences;ResolvePackageDependenciesForBuild;ResolveProjectReferences"

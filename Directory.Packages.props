@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="coverlet.collector" Version="3.1.2" />
+    <PackageVersion Include="CopyOnWrite" Version="0.3.8" />
     <PackageVersion Include="DotNet.Glob" Version="2.0.3" />
     <PackageVersion Include="ILRepack" Version="2.0.27" />
     <PackageVersion Include="Microsoft.Bcl.AsyncInterfaces" Version="8.0.0" />
