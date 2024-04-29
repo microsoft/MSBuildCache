@@ -1092,8 +1092,6 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         var timer = Stopwatch.StartNew();
         try
         {
-            logger?.LogMessage($"{memberName} started.");
-
             return await innerAsync();
         }
         catch (Exception e)
@@ -1103,7 +1101,11 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         }
         finally
         {
-            logger?.LogMessage($"{memberName} succeeded after {timer.ElapsedMilliseconds}.");
+            // only log 1+ second operations to avoid debug spew
+            if (timer.ElapsedMilliseconds > 1000.0)
+            {
+                logger?.LogMessage($"{memberName} succeeded after {timer.ElapsedMilliseconds}.");
+            }
         }
     }
 
