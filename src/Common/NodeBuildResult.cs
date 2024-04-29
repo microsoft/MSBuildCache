@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Text.Json;
 using System.Text.Json.Serialization;
 using BuildXL.Cache.ContentStore.Hashing;
 using Microsoft.Build.Execution;
@@ -34,7 +33,6 @@ public sealed class NodeBuildResult
 
     // Use a sorted dictionary so the JSON output is deterministically sorted and easier to compare build-to-build.
     // These paths are repo-relative.
-    [JsonConverter(typeof(SortedDictionaryConverter))]
     public SortedDictionary<string, ContentHash> Outputs { get; }
 
     // Use a sorted dictionary so the JSON output is deterministically sorted and easier to compare build-to-build.
@@ -75,49 +73,5 @@ public sealed class NodeBuildResult
         }
 
         return CacheResult.IndicateCacheHit(targetResults);
-    }
-
-    private sealed class SortedDictionaryConverter : JsonConverter<SortedDictionary<string, ContentHash>>
-    {
-        public override SortedDictionary<string, ContentHash>? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-        {
-            var contentHashConverter = (JsonConverter<ContentHash>)options.GetConverter(typeof(ContentHash));
-            var outputs = new SortedDictionary<string, ContentHash>(StringComparer.OrdinalIgnoreCase);
-            while (reader.Read())
-            {
-                if (reader.TokenType == JsonTokenType.EndObject)
-                {
-                    break;
-                }
-
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                {
-                    throw new JsonException($"Unexpected token: {reader.TokenType}");
-                }
-
-                string propertyName = reader.GetString()!;
-                if (!reader.Read())
-                {
-                    throw new JsonException($"Property name '{propertyName}' does not have a value.");
-                }
-
-                ContentHash? contentHash = contentHashConverter.Read(ref reader, typeof(ContentHash), options);
-                if (contentHash == null)
-                {
-                    throw new JsonException($"Property value for '{propertyName}' could not be parsed.");
-                }
-
-                outputs.Add(propertyName, contentHash.Value);
-            }
-
-            return outputs;
-        }
-
-        public override void Write(Utf8JsonWriter writer, SortedDictionary<string, ContentHash> value, JsonSerializerOptions options)
-        {
-            var defaultConverter = (JsonConverter<SortedDictionary<string, ContentHash>>)
-                options.GetConverter(typeof(SortedDictionary<string, ContentHash>));
-            defaultConverter.Write(writer, value, options);
-        }
     }
 }

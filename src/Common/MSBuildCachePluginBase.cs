@@ -882,7 +882,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         try
         {
             using FileStream fileStream = File.Create(filePath);
-            await JsonSerializer.SerializeAsync(fileStream, nodeBuildResult, SerializationHelper.SerializerOptions);
+            await JsonSerializer.SerializeAsync(fileStream, nodeBuildResult, SourceGenerationContext.Default.NodeBuildResult);
         }
         catch (Exception ex)
         {

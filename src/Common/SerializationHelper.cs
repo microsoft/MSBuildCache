@@ -1,12 +1,13 @@
 ﻿// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using System;
 using System.IO;
 using System.Text;
-using System.Threading.Tasks;
-using System.Threading;
-using System;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Microsoft.MSBuildCache;
 
@@ -14,14 +15,12 @@ internal static class SerializationHelper
 {
     public static JsonWriterOptions WriterOptions { get; } = new JsonWriterOptions { Indented = true };
 
-    public static JsonSerializerOptions SerializerOptions { get; } = CreateJsonSerializerOptions();
-
-    internal static async Task<T?> DeserializeAsync<T>(this Stream stream, JsonSerializerOptions? options = null, CancellationToken cancellationToken = default)
+    internal static async Task<T?> DeserializeAsync<T>(this Stream stream, JsonTypeInfo<T> typeInfo, CancellationToken cancellationToken = default)
         where T : class
     {
         try
         {
-            return await JsonSerializer.DeserializeAsync<T>(stream, options, cancellationToken);
+            return await JsonSerializer.DeserializeAsync(stream, typeInfo, cancellationToken);
         }
         catch (JsonException)
         {
@@ -55,15 +54,5 @@ internal static class SerializationHelper
 
             throw new InvalidOperationException(message);
         }
-    }
-
-    private static JsonSerializerOptions CreateJsonSerializerOptions()
-    {
-        JsonSerializerOptions options = new()
-        {
-            WriteIndented = true,
-        };
-        options.Converters.Add(new ContentHashJsonConverter());
-        return options;
     }
 }

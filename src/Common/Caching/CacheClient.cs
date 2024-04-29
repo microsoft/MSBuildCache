@@ -5,6 +5,8 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using System.Threading;
 using System.Threading.Tasks;
 using BuildXL.Cache.ContentStore.Hashing;
@@ -21,7 +23,6 @@ using Microsoft.Build.Graph;
 using Microsoft.CopyOnWrite;
 using Microsoft.MSBuildCache.Fingerprinting;
 using Microsoft.MSBuildCache.Hashing;
-using JsonSerializer = System.Text.Json.JsonSerializer;
 using Fingerprint = Microsoft.MSBuildCache.Fingerprinting.Fingerprint;
 using WeakFingerprint = BuildXL.Cache.MemoizationStore.Interfaces.Sessions.Fingerprint;
 
@@ -276,7 +277,7 @@ public abstract class CacheClient : ICacheClient
         Context context = new(RootContext);
 
         // compute the metadata content.
-        byte[] nodeBuildResultBytes = await SerializeAsync(nodeBuildResult, cancellationToken);
+        byte[] nodeBuildResultBytes = await SerializeAsync(nodeBuildResult, SourceGenerationContext.Default.NodeBuildResult, cancellationToken);
         ContentHash nodeBuildResultHash = _hasher.GetContentHash(nodeBuildResultBytes)!;
 
         Tracer.Debug(context, $"Computed node metadata {nodeBuildResultHash.ToShortString()} to the cache for {nodeContext.Id}");
@@ -286,7 +287,7 @@ public abstract class CacheClient : ICacheClient
         if (pathSet != null)
         {
             // Add the PathSet to the ContentStore
-            byte[] pathSetByteArray = await SerializeAsync(pathSet, cancellationToken);
+            byte[] pathSetByteArray = await SerializeAsync(pathSet, SourceGenerationContext.Default.PathSet, cancellationToken);
             ContentHash pathSetBytesHash = _hasher.GetContentHash(pathSetByteArray)!;
 
             Tracer.Debug(context, $"Computed PathSet {pathSetBytesHash.ToShortString()} to the cache for {nodeContext.Id}");
@@ -402,7 +403,7 @@ public abstract class CacheClient : ICacheClient
         }
 
         // The first file is special: it is a serialized NodeBuildResult file.
-        NodeBuildResult? nodeBuildResult = await DeserializeAsync<NodeBuildResult>(context, nodeBuildResultStream, cancellationToken);
+        NodeBuildResult? nodeBuildResult = await DeserializeAsync(context, nodeBuildResultStream, SourceGenerationContext.Default.NodeBuildResult, cancellationToken);
         if (nodeBuildResult is null)
         {
             Tracer.Debug(context, $"Failed to deserialize NodeBuildResult for {cacheStrongFingerprint}");
@@ -505,7 +506,7 @@ public abstract class CacheClient : ICacheClient
             ContentHash pathSetHash = selector.ContentHash;
             byte[]? selectorStrongFingerprint = selector.Output;
 
-            PathSet? pathSet = await FetchAndDeserializeFromCacheAsync<PathSet>(context, pathSetHash, cancellationToken);
+            PathSet? pathSet = await FetchAndDeserializeFromCacheAsync(context, pathSetHash, SourceGenerationContext.Default.PathSet, cancellationToken);
 
             if (pathSet is null)
             {
@@ -526,20 +527,20 @@ public abstract class CacheClient : ICacheClient
         return (null, null);
     }
 
-    private static async Task<byte[]> SerializeAsync<T>(T data, CancellationToken cancellationToken)
+    private static async Task<byte[]> SerializeAsync<T>(T data, JsonTypeInfo<T> typeInfo, CancellationToken cancellationToken)
         where T : class
     {
         using (var memoryStream = new MemoryStream())
         {
-            await JsonSerializer.SerializeAsync(memoryStream, data, SerializationHelper.SerializerOptions, cancellationToken);
+            await JsonSerializer.SerializeAsync(memoryStream, data, typeInfo, cancellationToken);
             return memoryStream.ToArray();
         }
     }
 
-    private async Task<T?> DeserializeAsync<T>(Context context, Stream stream, CancellationToken cancellationToken)
+    private async Task<T?> DeserializeAsync<T>(Context context, Stream stream, JsonTypeInfo<T> typeInfo, CancellationToken cancellationToken)
         where T : class
     {
-        T? data = await stream.DeserializeAsync<T>(SerializationHelper.SerializerOptions, cancellationToken);
+        T? data = await stream.DeserializeAsync(typeInfo, cancellationToken);
         if (data is null)
         {
             Tracer.Debug(context, $"Content deserialized as null");
@@ -548,7 +549,7 @@ public abstract class CacheClient : ICacheClient
         return data;
     }
 
-    protected async Task<T?> FetchAndDeserializeFromCacheAsync<T>(Context context, ContentHash contentHash, CancellationToken cancellationToken)
+    protected async Task<T?> FetchAndDeserializeFromCacheAsync<T>(Context context, ContentHash contentHash, JsonTypeInfo<T> typeInfo, CancellationToken cancellationToken)
     where T : class
     {
         context = new(context);
@@ -562,7 +563,7 @@ public abstract class CacheClient : ICacheClient
 
         using (streamResult.Stream)
         {
-            return await DeserializeAsync<T>(context, streamResult.Stream!, cancellationToken);
+            return await DeserializeAsync(context, streamResult.Stream!, typeInfo, cancellationToken);
         }
     }
 
