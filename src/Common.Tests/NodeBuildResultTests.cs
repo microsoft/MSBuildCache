@@ -52,8 +52,8 @@ public class NodeBuildResultTests
                 null
             );
 
-            string serialized = JsonSerializer.Serialize(nodeBuildResult);
-            NodeBuildResult deserialized = JsonSerializer.Deserialize<NodeBuildResult>(serialized)!;
+            string serialized = JsonSerializer.Serialize(nodeBuildResult, SourceGenerationContext.Default.NodeBuildResult);
+            NodeBuildResult deserialized = JsonSerializer.Deserialize(serialized, SourceGenerationContext.Default.NodeBuildResult)!;
 
             CollectionAssert.AreEqual(expected.Keys, deserialized.Outputs.Keys, "\n" +
                 "Permutation: " + string.Join(", ", permutation) + "\n" +
