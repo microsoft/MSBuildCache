@@ -17,8 +17,3 @@ steps:
     command: test
     projects: $(Build.SourcesDirectory)/MSBuildCache.sln
     arguments: -restore:false --no-build --configuration $(BuildConfiguration)
-
-- publish: $(ArtifactsDirectory)
-  displayName: Publish Artifacts
-  artifact: artifacts
-  condition: always()
