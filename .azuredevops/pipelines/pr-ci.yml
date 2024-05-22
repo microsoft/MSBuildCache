@@ -37,7 +37,29 @@ jobs:
     # Fetch all history for versioning
     fetchDepth: 0
 
-  - template: templates\build-and-test.yml
+  - task: UseDotNet@2
+    displayName: 'Install .NET $(DotNetVersion)'
+    inputs:
+      version: '$(DotNetVersion)'
+
+  - task: NuGetAuthenticate@1
+    displayName: NuGet Authenticate
+
+  - script: |
+      dotnet build $(Build.SourcesDirectory)/MSBuildCache.sln --configuration $(BuildConfiguration) -BinaryLogger:$(LogDirectory)/msbuild.binlog
+    displayName: Build
+
+  - task: DotNetCoreCLI@2
+    displayName: Run Unit Tests
+    inputs:
+      command: test
+      projects: $(Build.SourcesDirectory)/MSBuildCache.sln
+      arguments: -restore:false --no-build --configuration $(BuildConfiguration)
+
+  - publish: $(ArtifactsDirectory)
+    displayName: Publish Artifacts
+    artifact: artifacts
+    condition: always()
 
   - publish: $(LogDirectory)
     displayName: Publish Logs
