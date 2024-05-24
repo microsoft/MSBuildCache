@@ -327,7 +327,10 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     }
 
     public override Task<CacheResult> GetCacheResultAsync(BuildRequestData buildRequest, PluginLoggerBase logger, CancellationToken cancellationToken)
-        => TimeAndLogAsync(logger, () => GetCacheResultInnerAsync(buildRequest, logger, cancellationToken));
+    => TimeAndLogAsync(
+        logger,
+        () => GetCacheResultInnerAsync(buildRequest, logger, cancellationToken),
+        context: buildRequest.ProjectFullPath);
 
     private async Task<CacheResult> GetCacheResultInnerAsync(BuildRequestData buildRequest, PluginLoggerBase logger, CancellationToken cancellationToken)
     {
@@ -414,7 +417,10 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     }
 
     public override Task HandleProjectFinishedAsync(FileAccessContext fileAccessContext, BuildResult buildResult, PluginLoggerBase logger, CancellationToken cancellationToken)
-        => TimeAndLogAsync(logger, () => HandleProjectFinishedInnerAsync(fileAccessContext, buildResult, logger, cancellationToken));
+        => TimeAndLogAsync(
+            logger,
+            () => HandleProjectFinishedInnerAsync(fileAccessContext, buildResult, logger, cancellationToken),
+            context: fileAccessContext.ProjectFullPath);
 
     private async Task HandleProjectFinishedInnerAsync(FileAccessContext fileAccessContext, BuildResult buildResult, PluginLoggerBase logger, CancellationToken cancellationToken)
     {
@@ -1087,7 +1093,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         }
     }
 
-    private static async Task<T> TimeAndLogAsync<T>(PluginLoggerBase? logger, Func<Task<T>> innerAsync, [CallerMemberName] string memberName = "")
+    private static async Task<T> TimeAndLogAsync<T>(PluginLoggerBase? logger, Func<Task<T>> innerAsync, string? context = null, [CallerMemberName] string memberName = "")
     {
         var timer = Stopwatch.StartNew();
         try
@@ -1096,7 +1102,14 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         }
         catch (Exception e)
         {
-            logger?.LogWarning($"{memberName} failed after {timer.ElapsedMilliseconds} ms: {e}");
+            if (context == null)
+            {
+                logger?.LogWarning($"{memberName} failed after {timer.ElapsedMilliseconds} ms: {e}");
+            }
+            else
+            {
+                logger?.LogWarning($"{memberName}({context}) failed after {timer.ElapsedMilliseconds} ms: {e}");
+            }
             throw;
         }
         finally
@@ -1104,16 +1117,23 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             // only log 1+ second operations to avoid debug spew
             if (timer.ElapsedMilliseconds > 1000.0)
             {
-                logger?.LogMessage($"{memberName} succeeded after {timer.ElapsedMilliseconds}.");
+                if (context == null)
+                {
+                    logger?.LogMessage($"{memberName} succeeded after {timer.ElapsedMilliseconds} ms.");
+                }
+                else
+                {
+                    logger?.LogMessage($"{memberName}({context}) succeeded after {timer.ElapsedMilliseconds} ms.");
+                }
             }
         }
     }
 
-    private static Task<int> TimeAndLogAsync(PluginLoggerBase? logger, Func<Task> innerAsync, [CallerMemberName] string memberName = "")
-        => TimeAndLogAsync(logger, async () => { await innerAsync(); return 0; }, memberName);
+    private static Task<int> TimeAndLogAsync(PluginLoggerBase? logger, Func<Task> innerAsync, string? context = null, [CallerMemberName] string memberName = "")
+        => TimeAndLogAsync(logger, async () => { await innerAsync(); return 0; }, context, memberName);
 
-    private static void TimeAndLog(PluginLoggerBase? logger, Action inner, [CallerMemberName] string memberName = "")
-        => TimeAndLogAsync(logger, () => { inner(); return Task.CompletedTask; }, memberName);
+    private static void TimeAndLog(PluginLoggerBase? logger, Action inner, string? context = null, [CallerMemberName] string memberName = "")
+        => TimeAndLogAsync(logger, () => { inner(); return Task.CompletedTask; }, context, memberName).GetAwaiter().GetResult();
 }
 
 public static class ProjectGraphNodeExtensions
