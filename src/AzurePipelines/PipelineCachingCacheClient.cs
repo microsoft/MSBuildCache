@@ -788,12 +788,14 @@ internal sealed class PipelineCachingCacheClient : CacheClient
     internal static void TryExtractContext(string both, Context defaultContext, out Context context, out string message)
     {
         Match match;
-#pragma warning disable CA2249 // cross-compiling for netfx
+#if NETFRAMEWORK
         if (both.IndexOf(EmbeddedCacheContextHeader, StringComparison.Ordinal) >= 0 &&
+#else
+        if (both.Contains(EmbeddedCacheContextHeader, StringComparison.Ordinal) &&
+#endif
             (match = extractCacheContext.Match(both)).Success &&
             Guid.TryParse(match.Groups[2].Value, out Guid contextGuid))
         {
-#pragma warning restore CA2249 // cross-compiling for netfx
             context = new Context(contextGuid, defaultContext.Logger);
             message = match.Groups[1].Value + match.Groups[3].Value;
         }

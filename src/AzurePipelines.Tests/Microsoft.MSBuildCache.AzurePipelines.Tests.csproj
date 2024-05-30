@@ -20,4 +20,20 @@
   <ItemGroup>
     <ProjectReference Include="..\AzurePipelines\Microsoft.MSBuildCache.AzurePipelines.csproj" />
   </ItemGroup>
+
+  <!-- NuGet creates a single set of PackageReference for both Debug and Release - even though Debug and Release reference different packages. -->
+  <Target Name="PackageUnreference" AfterTargets="ResolvePackageAssets" Condition="('$(Configuration)' == 'Release') And ('$(TargetFramework)' == 'net472')">
+    <ItemGroup>
+      <PackageDependencies Remove="Microsoft.BuildXL.Cache.Interfaces" />
+      <PackageDependencies Remove="Microsoft.BuildXL.Cache.Libraries" />
+    </ItemGroup>
+    <ItemGroup>
+      <RuntimeCopyLocalItems Remove="@(RuntimeCopyLocalItems)" Condition=" '%(NuGetPackageId)' == 'Microsoft.BuildXL.Cache.Interfaces' "/>
+      <RuntimeCopyLocalItems Remove="@(RuntimeCopyLocalItems)" Condition=" '%(NuGetPackageId)' == 'Microsoft.BuildXL.Cache.Libraries' "/>
+    </ItemGroup>
+    <ItemGroup>
+      <ResolvedCompileFileDefinitions Remove="@(ResolvedCompileFileDefinitions)" Condition=" '%(NuGetPackageId)' == 'Microsoft.BuildXL.Cache.Interfaces' "/>
+      <ResolvedCompileFileDefinitions Remove="@(ResolvedCompileFileDefinitions)" Condition=" '%(NuGetPackageId)' == 'Microsoft.BuildXL.Cache.Libraries' "/>
+    </ItemGroup>
+  </Target>
 </Project>
