@@ -113,7 +113,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         _azureDevopsTracer = new CallbackAppTraceSource(
             (rawMessage, level) =>
             {
-                TryExtractContext(rawMessage, out Context cacheContext, out string message);
+                TryExtractContext(rawMessage, RootContext, out Context cacheContext, out string message);
                 message = $"PipelineCachingCacheClient [{level}]: {message}";
                 switch (level)
                 {
@@ -778,26 +778,31 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         return $"/{path}";
     }
 
-    private const string EmbeddedCacheContextHeader = "[[CacheContext:";
-    private static readonly Regex extractCacheContext = new Regex(@"\[\[CacheContext:(.*)\]\](.*)", RegexOptions.Compiled);
+    private const string EmbeddedCacheContextHeader = "<<<CacheContext:";
+    private const string EmbeddedCacheContextTail = ">>>";
+    private static readonly Regex extractCacheContext = new Regex(@$"(.*){EmbeddedCacheContextHeader}(.*){EmbeddedCacheContextTail}(.*)", RegexOptions.Compiled);
 
-    private static string EmbedCacheContext(Context cacheContext, string message) =>
-        $"{EmbeddedCacheContextHeader}{cacheContext.TraceId}]]{message}";
+    internal static string EmbedCacheContext(Context cacheContext, string message) =>
+        $"{EmbeddedCacheContextHeader}{cacheContext.TraceId}{EmbeddedCacheContextTail}{message}";
 
-    private void TryExtractContext(string both, out Context context, out string message)
+    internal static void TryExtractContext(string both, Context defaultContext, out Context context, out string message)
     {
         Match match;
-        if (both.StartsWith(EmbeddedCacheContextHeader, StringComparison.Ordinal) &&
+#if NETFRAMEWORK
+        if (both.IndexOf(EmbeddedCacheContextHeader, StringComparison.Ordinal) >= 0 &&
+#else
+        if (both.Contains(EmbeddedCacheContextHeader, StringComparison.Ordinal) &&
+#endif
             (match = extractCacheContext.Match(both)).Success &&
-            Guid.TryParse(match.Captures[0].Value, out Guid contextGuid))
+            Guid.TryParse(match.Groups[2].Value, out Guid contextGuid))
         {
-            context = new Context(contextGuid, RootContext.Logger);
-            message = match.Captures[1].Value;
+            context = new Context(contextGuid, defaultContext.Logger);
+            message = match.Groups[1].Value + match.Groups[3].Value;
         }
         else
         {
             message = both;
-            context = RootContext;
+            context = defaultContext;
         }
     }
 }

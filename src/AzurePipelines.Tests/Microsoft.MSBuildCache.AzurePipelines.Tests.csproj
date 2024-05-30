@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Only supports x64 due to the RocksDB dependency -->
+    <Platform>x64</Platform>
+    <Platforms>x64</Platforms>
+    <TargetFrameworks>net472;net8.0</TargetFrameworks>
+    <RootNamespace>Microsoft.MSBuildCache.AzurePipelines.Tests</RootNamespace>
+    <!-- Suppress "Avoid constant arrays as arguments". UTs have many one-off test data arrays. -->
+    <NoWarn>$(NoWarn);CA1861</NoWarn>
+    <!-- Suppress "Nested types should not be visible". UTs need to be "public" for MSTest but aren't actualy public, so nested typed might need to be exposed. -->
+    <NoWarn>$(NoWarn);CA1034</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="MSTest.TestAdapter" />
+    <PackageReference Include="MSTest.TestFramework" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="morelinq" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AzurePipelines\Microsoft.MSBuildCache.AzurePipelines.csproj" />
+  </ItemGroup>
+
+  <!-- NuGet creates a single set of PackageReference for both Debug and Release - even though Debug and Release reference different packages. -->
+  <Target Name="PackageUnreference" AfterTargets="ResolvePackageAssets" Condition="('$(Configuration)' == 'Release') And ('$(TargetFramework)' == 'net472')">
+    <ItemGroup>
+      <PackageDependencies Remove="Microsoft.BuildXL.Cache.Interfaces" />
+      <PackageDependencies Remove="Microsoft.BuildXL.Cache.Libraries" />
+    </ItemGroup>
+    <ItemGroup>
+      <RuntimeCopyLocalItems Remove="@(RuntimeCopyLocalItems)" Condition=" '%(NuGetPackageId)' == 'Microsoft.BuildXL.Cache.Interfaces' "/>
+      <RuntimeCopyLocalItems Remove="@(RuntimeCopyLocalItems)" Condition=" '%(NuGetPackageId)' == 'Microsoft.BuildXL.Cache.Libraries' "/>
+    </ItemGroup>
+    <ItemGroup>
+      <ResolvedCompileFileDefinitions Remove="@(ResolvedCompileFileDefinitions)" Condition=" '%(NuGetPackageId)' == 'Microsoft.BuildXL.Cache.Interfaces' "/>
+      <ResolvedCompileFileDefinitions Remove="@(ResolvedCompileFileDefinitions)" Condition=" '%(NuGetPackageId)' == 'Microsoft.BuildXL.Cache.Libraries' "/>
+    </ItemGroup>
+  </Target>
+</Project>

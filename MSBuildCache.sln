@@ -34,6 +34,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.MSBuildCache.Loca
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.MSBuildCache.Repack.Tests", "src\Repack.Tests\Microsoft.MSBuildCache.Repack.Tests.csproj", "{3BCB6452-B087-4A03-8418-C79F2715DDE7}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.MSBuildCache.AzurePipelines.Tests", "src\AzurePipelines.Tests\Microsoft.MSBuildCache.AzurePipelines.Tests.csproj", "{A8156008-A0EC-4F17-BCF3-A6F07AEF4D22}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -68,6 +70,10 @@ Global
 		{3BCB6452-B087-4A03-8418-C79F2715DDE7}.Debug|x64.Build.0 = Debug|x64
 		{3BCB6452-B087-4A03-8418-C79F2715DDE7}.Release|x64.ActiveCfg = Release|x64
 		{3BCB6452-B087-4A03-8418-C79F2715DDE7}.Release|x64.Build.0 = Release|x64
+		{A8156008-A0EC-4F17-BCF3-A6F07AEF4D22}.Debug|x64.ActiveCfg = Debug|x64
+		{A8156008-A0EC-4F17-BCF3-A6F07AEF4D22}.Debug|x64.Build.0 = Debug|x64
+		{A8156008-A0EC-4F17-BCF3-A6F07AEF4D22}.Release|x64.ActiveCfg = Release|x64
+		{A8156008-A0EC-4F17-BCF3-A6F07AEF4D22}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -80,6 +86,7 @@ Global
 		{97357681-C75E-445D-8547-46F312D01CED} = {EFFB5949-347C-4F28-8964-571D5C6B6209}
 		{F6586428-E047-42C8-B0AC-048DF6DFAF18} = {EFFB5949-347C-4F28-8964-571D5C6B6209}
 		{3BCB6452-B087-4A03-8418-C79F2715DDE7} = {EFFB5949-347C-4F28-8964-571D5C6B6209}
+		{A8156008-A0EC-4F17-BCF3-A6F07AEF4D22} = {EFFB5949-347C-4F28-8964-571D5C6B6209}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {F1CDA78F-A666-431B-BF44-56DA7DF193BA}
