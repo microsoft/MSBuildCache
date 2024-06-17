@@ -9,11 +9,8 @@
     <ProjectReference Include="..\Common\Microsoft.MSBuildCache.Common.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.BuildXL.Cache.Hashing" />
-    <PackageReference Include="Microsoft.BuildXL.Cache.Interfaces"  />
-    <PackageReference Include="Microsoft.BuildXL.Cache.Libraries" />
-    <!-- Microsoft.Extensions.Logging.Abstractions is an undeclared dependency of BuildXL.Cache.Libraries. TODO: Remove once BuildXL.Cache.Libraries fixes this -->
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <!-- Need an explicit reference since RocksDbNative doesn't use BuildTransitive and this project doesn't explicitly reference any packages -->
+    <PackageReference Include="RocksDbNative" />
   </ItemGroup>
   <ItemGroup>
     <None Include="build\*">

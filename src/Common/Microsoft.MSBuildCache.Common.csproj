@@ -8,14 +8,13 @@
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="CopyOnWrite" />
     <PackageReference Include="DotNet.Glob" />
     <PackageReference Include="Microsoft.Bcl.HashCode" />
     <PackageReference Include="Microsoft.Build.Prediction" />
-    <PackageReference Include="Microsoft.BuildXL.Cache.Hashing" />
-    <PackageReference Include="Microsoft.BuildXL.Cache.Interfaces"  />
-    <PackageReference Include="Microsoft.BuildXL.Cache.Libraries" />
-    <!-- Microsoft.Extensions.Logging.Abstractions is an undeclared dependency of BuildXL.Cache.Libraries. TODO: Remove once BuildXL.Cache.Libraries fixes this -->
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.BuildXL.Cache.ContentStore.Interfaces" />
+    <PackageReference Include="Microsoft.BuildXL.Cache.MemoizationStore.Interfaces" />
+    <PackageReference Include="Microsoft.BuildXL.Cache.MemoizationStore.Library" />
     <PackageReference Include="System.Threading.Channels" />
   </ItemGroup>
   <ItemGroup>
