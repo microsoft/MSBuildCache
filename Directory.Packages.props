@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project>
   <PropertyGroup>
-    <ArtifactsPackageVersion>19.232.34508-buildid25403274</ArtifactsPackageVersion>
-    <BuildXLPackageVersion>0.1.0-20240307.1</BuildXLPackageVersion>
+    <ArtifactsPackageVersion>19.239.34907-buildid28083504</ArtifactsPackageVersion>
+    <BuildXLPackageVersion>0.1.0-20240606.3</BuildXLPackageVersion>
     <MSBuildPackageVersion>17.9.5</MSBuildPackageVersion>
   </PropertyGroup>
   <ItemGroup>
+    <PackageVersion Include="CopyOnWrite" Version="0.3.8" />
     <PackageVersion Include="coverlet.collector" Version="3.1.2" />
     <PackageVersion Include="DotNet.Glob" Version="2.0.3" />
     <PackageVersion Include="ILRepack" Version="2.0.27" />
@@ -15,15 +16,17 @@
     <PackageVersion Include="Microsoft.Build.Framework" Version="$(MSBuildPackageVersion)" />
     <PackageVersion Include="Microsoft.Build.Prediction" Version="1.1.0" />
     <PackageVersion Include="Microsoft.Build.Utilities.Core" Version="$(MSBuildPackageVersion)" />
+    <PackageVersion Include="Microsoft.BuildXL.Cache.ContentStore.Interfaces" Version="$(BuildXLPackageVersion)" />
     <PackageVersion Include="Microsoft.BuildXL.Cache.Hashing" Version="$(BuildXLPackageVersion)" />
-    <PackageVersion Include="Microsoft.BuildXL.Cache.Interfaces" Version="$(BuildXLPackageVersion)" />
-    <PackageVersion Include="Microsoft.BuildXL.Cache.Libraries" Version="$(BuildXLPackageVersion)" />
+    <PackageVersion Include="Microsoft.BuildXL.Cache.MemoizationStore.Interfaces" Version="$(BuildXLPackageVersion)" />
+    <PackageVersion Include="Microsoft.BuildXL.Cache.MemoizationStore.Distributed" Version="$(BuildXLPackageVersion)" />
+    <PackageVersion Include="Microsoft.BuildXL.Cache.MemoizationStore.Library" Version="$(BuildXLPackageVersion)" />
     <PackageVersion Include="Microsoft.BuildXL.Native" Version="$(BuildXLPackageVersion)" />
     <PackageVersion Include="Microsoft.BuildXL.Processes" Version="$(BuildXLPackageVersion)" />
     <PackageVersion Include="Microsoft.BuildXL.Utilities" Version="$(BuildXLPackageVersion)" />
     <PackageVersion Include="Microsoft.BuildXL.Utilities.Core" Version="$(BuildXLPackageVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis" Version="3.8.0" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="6.0.3" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.1" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.3.2" />
     <PackageVersion Include="Microsoft.VisualStudio.Services.BlobStore.Client" Version="$(ArtifactsPackageVersion)" />
     <PackageVersion Include="Microsoft.VisualStudio.Services.BlobStore.Client.Cache" Version="$(ArtifactsPackageVersion)" />
@@ -39,6 +42,8 @@
     <PackageVersion Include="protobuf-net" Version="3.2.26" />
     <PackageVersion Include="protobuf-net.Core" Version="3.2.26" />
     <PackageVersion Include="protobuf-net.Grpc" Version="1.1.1" />
+    <PackageVersion Include="RocksDbNative" Version="8.1.1-20240419.2" />
+    <PackageVersion Include="RocksDbSharp" Version="8.1.1-20240419.2" />
     <PackageVersion Include="System.Collections.Immutable" Version="8.0.0" />
     <PackageVersion Include="System.Memory" Version="4.5.5" />
     <PackageVersion Include="System.Private.ServiceModel" Version="4.10.3" />

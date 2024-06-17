@@ -73,7 +73,7 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase
         logger.LogMessage($"Using cache namespace '{cacheContainer}' as '{cacheContainerHash}'.");
 
 #pragma warning disable CA2000 // Dispose objects before losing scope. Expected to be disposed by TwoLevelCache
-        ICache remoteCache = CreateRemoteCache(new OperationContext(context, cancellationToken), cacheContainerHash);
+        ICache remoteCache = CreateRemoteCache(new OperationContext(context, cancellationToken), cacheContainerHash, Settings.RemoteCacheIsReadOnly);
 #pragma warning restore CA2000 // Dispose objects before losing scope
 
         ICacheSession remoteCacheSession = await StartCacheSessionAsync(context, remoteCache, "remote");
@@ -100,7 +100,7 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase
             Settings.AsyncCacheMaterialization);
     }
 
-    private static ICache CreateRemoteCache(OperationContext context, string cacheUniverse)
+    private static ICache CreateRemoteCache(OperationContext context, string cacheUniverse, bool isReadOnly)
     {
         string? connectionString = Environment.GetEnvironmentVariable(AzureBlobConnectionStringEnvVar);
         if (string.IsNullOrEmpty(connectionString))
@@ -114,7 +114,8 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase
             ShardingScheme: new ShardingScheme(ShardingAlgorithm.SingleShard, new List<BlobCacheStorageAccountName> { accountName }),
             Universe: cacheUniverse,
             Namespace: "0",
-            RetentionPolicyInDays: null);
+            RetentionPolicyInDays: null,
+            IsReadOnly: isReadOnly);
         return AzureBlobStorageCacheFactory.Create(context, cacheConfig, new StaticBlobCacheSecretsProvider(credentials)).Cache;
     }
 

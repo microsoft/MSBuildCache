@@ -78,6 +78,8 @@ internal sealed class PipelineCachingCacheClient : CacheClient
     // Prefer a temp directory on the same drive as the repo root so that hard links work.
     private static readonly string TempFolder = Environment.GetEnvironmentVariable("AGENT_TEMPDIRECTORY") ?? Path.GetTempPath();
 
+    private static readonly string DomainId = WellKnownDomainIds.DefaultDomainId.ToString();
+
     private const char KeySegmentSeperator = '|';
     private const int InternalSeed = 5;
     private readonly bool _remoteCacheIsReadOnly;
@@ -282,6 +284,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
 
             var key = ComputeKey(fingerprint, forWrite: true);
             var entry = new CreatePipelineCacheArtifactContract(
+                DomainId,
                 new VisualStudio.Services.PipelineCache.WebApi.Fingerprint(key.Split(KeySegmentSeperator)),
                 result.ManifestId,
                 result.RootId,
@@ -366,6 +369,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                 cancellationToken);
 
             var entry = new CreatePipelineCacheArtifactContract(
+                DomainId,
                 new VisualStudio.Services.PipelineCache.WebApi.Fingerprint(key.Split(KeySegmentSeperator)),
                 result.ManifestId,
                 result.RootId,
