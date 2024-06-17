@@ -73,6 +73,13 @@ public sealed class FingerprintFactory : IFingerprintFactory
         AddSettingToFingerprint(pluginSettings.AllowFileAccessAfterProjectFinishFilePatterns, nameof(pluginSettings.AllowFileAccessAfterProjectFinishFilePatterns));
         AddSettingToFingerprint(pluginSettings.AllowFileAccessAfterProjectFinishProcessPatterns, nameof(pluginSettings.AllowFileAccessAfterProjectFinishProcessPatterns));
         AddSettingToFingerprint(pluginSettings.AllowProcessCloseAfterProjectFinishProcessPatterns, nameof(pluginSettings.AllowProcessCloseAfterProjectFinishProcessPatterns));
+
+        // Use the Visual Studio version as part of the cache key since different versions of VS might have different build logic and C++ compilers of differing versions are incompatible to each other.
+        string? visualStudioVersion = Environment.GetEnvironmentVariable("VSCMD_VER");
+        if (!string.IsNullOrEmpty(visualStudioVersion))
+        {
+            _pluginSettingsFingerprintEntries.Add(CreateFingerprintEntry($"Visual Studio Version: {visualStudioVersion}"));
+        }
     }
 
     public async Task<Fingerprint?> GetWeakFingerprintAsync(NodeContext nodeContext)
