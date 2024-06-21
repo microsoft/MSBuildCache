@@ -4,6 +4,15 @@ resources:
     type: git
     name: 1ESPipelineTemplates/MicroBuildTemplate
     ref: refs/tags/release
+parameters:
+- name: NetworkIsolationMode
+  displayName: 'Network Isolation Mode'
+  type: string
+  default: Disabled
+  values:
+  - Disabled
+  - Audit
+  - Enforce
 variables:
 - template: /.azuredevops/pipelines/templates/variables.yml@self
 - name: SignType
@@ -64,6 +73,9 @@ extends:
             targetPath: $(ArtifactsDirectory)
             artifactName: artifacts
         steps:
+        - template: templates\network-isolation.yml
+          parameters:
+            NetworkIsolationMode: ${{ parameters.NetworkIsolationMode }}
         - task: PowerShell@2
           displayName: 'Update SignType, Build Number, and Add Build Tag for tagged commits'
           condition: and(succeeded(), startsWith(variables['Build.SourceBranch'], 'refs/tags/v'))
