@@ -15,6 +15,9 @@ steps:
 
 - task: PowerShell@2
   displayName: "E2E Test: Microsoft.MSBuildCache.AzurePipelines"
+  # The access token from forks do not have enough scopes to access the pipeline cache, so skip these tests.
+  # Note to repo maintainers: You can manually run the pipeline against the commit, even if the commit is from a fork, if you wish to test this.
+  condition: ne(variables['System.PullRequest.IsFork'], 'True')
   inputs:
     filePath: ${{ parameters.RepoRoot }}\tests\test.ps1
     arguments: -MSBuildPath "${{ parameters.MSBuildPath }}" -Configuration $(BuildConfiguration) -LogDirectory "$(LogDirectory)\Tests\AzurePipelines" -LocalPackageDir "$(Pipeline.Workspace)\artifacts\$(BuildConfiguration)\packages" -CachePackage Microsoft.MSBuildCache.AzurePipelines
