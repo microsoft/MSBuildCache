@@ -1,6 +1,11 @@
 variables:
 - template: templates\variables.yml
 
+parameters:
+- name: NetworkIsolationMode
+  type: string
+  default: Disabled
+
 schedules:
 - cron: '0 0 * * *'
   displayName: Daily midnight build
