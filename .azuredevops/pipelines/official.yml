@@ -64,6 +64,9 @@ extends:
             targetPath: $(ArtifactsDirectory)
             artifactName: artifacts
         steps:
+        - template: templates\network-isolation.yml
+          parameters:
+            NetworkIsolationMode: $(NetworkIsolationMode)
         - task: PowerShell@2
           displayName: 'Update SignType, Build Number, and Add Build Tag for tagged commits'
           condition: and(succeeded(), startsWith(variables['Build.SourceBranch'], 'refs/tags/v'))

@@ -6,3 +6,4 @@ variables:
   # https://github.com/microsoft/azure-pipelines-agent/pull/4077
   VSO_DEDUP_REDIRECT_TIMEOUT_IN_SEC: 5
   EnablePipelineCache: true
+  NetworkIsolationMode: Disabled

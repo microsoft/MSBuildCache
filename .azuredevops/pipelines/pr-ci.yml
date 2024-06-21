@@ -33,6 +33,10 @@ jobs:
 - job: Build
   displayName: Build and Test
   steps:
+  - template: templates\network-isolation.yml
+    parameters:
+      NetworkIsolationMode: $(NetworkIsolationMode)
+
   - checkout: self
     # Fetch all history for versioning
     fetchDepth: 0
@@ -73,6 +77,10 @@ jobs:
     VsInstallDir: $(Build.ArtifactStagingDirectory)\vs
     MSBuildPath: $(VsInstallDir)\MSBuild\Current\Bin\amd64\MSBuild.exe
   steps:
+  - template: templates\network-isolation.yml
+    parameters:
+      NetworkIsolationMode: $(NetworkIsolationMode)
+
   - download: current
     displayName: 'Download Build Artifacts'
     artifact: artifacts
@@ -126,6 +134,10 @@ jobs:
     VsInstallDir: $(Build.ArtifactStagingDirectory)\vs
     MSBuildPath: $(VsInstallDir)\MSBuild\Current\Bin\amd64\MSBuild.exe
   steps:
+  - template: templates\network-isolation.yml
+    parameters:
+      NetworkIsolationMode: $(NetworkIsolationMode)
+
   - download: current
     displayName: 'Download Build Artifacts'
     artifact: artifacts
@@ -178,6 +190,10 @@ jobs:
   variables:
     MSBuildPath: $(Build.SourcesDirectory)\msbuild\artifacts\bin\bootstrap\net472\MSBuild\Current\Bin\amd64\MSBuild.exe
   steps:
+  - template: templates\network-isolation.yml
+    parameters:
+      NetworkIsolationMode: $(NetworkIsolationMode)
+
   - download: current
     displayName: 'Download Build Artifacts'
     artifact: artifacts

@@ -1,0 +1,11 @@
+parameters:
+- name: NetworkIsolationMode
+  type: string
+  default: Disabled
+
+steps:
+- task: tse-cloudbuild.1es-networkisolation-tasks-test.1D5CFFFE-4332-4DE5-8457-7657C0B89BB9.1ESNetworkIsolation@1
+  displayName: Apply FW
+  condition: ne(variables['NetworkIsolationMode'], 'Disabled')
+  inputs:
+    networkIsolationMode: $(NetworkIsolationMode)
