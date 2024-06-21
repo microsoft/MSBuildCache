@@ -3,8 +3,13 @@ variables:
 
 parameters:
 - name: NetworkIsolationMode
+  displayName: 'Network Isolation Mode'
   type: string
   default: Disabled
+  values:
+  - Disabled
+  - Audit
+  - Enforce
 
 schedules:
 - cron: '0 0 * * *'
@@ -40,7 +45,7 @@ jobs:
   steps:
   - template: templates\network-isolation.yml
     parameters:
-      NetworkIsolationMode: $(NetworkIsolationMode)
+      NetworkIsolationMode: ${{ parameters.NetworkIsolationMode }}
 
   - checkout: self
     # Fetch all history for versioning
@@ -84,7 +89,7 @@ jobs:
   steps:
   - template: templates\network-isolation.yml
     parameters:
-      NetworkIsolationMode: $(NetworkIsolationMode)
+      NetworkIsolationMode: ${{ parameters.NetworkIsolationMode }}
 
   - download: current
     displayName: 'Download Build Artifacts'
@@ -141,7 +146,7 @@ jobs:
   steps:
   - template: templates\network-isolation.yml
     parameters:
-      NetworkIsolationMode: $(NetworkIsolationMode)
+      NetworkIsolationMode: ${{ parameters.NetworkIsolationMode }}
 
   - download: current
     displayName: 'Download Build Artifacts'
@@ -197,7 +202,7 @@ jobs:
   steps:
   - template: templates\network-isolation.yml
     parameters:
-      NetworkIsolationMode: $(NetworkIsolationMode)
+      NetworkIsolationMode: ${{ parameters.NetworkIsolationMode }}
 
   - download: current
     displayName: 'Download Build Artifacts'
