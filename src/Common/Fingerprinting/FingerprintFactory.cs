@@ -96,6 +96,20 @@ public sealed class FingerprintFactory : IFingerprintFactory
                 string targetList = string.Join(", ", nodeContext.TargetNames.OrderBy(target => target, StringComparer.OrdinalIgnoreCase));
                 entries.Add(CreateFingerprintEntry($"Targets: {targetList}"));
 
+                // If the VC toolchain changes, the node should rebuild.
+                string vcToolsVersion = nodeContext.Node.ProjectInstance.GetPropertyValue("VCToolsVersion");
+                if (!string.IsNullOrEmpty(vcToolsVersion))
+                {
+                    entries.Add(CreateFingerprintEntry($"VCToolsVersion: {vcToolsVersion}"));
+                }
+
+                // If the .NET SDK changes, the node should rebuild.
+                string dotnetSdkVersion = nodeContext.Node.ProjectInstance.GetPropertyValue("NETCoreSdkVersion");
+                if (!string.IsNullOrEmpty(dotnetSdkVersion))
+                {
+                    entries.Add(CreateFingerprintEntry($"DotnetSdkVersion: {dotnetSdkVersion}"));
+                }
+
                 // Add predicted inputs
                 await SortAndAddInputFileHashesAsync(entries, nodeContext.Inputs, pathsAreNormalized: false);
 
