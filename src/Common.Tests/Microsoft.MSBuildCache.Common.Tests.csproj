@@ -11,10 +11,7 @@
     <NoWarn>$(NoWarn);CA1034</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" />
-    <PackageReference Include="MSTest.TestAdapter" />
-    <PackageReference Include="MSTest.TestFramework" />
-    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="MSTest" />
     <PackageReference Include="morelinq" />
   </ItemGroup>
   <ItemGroup>
