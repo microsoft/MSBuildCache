@@ -97,7 +97,7 @@ public class OutputHasherTests
 
     private string CreateTestDirectory()
     {
-        string testDirectory = Path.Combine(TestContext.TestRunDirectory, nameof(OutputHasherTests), TestContext.TestName);
+        string testDirectory = Path.Combine(TestContext.TestRunDirectory!, nameof(OutputHasherTests), TestContext.TestName!);
         Directory.CreateDirectory(testDirectory);
         return testDirectory;
     }

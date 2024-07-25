@@ -64,7 +64,7 @@ public class DirectoryFileHasherTests
 
     private string CreateTestDirectory()
     {
-        string testDirectory = Path.Combine(TestContext.TestRunDirectory, nameof(DirectoryFileHasherTests), TestContext.TestName);
+        string testDirectory = Path.Combine(TestContext.TestRunDirectory!, nameof(DirectoryFileHasherTests), TestContext.TestName!);
         Directory.CreateDirectory(testDirectory);
         return testDirectory;
     }

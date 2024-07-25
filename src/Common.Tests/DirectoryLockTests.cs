@@ -86,5 +86,5 @@ public class DirectoryLockTests
         Assert.AreEqual(lockCount, successCount);
     }
 
-    private string GetLockFilePath() => Path.Combine(TestContext.TestRunDirectory, TestContext.TestName + ".lock");
+    private string GetLockFilePath() => Path.Combine(TestContext.TestRunDirectory!, TestContext.TestName! + ".lock");
 }
