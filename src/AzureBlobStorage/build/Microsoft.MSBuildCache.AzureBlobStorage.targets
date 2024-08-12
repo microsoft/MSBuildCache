@@ -1,3 +1,19 @@
 <Project>
+  <PropertyGroup Condition="'$(MSBuildCacheEnabled)' != 'false'">
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheCredentialsType</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheBlobUri</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheManagedIdentityClientId</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheInteractiveAuthTokenDirectory</MSBuildCacheGlobalPropertiesToIgnore>
+  </PropertyGroup>
+
   <Import Project="Microsoft.MSBuildCache.Common.targets" />
+
+  <ItemGroup Condition="'$(MSBuildCacheEnabled)' != 'false'">
+    <ProjectCachePlugin Update="$(MSBuildCacheAssembly)">
+      <CredentialsType>$(MSBuildCacheCredentialsType)</CredentialsType>
+      <BlobUri>$(MSBuildCacheBlobUri)</BlobUri>
+      <ManagedIdentityClientId>$(MSBuildCacheManagedIdentityClientId)</ManagedIdentityClientId>
+      <InteractiveAuthTokenDirectory>$(MSBuildCacheInteractiveAuthTokenDirectory)</InteractiveAuthTokenDirectory>
+  </ProjectCachePlugin>
+  </ItemGroup>
 </Project>

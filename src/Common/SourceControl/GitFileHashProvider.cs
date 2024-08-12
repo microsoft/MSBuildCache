@@ -60,7 +60,7 @@ internal sealed class GitFileHashProvider : ISourceControlFileHashProvider
         }
 
         // Iterate through the initialized submodules and add those hashes
-        IList<string> submodules = await GetInitializedSubmodulesAsync(repoRoot, cancellationToken);
+        List<string> submodules = await GetInitializedSubmodulesAsync(repoRoot, cancellationToken);
 
         if (submodules.Count == 0)
         {

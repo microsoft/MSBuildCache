@@ -2,7 +2,6 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Threading;
@@ -26,7 +25,7 @@ using Microsoft.MSBuildCache.SourceControl;
 
 namespace Microsoft.MSBuildCache.AzureBlobStorage;
 
-public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase
+public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase<AzureBlobStoragePluginSettings>
 {
     // Note: This is not in PluginSettings as that's configured through item metadata and thus makes it into MSBuild logs. This is a secret so that's not desirable.
     private const string AzureBlobConnectionStringEnvVar = "MSBUILDCACHE_CONNECTIONSTRING";
@@ -72,8 +71,10 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase
 
         logger.LogMessage($"Using cache namespace '{cacheContainer}' as '{cacheContainerHash}'.");
 
+        IAzureStorageCredentials credentials = CreateAzureStorageCredentials(Settings, cancellationToken);
+
 #pragma warning disable CA2000 // Dispose objects before losing scope. Expected to be disposed by TwoLevelCache
-        ICache remoteCache = CreateRemoteCache(new OperationContext(context, cancellationToken), cacheContainerHash, Settings.RemoteCacheIsReadOnly);
+        ICache remoteCache = CreateRemoteCache(new OperationContext(context, cancellationToken), cacheContainerHash, Settings.RemoteCacheIsReadOnly, credentials);
 #pragma warning restore CA2000 // Dispose objects before losing scope
 
         ICacheSession remoteCacheSession = await StartCacheSessionAsync(context, remoteCache, "remote");
@@ -100,18 +101,55 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase
             Settings.AsyncCacheMaterialization);
     }
 
-    private static ICache CreateRemoteCache(OperationContext context, string cacheUniverse, bool isReadOnly)
+    private static IAzureStorageCredentials CreateAzureStorageCredentials(AzureBlobStoragePluginSettings settings, CancellationToken cancellationToken)
     {
-        string? connectionString = Environment.GetEnvironmentVariable(AzureBlobConnectionStringEnvVar);
-        if (string.IsNullOrEmpty(connectionString))
+        switch (settings.CredentialsType)
         {
-            throw new InvalidOperationException($"Required environment variable '{AzureBlobConnectionStringEnvVar}' not set");
-        }
+            case AzureStorageCredentialsType.Interactive:
+            {
+                if (settings.BlobUri is null)
+                {
+                    throw new InvalidOperationException($"{nameof(AzureBlobStoragePluginSettings.BlobUri)} is required when using {nameof(AzureBlobStoragePluginSettings.CredentialsType)}={settings.CredentialsType}");
+                }
 
-        SecretBasedAzureStorageCredentials credentials = new(connectionString);
+                return new InteractiveClientStorageCredentials(settings.InteractiveAuthTokenDirectory, settings.BlobUri, cancellationToken);
+            }
+            case AzureStorageCredentialsType.ConnectionString:
+            {
+                string? connectionString = Environment.GetEnvironmentVariable(AzureBlobConnectionStringEnvVar);
+                if (string.IsNullOrEmpty(connectionString))
+                {
+                    throw new InvalidOperationException($"Required environment variable '{AzureBlobConnectionStringEnvVar}' not set");
+                }
+
+                return new SecretBasedAzureStorageCredentials(connectionString);
+            }
+            case AzureStorageCredentialsType.ManagedIdentity:
+            {
+                if (settings.BlobUri is null)
+                {
+                    throw new InvalidOperationException($"{nameof(AzureBlobStoragePluginSettings.BlobUri)} is required when using {nameof(AzureBlobStoragePluginSettings.CredentialsType)}={settings.CredentialsType}");
+                }
+
+                if (string.IsNullOrEmpty(settings.ManagedIdentityClientId))
+                {
+                    throw new InvalidOperationException($"{nameof(AzureBlobStoragePluginSettings.BlobUri)} is required when using {nameof(AzureBlobStoragePluginSettings.CredentialsType)}={settings.CredentialsType}");
+                }
+
+                return new ManagedIdentityAzureStorageCredentials(settings.ManagedIdentityClientId!, settings.BlobUri);
+            }
+            default:
+            {
+                throw new InvalidOperationException($"Unknown {nameof(AzureBlobStoragePluginSettings.CredentialsType)}: {settings.CredentialsType}");
+            }
+        }
+    }
+
+    private static ICache CreateRemoteCache(OperationContext context, string cacheUniverse, bool isReadOnly, IAzureStorageCredentials credentials)
+    {
         BlobCacheStorageAccountName accountName = BlobCacheStorageAccountName.Parse(credentials.GetAccountName());
         AzureBlobStorageCacheFactory.Configuration cacheConfig = new(
-            ShardingScheme: new ShardingScheme(ShardingAlgorithm.SingleShard, new List<BlobCacheStorageAccountName> { accountName }),
+            ShardingScheme: new ShardingScheme(ShardingAlgorithm.SingleShard, [accountName]),
             Universe: cacheUniverse,
             Namespace: "0",
             RetentionPolicyInDays: null,
