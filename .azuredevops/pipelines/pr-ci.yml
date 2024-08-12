@@ -1,16 +1,6 @@
 variables:
 - template: templates\variables.yml
 
-parameters:
-- name: NetworkIsolationMode
-  displayName: 'Network Isolation Mode'
-  type: string
-  default: Disabled
-  values:
-  - Disabled
-  - Audit
-  - Enforce
-
 schedules:
 - cron: '0 0 * * *'
   displayName: Daily midnight build
@@ -43,10 +33,6 @@ jobs:
 - job: Build
   displayName: Build and Test
   steps:
-  - template: templates\network-isolation.yml
-    parameters:
-      NetworkIsolationMode: ${{ parameters.NetworkIsolationMode }}
-
   - checkout: self
     # Fetch all history for versioning
     fetchDepth: 0
@@ -87,10 +73,6 @@ jobs:
     VsInstallDir: $(Build.ArtifactStagingDirectory)\vs
     MSBuildPath: $(VsInstallDir)\MSBuild\Current\Bin\amd64\MSBuild.exe
   steps:
-  - template: templates\network-isolation.yml
-    parameters:
-      NetworkIsolationMode: ${{ parameters.NetworkIsolationMode }}
-
   - download: current
     displayName: 'Download Build Artifacts'
     artifact: artifacts
@@ -144,10 +126,6 @@ jobs:
     VsInstallDir: $(Build.ArtifactStagingDirectory)\vs
     MSBuildPath: $(VsInstallDir)\MSBuild\Current\Bin\amd64\MSBuild.exe
   steps:
-  - template: templates\network-isolation.yml
-    parameters:
-      NetworkIsolationMode: ${{ parameters.NetworkIsolationMode }}
-
   - download: current
     displayName: 'Download Build Artifacts'
     artifact: artifacts
@@ -200,10 +178,6 @@ jobs:
   variables:
     MSBuildPath: $(Build.SourcesDirectory)\msbuild\artifacts\bin\bootstrap\net472\MSBuild\Current\Bin\amd64\MSBuild.exe
   steps:
-  - template: templates\network-isolation.yml
-    parameters:
-      NetworkIsolationMode: ${{ parameters.NetworkIsolationMode }}
-
   - download: current
     displayName: 'Download Build Artifacts'
     artifact: artifacts
