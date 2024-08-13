@@ -243,6 +243,20 @@ public class PluginSettings
             return settingValue == null ? SettingParseResult.InvalidValue : SettingParseResult.Success;
         }
 
+        if (type == typeof(Uri))
+        {
+            if (Uri.TryCreate(rawSettingValue, UriKind.Absolute, out Uri? uri))
+            {
+                settingValue = uri;
+                return SettingParseResult.Success;
+            }
+            else
+            {
+                settingValue = null;
+                return SettingParseResult.InvalidValue;
+            }
+        }
+
         if (type == typeof(Glob))
         {
             string globSpec = rawSettingValue;

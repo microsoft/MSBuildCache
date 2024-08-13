@@ -138,7 +138,16 @@ This implementation uses [Azure Blob Storage](https://azure.microsoft.com/en-us/
 > [!WARNING]
 > This implementation does not yet have a robust security model. All builds using this will need write access to the storage resource, so for example an external contributor could send a PR which would write/overwrite arbitrary content which could then be used by CI builds. Builds using this plugin must be restricted to trusted team members. Use at your own risk.
 
-The connection string to the blob storage account must be provided in the `MSBUILDCACHE_CONNECTIONSTRING` environment variable. This connection string needs both read and write access to the resource.
+These settings are available in addition to the [Common Settings](#common-settings):
+
+| MSBuild Property Name | Setting Type | Default value | Description |
+| ------------- | ------------ | ------------- | ----------- |
+| `$(MSBuildCacheCredentialsType)` | `string` | "Interactive" | Indicates the credential type to use for authentication. Valid values are "Interactive", "ConnectionString", "ManagedIdentity" |
+| `$(MSBuildCacheBlobUri)` | `Uri` | | Specifies the uri of the Azure Storage Blob. |
+| `$(MSBuildCacheManagedIdentityClientId)` | `string` | | Specifies the managed identity client id when using the "ManagedIdentity" credential type |
+| `$(MSBuildCacheInteractiveAuthTokenDirectory)` | `string` | "%LOCALAPPDATA%\MSBuildCache\AuthTokenCache" | Specifies a token cache directory when using the "ManagedIdentity" credential type |
+
+When using the "ConnectionString" credential type, the connection string to the blob storage account must be provided in the `MSBUILDCACHE_CONNECTIONSTRING` environment variable. This connection string needs both read and write access to the resource.
 
 ## Other Packages
 
