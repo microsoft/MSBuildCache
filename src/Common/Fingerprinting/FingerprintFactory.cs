@@ -35,19 +35,22 @@ public sealed class FingerprintFactory : IFingerprintFactory
     private readonly List<FingerprintEntry> _pluginSettingsFingerprintEntries;
     private readonly PluginSettings _pluginSettings;
     private readonly PathNormalizer _pathNormalizer;
+    private readonly string _repoRoot;
 
     public FingerprintFactory(
         IContentHasher contentHasher,
         IInputHasher inputHasher,
         INodeContextRepository nodeRepository,
         PluginSettings pluginSettings,
-        PathNormalizer pathNormalizer)
+        PathNormalizer pathNormalizer,
+        string repoRoot)
     {
         _contentHasher = contentHasher;
         _inputHasher = inputHasher;
         _nodeContextRepository = nodeRepository;
         _pluginSettings = pluginSettings;
         _pathNormalizer = pathNormalizer;
+        _repoRoot = repoRoot;
 
         _pluginSettingsFingerprintEntries = new List<FingerprintEntry>()
         {
@@ -119,6 +122,11 @@ public sealed class FingerprintFactory : IFingerprintFactory
                 {
                     if (!_nodeContextRepository.TryGetNodeContext(dependencyNode.ProjectInstance, out NodeContext? dependency))
                     {
+                        if (!dependencyNode.ProjectInstance.FullPath.IsUnderDirectory(_repoRoot))
+                        {
+                            continue;
+                        }
+
                         return null;
                     }
 

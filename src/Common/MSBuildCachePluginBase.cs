@@ -197,12 +197,13 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             || InputHasher == null
             || _nodeContextRepository == null
             || Settings == null
-            || _pathNormalizer == null)
+            || _pathNormalizer == null
+            || _repoRoot == null)
         {
             throw new InvalidOperationException();
         }
 
-        return new FingerprintFactory(ContentHasher, InputHasher, _nodeContextRepository, Settings, _pathNormalizer);
+        return new FingerprintFactory(ContentHasher, InputHasher, _nodeContextRepository, Settings, _pathNormalizer, _repoRoot);
     }
 
     protected abstract Task<ICacheClient> CreateCacheClientAsync(PluginLoggerBase logger, CancellationToken cancellationToken);
@@ -442,6 +443,15 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         {
             if (!_nodeContextRepository.TryGetNodeContext(dependencyNode.ProjectInstance, out NodeContext? dependencyNodeContext))
             {
+                // If the dependency is outside the repository, we exclude it (see Parser) so we won't ever find a NodeContext.
+                // The choices at this point are to either to return and not add cached outputs (this project is not cacheable),
+                // or to just ignore the project and risk an under-build. We're choosing to accept the risk since we've already
+                // accepted it for input files outside the repo during fingerprinting. 
+                if (!dependencyNode.ProjectInstance.FullPath.IsUnderDirectory(_repoRoot))
+                {
+                    continue;
+                }
+
                 return;
             }
 
