@@ -3,9 +3,11 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace Microsoft.MSBuildCache;
 
+[DebuggerDisplay($"{{{nameof(DebuggerDisplay)}, nq}}")]
 public readonly struct NodeDescriptor : IEquatable<NodeDescriptor>
 {
     private readonly string _projectFullPath;
@@ -22,6 +24,8 @@ public readonly struct NodeDescriptor : IEquatable<NodeDescriptor>
     /// Sorted by StringComparison.OrdinalIgnoreCase.
     /// </summary>
     public IReadOnlyDictionary<string, string> FilteredGlobalProperties => _filteredGlobalProperties;
+
+    private string DebuggerDisplay => $"{_projectFullPath} ({_filteredGlobalProperties.Count})";
 
     public bool Equals(NodeDescriptor other)
     {
