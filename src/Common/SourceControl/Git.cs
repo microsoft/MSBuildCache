@@ -65,7 +65,7 @@ public static class Git
             }
             finally
             {
-                Console.InputEncoding = originalConsoleInputEncoding;
+                //Console.InputEncoding = originalConsoleInputEncoding;
             }
         }
 #else
