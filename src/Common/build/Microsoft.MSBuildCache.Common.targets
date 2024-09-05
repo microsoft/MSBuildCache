@@ -23,6 +23,8 @@
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCachePackageName</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCachePackageVersion</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);IsGraphBuild</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);UseHostCompilerIfAvailable</MSBuildCacheGlobalPropertiesToIgnore>
+      <!-- TargetFramework=="" explicitly -->
   </PropertyGroup>
 
   <ItemGroup Condition="'$(MSBuildCacheEnabled)' != 'false'">
