@@ -15,8 +15,10 @@ public static class Git
     private static readonly object InputEncodingLock = new object();
 #endif
 
+#if NET
     // UTF8 - NO BOM
     private static readonly Encoding InputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+#endif
 
     public static async Task<string> BranchNameAsync(PluginLoggerBase logger, string repoRoot)
     {
@@ -57,7 +59,7 @@ public static class Git
             Encoding originalConsoleInputEncoding = Console.InputEncoding;
             try
             {
-                Console.InputEncoding = InputEncoding;
+                //Console.InputEncoding = InputEncoding;
 
                 process.Start();
             }
