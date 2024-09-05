@@ -43,6 +43,7 @@
       <AllowProcessCloseAfterProjectFinishProcessPatterns>$(MSBuildCacheAllowProcessCloseAfterProjectFinishProcessPatterns)</AllowProcessCloseAfterProjectFinishProcessPatterns>
       <GlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore)</GlobalPropertiesToIgnore>
     </ProjectCachePlugin2>
+    <ProjectCachePlugin Include="@(ProjectCachePlugin2)" Condition="'$(EnableCaching)'=='true'" />
   </ItemGroup>
 
   <ImportGroup Condition="'$(MSBuildCacheEnabled)' != 'false'">
