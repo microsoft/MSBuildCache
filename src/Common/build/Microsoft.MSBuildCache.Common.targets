@@ -23,7 +23,7 @@
   </PropertyGroup>
 
   <ItemGroup Condition="'$(MSBuildCacheEnabled)' != 'false'">
-    <ProjectCachePlugin Include="$(MSBuildCacheAssembly)">
+    <ProjectCachePlugin2 Include="$(MSBuildCacheAssembly)">
       <LogDirectory>$(MSBuildCacheLogDirectory)</LogDirectory>
       <CacheUniverse>$(MSBuildCacheCacheUniverse)</CacheUniverse>
       <MaxConcurrentCacheContentOperations>$(MSBuildCacheMaxConcurrentCacheContentOperations)</MaxConcurrentCacheContentOperations>
@@ -39,7 +39,7 @@
       <AllowFileAccessAfterProjectFinishFilePatterns>$(MSBuildCacheAllowFileAccessAfterProjectFinishFilePatterns)</AllowFileAccessAfterProjectFinishFilePatterns>
       <AllowProcessCloseAfterProjectFinishProcessPatterns>$(MSBuildCacheAllowProcessCloseAfterProjectFinishProcessPatterns)</AllowProcessCloseAfterProjectFinishProcessPatterns>
       <GlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore)</GlobalPropertiesToIgnore>
-    </ProjectCachePlugin>
+    </ProjectCachePlugin2>
   </ItemGroup>
 
   <ImportGroup Condition="'$(MSBuildCacheEnabled)' != 'false'">
