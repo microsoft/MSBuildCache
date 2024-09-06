@@ -15,6 +15,7 @@ using BuildXL.Cache.ContentStore.Interfaces.Results;
 using BuildXL.Cache.ContentStore.Interfaces.Sessions;
 using BuildXL.Cache.ContentStore.Interfaces.Tracing;
 using BuildXL.Cache.ContentStore.Interfaces.Utils;
+using BuildXL.Cache.ContentStore.Logging;
 using BuildXL.Cache.ContentStore.Tracing;
 using BuildXL.Cache.ContentStore.UtilitiesCore;
 using BuildXL.Cache.MemoizationStore.Interfaces.Caches;
@@ -167,6 +168,13 @@ public abstract class CacheClient : ICacheClient
         }
 
         _hasher.Dispose();
+
+        // HACK
+        foreach (ILog log in ((Logger)RootContext.Logger).GetLog<ILog>())
+        {
+            log.Dispose();
+        }
+
         RootContext.Logger.Dispose();
     }
 
