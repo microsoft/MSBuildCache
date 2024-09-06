@@ -103,7 +103,7 @@ public sealed class FingerprintFactory : IFingerprintFactory
                 string vcToolsVersion = nodeContext.Node.ProjectInstance.GetPropertyValue("VCToolsVersion");
                 if (!string.IsNullOrEmpty(vcToolsVersion))
                 {
-                    entries.Add(CreateFingerprintEntry($"VCToolsVersion: {vcToolsVersion}"));
+                    //entries.Add(CreateFingerprintEntry($"VCToolsVersion: {vcToolsVersion}"));
                 }
 
                 // If the .NET SDK changes, the node should rebuild.
