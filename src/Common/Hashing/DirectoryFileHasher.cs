@@ -46,6 +46,13 @@ internal sealed class DirectoryFileHasher : IInputHasher
                         return null;
                     }
 
+#if NETFRAMEWORK
+                    if (path.IndexOf("microsoft.msbuildcache.", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        return null;
+                    }
+#endif
+
                     ContentHash contentHash = await _contentHasher.GetFileHashAsync(path);
                     return contentHash.ToHashByteArray();
                 }));
