@@ -11,10 +11,6 @@ namespace Microsoft.MSBuildCache.SourceControl;
 
 public static class Git
 {
-#if NETFRAMEWORK
-    private static readonly object InputEncodingLock = new object();
-#endif
-
     // UTF8 - NO BOM
     private static readonly Encoding InputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
@@ -45,32 +41,13 @@ public static class Git
         process.StartInfo.RedirectStandardOutput = true;
         process.StartInfo.RedirectStandardError = true;
         process.StartInfo.StandardOutputEncoding = Encoding.UTF8;
+#if !NETFRAMEWORK
+        process.StartInfo.StandardInputEncoding = InputEncoding;
+#endif
 
         Stopwatch sw = Stopwatch.StartNew();
 
-#if NETFRAMEWORK
-        // In .NET Framework the StandardInputEncoding is always Console.InputEncoding and determines at process start time.
-        // Because we need to redirect StandardInputEncoding, temporarily set Console.InputEncoding to what we need until the
-        // process is started. Use a lock to avoid collisions.
-        lock (InputEncodingLock)
-        {
-            Encoding originalConsoleInputEncoding = Console.InputEncoding;
-            try
-            {
-                Console.InputEncoding = InputEncoding;
-
-                process.Start();
-            }
-            finally
-            {
-                Console.InputEncoding = originalConsoleInputEncoding;
-            }
-        }
-#else
-        process.StartInfo.StandardInputEncoding = InputEncoding;
-
         process.Start();
-#endif
 
         static void KillProcess(Process process)
         {
@@ -89,10 +66,18 @@ public static class Git
 
         using (cancellationToken.Register(() => KillProcess(process)))
         {
+#if NETFRAMEWORK
+            // In .NET Framework the StandardInputEncoding cannot be set and is always Console.InputEncoding.
+            // To work around, wrap the underlying stream in a writer with the correct encoding.
+            using (StreamWriter stdin = new StreamWriter(process.StandardInput.BaseStream, InputEncoding, 4096))
+#else
             using (StreamWriter stdin = process.StandardInput)
+#endif
             using (StreamReader stdout = process.StandardOutput)
             using (StreamReader stderr = process.StandardError)
             {
+                stdin.AutoFlush = true;
+
                 Task<T> resultTask = Task.Run(async () =>
                 {
                     try
