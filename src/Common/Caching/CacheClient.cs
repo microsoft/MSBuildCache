@@ -15,6 +15,7 @@ using BuildXL.Cache.ContentStore.Interfaces.Results;
 using BuildXL.Cache.ContentStore.Interfaces.Sessions;
 using BuildXL.Cache.ContentStore.Interfaces.Tracing;
 using BuildXL.Cache.ContentStore.Interfaces.Utils;
+using BuildXL.Cache.ContentStore.Logging;
 using BuildXL.Cache.ContentStore.Tracing;
 using BuildXL.Cache.ContentStore.UtilitiesCore;
 using BuildXL.Cache.MemoizationStore.Interfaces.Caches;
@@ -167,6 +168,13 @@ public abstract class CacheClient : ICacheClient
         }
 
         _hasher.Dispose();
+
+        // The logger does not properly dispose of its ILog instances, so we have to get them and dipose them ourselves.
+        foreach (ILog log in ((Logger)RootContext.Logger).GetLog<ILog>())
+        {
+            log.Dispose();
+        }
+
         RootContext.Logger.Dispose();
     }
 
@@ -215,7 +223,6 @@ public abstract class CacheClient : ICacheClient
 
     private async Task<IReadOnlyDictionary<string, ContentHash>> AddContentAsync(IReadOnlyCollection<string> paths, CancellationToken cancellationToken)
     {
-        Context context = new(RootContext);
         ConcurrentDictionary<string, ContentHash> outputs = new(StringComparer.OrdinalIgnoreCase);
         var outputProcessingTasks = new Task[paths.Count];
         int i = 0;
