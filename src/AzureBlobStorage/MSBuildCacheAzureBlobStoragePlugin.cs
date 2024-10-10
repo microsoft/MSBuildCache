@@ -133,7 +133,7 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase<
 
                 if (string.IsNullOrEmpty(settings.ManagedIdentityClientId))
                 {
-                    throw new InvalidOperationException($"{nameof(AzureBlobStoragePluginSettings.BlobUri)} is required when using {nameof(AzureBlobStoragePluginSettings.CredentialsType)}={settings.CredentialsType}");
+                    throw new InvalidOperationException($"{nameof(AzureBlobStoragePluginSettings.ManagedIdentityClientId)} is required when using {nameof(AzureBlobStoragePluginSettings.CredentialsType)}={settings.CredentialsType}");
                 }
 
                 return new ManagedIdentityAzureStorageCredentials(settings.ManagedIdentityClientId!, settings.BlobUri);
