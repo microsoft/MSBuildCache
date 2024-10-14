@@ -6,7 +6,7 @@ using System.Collections.Generic;
 
 namespace Microsoft.MSBuildCache;
 
-public readonly struct NodeDescriptor : IEquatable<NodeDescriptor>
+internal readonly struct NodeDescriptor : IEquatable<NodeDescriptor>
 {
     private readonly string _projectFullPath;
 

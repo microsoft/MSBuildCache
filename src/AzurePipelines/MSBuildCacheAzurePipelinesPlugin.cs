@@ -26,7 +26,6 @@ public sealed class MSBuildCacheAzurePipelinesPlugin : MSBuildCachePluginBase
     protected override async Task<ICacheClient> CreateCacheClientAsync(PluginLoggerBase logger, CancellationToken cancellationToken)
     {
         if (Settings == null
-            || NodeContextRepository == null
             || FingerprintFactory == null
             || ContentHasher == null
             || NugetPackageRoot == null)
@@ -58,7 +57,6 @@ public sealed class MSBuildCacheAzurePipelinesPlugin : MSBuildCachePluginBase
             Settings.CacheUniverse,
             Settings.RepoRoot,
             NugetPackageRoot,
-            NodeContextRepository,
             GetFileRealizationMode,
             Settings.MaxConcurrentCacheContentOperations,
             Settings.RemoteCacheIsReadOnly,

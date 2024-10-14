@@ -59,7 +59,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
     private PluginLoggerBase? _pluginLogger;
     private NodeDescriptorFactory? _nodeDescriptorFactory;
-    private NodeContextRepository? _nodeContextRepository;
+    private Dictionary<NodeDescriptor, NodeContext>? _nodeContexts;
     private FileAccessRepository? _fileAccessRepository;
     private ICacheClient? _cacheClient;
     private IReadOnlyCollection<Glob>? _ignoredOutputPatterns;
@@ -117,8 +117,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         nameof(ContentHasher),
         nameof(InputHasher),
         nameof(_nodeDescriptorFactory),
-        nameof(_nodeContextRepository),
-        nameof(NodeContextRepository),
+        nameof(_nodeContexts),
         nameof(FingerprintFactory),
         nameof(_fileAccessRepository),
         nameof(_cacheClient),
@@ -136,8 +135,6 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     protected IContentHasher? ContentHasher { get; private set; }
 
     protected IInputHasher? InputHasher { get; private set; }
-
-    protected INodeContextRepository? NodeContextRepository => _nodeContextRepository;
 
     protected IFingerprintFactory? FingerprintFactory { get; private set; }
 
@@ -195,15 +192,13 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     {
         if (ContentHasher == null
             || InputHasher == null
-            || _nodeContextRepository == null
             || Settings == null
-            || _pathNormalizer == null
-            || _repoRoot == null)
+            || _pathNormalizer == null)
         {
             throw new InvalidOperationException();
         }
 
-        return new FingerprintFactory(ContentHasher, InputHasher, _nodeContextRepository, Settings, _pathNormalizer, _repoRoot);
+        return new FingerprintFactory(ContentHasher, InputHasher, Settings, _pathNormalizer);
     }
 
     protected abstract Task<ICacheClient> CreateCacheClientAsync(PluginLoggerBase logger, CancellationToken cancellationToken);
@@ -269,7 +264,9 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         ICollection<string> entryProjectTargets = context.RequestedTargets as ICollection<string> ?? new List<string>(context.RequestedTargets);
         IReadOnlyDictionary<ProjectGraphNode, ImmutableList<string>> targetListPerNode = graph.GetTargetLists(entryProjectTargets);
 
-        Dictionary<NodeDescriptor, NodeContext> nodeContexts = new(parserInfoForNodes.Count);
+        _nodeContexts = new(parserInfoForNodes.Count);
+        Dictionary<ProjectGraphNode, NodeContext> nodeContextsByNode = new(parserInfoForNodes.Count);
+        Dictionary<ProjectGraphNode, List<NodeContext>> nodeDependencies = new(parserInfoForNodes.Count);
         List<Task> dumpParserInfoTasks = new(parserInfoForNodes.Count);
         foreach (KeyValuePair<ProjectGraphNode, ParserInfo> pair in parserInfoForNodes)
         {
@@ -289,15 +286,36 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
                 inputs[i] = parserInfo.Inputs[i].AbsolutePath;
             }
 
+            // Create an empty collection to contruct the NodeContext with. It'll be populated later.
+            List<NodeContext> dependencies = new(node.ProjectReferences.Count);
+            nodeDependencies.Add(node, dependencies);
+
             NodeDescriptor nodeDescriptor = _nodeDescriptorFactory.Create(node.ProjectInstance);
-            NodeContext nodeContext = new(Settings.LogDirectory, node, parserInfo.ProjectFileRelativePath, nodeDescriptor.FilteredGlobalProperties, inputs, targetNames);
+            NodeContext nodeContext = new(Settings.LogDirectory, node.ProjectInstance, dependencies, parserInfo.ProjectFileRelativePath, nodeDescriptor.FilteredGlobalProperties, inputs, targetNames);
 
             dumpParserInfoTasks.Add(Task.Run(() => DumpParserInfoAsync(logger, nodeContext, parserInfo), cancellationToken));
-            nodeContexts.Add(nodeDescriptor, nodeContext);
+            _nodeContexts.Add(nodeDescriptor, nodeContext);
+            nodeContextsByNode.Add(node, nodeContext);
         }
 
-        _nodeContextRepository = new NodeContextRepository(nodeContexts, _nodeDescriptorFactory);
-        Task dumpNodeContextsTask = DumpNodeContextsAsync(logger, nodeContexts);
+        // Another pass to populate the NodeContext dependencies list
+        foreach (KeyValuePair<ProjectGraphNode, List<NodeContext>> pair in nodeDependencies)
+        {
+            ProjectGraphNode node = pair.Key;
+            List<NodeContext> dependencies = pair.Value;
+
+            foreach (ProjectGraphNode? dependencyNode in node.ProjectReferences)
+            {
+                // If the parser ignored the project, we won't find the node context. This can happen when the project is outside the repository.
+                // By ignoring these we're choosing to accept the risk of an under-build. This is justified since we've already accepted it for input files outside the repo during fingerprinting.
+                if (nodeContextsByNode.TryGetValue(dependencyNode, out NodeContext? dependencyNodeContext))
+                {
+                    dependencies.Add(dependencyNodeContext);
+                }
+            }
+        }
+
+        Task dumpNodeContextsTask = DumpNodeContextsAsync(logger, _nodeContexts);
         InputHasher = await inputHasherTask;
         FingerprintFactory = CreateFingerprintFactory();
         _fileAccessRepository = new FileAccessRepository(logger, Settings);
@@ -348,7 +366,8 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             return CacheResult.IndicateNonCacheHit(CacheResultType.CacheNotApplicable);
         }
 
-        if (!_nodeContextRepository.TryGetNodeContext(projectInstance, out NodeContext? nodeContext))
+        NodeDescriptor nodeDescriptor = _nodeDescriptorFactory.Create(projectInstance);
+        if (!_nodeContexts.TryGetValue(nodeDescriptor, out NodeContext? nodeContext))
         {
             return CacheResult.IndicateNonCacheHit(CacheResultType.CacheNotApplicable);
         }
@@ -439,25 +458,11 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         nodeContext.SetEndTime();
 
         // In niche cases, eg traversal projects, the build may be successful despite a dependency failing. Ignore these cases since we can't properly fingerprint failed dependencies.
-        foreach (ProjectGraphNode dependencyNode in nodeContext.Node.ProjectReferences)
+        foreach (NodeContext dependency in nodeContext.Dependencies)
         {
-            if (!_nodeContextRepository.TryGetNodeContext(dependencyNode.ProjectInstance, out NodeContext? dependencyNodeContext))
+            if (dependency.BuildResult == null)
             {
-                // If the dependency is outside the repository, we exclude it (see Parser) so we won't ever find a NodeContext.
-                // The choices at this point are to either to return and not add cached outputs (this project is not cacheable),
-                // or to just ignore the project and risk an under-build. We're choosing to accept the risk since we've already
-                // accepted it for input files outside the repo during fingerprinting. 
-                if (!dependencyNode.ProjectInstance.FullPath.IsUnderDirectory(_repoRoot))
-                {
-                    continue;
-                }
-
-                return;
-            }
-
-            if (dependencyNodeContext.BuildResult == null)
-            {
-                logger.LogMessage($"Ignoring successful build for node {nodeContext.Id} with non-successful dependency: {dependencyNodeContext.Id}");
+                logger.LogMessage($"Ignoring successful build for node {nodeContext.Id} with non-successful dependency: {dependency.Id}");
                 return;
             }
         }
@@ -507,7 +512,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             string? relativeFilePath = absolutePath.MakePathRelativeTo(_repoRoot);
             if (relativeFilePath != null && _outputProducer.TryGetValue(relativeFilePath, out NodeContext? producerContext))
             {
-                if (!nodeContext.Node.IsDependentOn(producerContext.Node))
+                if (!nodeContext.IsDependentOn(producerContext))
                 {
                     logger.LogWarning($"Project `{nodeContext.Id}` read the output `{relativeFilePath}` from project `{producerContext.Id}` without having dependency path between the two projects.");
                 }
@@ -645,7 +650,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         }
 
         NodeDescriptor nodeDescriptor = _nodeDescriptorFactory.Create(fileAccessContext.ProjectFullPath, fileAccessContext.GlobalProperties);
-        if (!_nodeContextRepository.TryGetNodeContext(nodeDescriptor, out NodeContext? nodeContext))
+        if (!_nodeContexts.TryGetValue(nodeDescriptor, out NodeContext? nodeContext))
         {
             return null;
         }
@@ -662,9 +667,9 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
     private async Task DumpNodeContextsAsync(PluginLoggerBase logger, Dictionary<NodeDescriptor, NodeContext> nodeContexts)
     {
-        if (_nodeContextRepository is null)
+        if (_nodeContexts is null)
         {
-            throw new InvalidOperationException($"{nameof(_nodeContextRepository)} was unexpectedly null");
+            throw new InvalidOperationException($"{nameof(_nodeContexts)} was unexpectedly null");
         }
 
         Task[] tasks = new Task[nodeContexts.Count];
@@ -706,14 +711,9 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
                 jsonWriter.WriteEndArray(); // targetNames
 
                 jsonWriter.WriteStartArray("dependencies");
-                foreach (ProjectGraphNode dependencyNode in nodeContext.Node.ProjectReferences)
+                foreach (NodeContext dependency in nodeContext.Dependencies)
                 {
-                    if (!_nodeContextRepository.TryGetNodeContext(dependencyNode.ProjectInstance, out NodeContext? dependencyNodeContext))
-                    {
-                        continue;
-                    }
-
-                    jsonWriter.WriteStringValue(dependencyNodeContext.Id);
+                    jsonWriter.WriteStringValue(dependency.Id);
                 }
 
                 jsonWriter.WriteEndArray(); // dependencies
@@ -1093,7 +1093,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             }
 
             // Duplicate-identical outputs are only allowed if there is a strict ordering between the multiple writers.
-            if (!nodeContext.Node.IsDependentOn(previousNode.Node))
+            if (!nodeContext.IsDependentOn(previousNode))
             {
                 logger.LogWarning($"Node {nodeContext.Id} produced output {relativeFilePath} which was already produced by another node {previousNode.Id}, but there is no ordering between the two nodes.");
                 return;
@@ -1148,6 +1148,6 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
 public static class ProjectGraphNodeExtensions
 {
-    public static bool IsDependentOn(this ProjectGraphNode possibleDependent, ProjectGraphNode possibleDependency) =>
-        possibleDependent.ProjectReferences.Any(n => n == possibleDependency || n.IsDependentOn(possibleDependency));
+    public static bool IsDependentOn(this NodeContext possibleDependent, NodeContext possibleDependency) =>
+        possibleDependent.Dependencies.Any(n => n == possibleDependency || n.IsDependentOn(possibleDependency));
 }
