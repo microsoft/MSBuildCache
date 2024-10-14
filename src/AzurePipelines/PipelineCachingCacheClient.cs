@@ -101,13 +101,12 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         string universe,
         string repoRoot,
         string nugetPackageRoot,
-        INodeContextRepository nodeContextRepository,
         Func<string, FileRealizationMode> getFileRealizationMode,
         int maxConcurrentCacheContentOperations,
         bool remoteCacheIsReadOnly,
         bool enableAsyncPublishing,
         bool enableAsyncMaterialization)
-        : base(rootContext, fingerprintFactory, hasher, repoRoot, nugetPackageRoot, nodeContextRepository, getFileRealizationMode, localCache, localCAS, maxConcurrentCacheContentOperations, enableAsyncPublishing, enableAsyncMaterialization)
+        : base(rootContext, fingerprintFactory, hasher, repoRoot, nugetPackageRoot, getFileRealizationMode, localCache, localCAS, maxConcurrentCacheContentOperations, enableAsyncPublishing, enableAsyncMaterialization)
     {
         _remoteCacheIsReadOnly = remoteCacheIsReadOnly;
         _universe = $"pccc-{(int)hasher.Info.HashType}-{InternalSeed}-" + (string.IsNullOrEmpty(universe) ? "DEFAULT" : universe);

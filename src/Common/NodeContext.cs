@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.Build.Graph;
+using Microsoft.Build.Execution;
 
 namespace Microsoft.MSBuildCache;
 
@@ -20,7 +20,8 @@ public sealed class NodeContext
 
     public NodeContext(
         string baseLogDirectory,
-        ProjectGraphNode node,
+        ProjectInstance projectInstance,
+        IReadOnlyList<NodeContext> dependencies,
         string projectFileRelativePath,
         IReadOnlyDictionary<string, string> filteredGlobalProperties,
         IReadOnlyList<string> inputs,
@@ -28,7 +29,8 @@ public sealed class NodeContext
     {
         Id = GenerateId(projectFileRelativePath, filteredGlobalProperties);
         _logDirectory = Path.Combine(baseLogDirectory, Id);
-        Node = node;
+        ProjectInstance = projectInstance;
+        Dependencies = dependencies;
         ProjectFileRelativePath = projectFileRelativePath;
         FilteredGlobalProperties = filteredGlobalProperties;
         Inputs = inputs;
@@ -52,7 +54,9 @@ public sealed class NodeContext
         }
     }
 
-    public ProjectGraphNode Node { get; }
+    public ProjectInstance ProjectInstance { get; }
+
+    public IReadOnlyList<NodeContext> Dependencies { get; }
 
     public string ProjectFileRelativePath { get; }
 
