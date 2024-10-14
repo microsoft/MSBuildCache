@@ -112,6 +112,10 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase<
                     throw new InvalidOperationException($"{nameof(AzureBlobStoragePluginSettings.BlobUri)} is required when using {nameof(AzureBlobStoragePluginSettings.CredentialsType)}={settings.CredentialsType}");
                 }
 
+                // InteractiveClientStorageCredentials expects the directory to exist.
+                // TODO: Remove after the bug fix makes it into BXL.
+                Directory.CreateDirectory(settings.InteractiveAuthTokenDirectory);
+
                 return new InteractiveClientStorageCredentials(settings.InteractiveAuthTokenDirectory, settings.BlobUri, cancellationToken);
             }
             case AzureStorageCredentialsType.ConnectionString:
