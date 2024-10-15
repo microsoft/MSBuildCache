@@ -70,7 +70,10 @@ These settings are common across all plugins, although different implementations
 | `$(MSBuildCacheAllowFileAccessAfterProjectFinishProcessPatterns)` | `Glob[]` | `\**\vctip.exe` | Processes to allow file accesses after the project which launched it completes, ie accesses by a detached process. Note: these accesses will not be considered for caching. |
 | `$(MSBuildCacheAllowFileAccessAfterProjectFinishFilePatterns)` | `Glob[]` | | Files to allow to be accessed by a process launched by a project after the project completes, ie accesses by a detached process. Note: these accesses will not be considered for caching. |
 | `$(MSBuildCacheAllowProcessCloseAfterProjectFinishProcessPatterns)` | `Glob[]` | `\**\mspdbsrv.exe` | Processes to allow to exit after the project which launched it completes, ie detached processes. |
-| `$(MSBuildCacheGlobalPropertiesToIgnore)` | `string[]` | `CurrentSolutionConfigurationContents; ShouldUnsetParentConfigurationAndPlatform; BuildingInsideVisualStudio; BuildingSolutionFile; SolutionDir; SolutionExt; SolutionFileName; SolutionName; SolutionPath; _MSDeployUserAgent`, as well as all proeprties related to plugin settings,  | The list of global properties to exclude from consideration by the cache |
+| `$(MSBuildCacheGlobalPropertiesToIgnore)` | `string[]` | `CurrentSolutionConfigurationContents; ShouldUnsetParentConfigurationAndPlatform; BuildingInsideVisualStudio; BuildingSolutionFile; SolutionDir; SolutionExt; SolutionFileName; SolutionName; SolutionPath; _MSDeployUserAgent`, as well as all proeprties related to plugin settings | The list of global properties to exclude from consideration by the cache |
+| `$(MSBuildCacheGetResultsForUnqueriedDependencies)` | `bool` | false | Whether to try and query the cache for dependencies if they have not previously been requested. This option can help in cases where the build isn't done in graph order, or if some projects are skipped. |
+
+
 
 When configuring settings which are list types, you should always append to the existing value to avoid overriding the defaults:
 
