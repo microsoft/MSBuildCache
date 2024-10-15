@@ -101,6 +101,8 @@ public class PluginSettings
 
     public IReadOnlyList<string> GlobalPropertiesToIgnore { get; init; } = Array.Empty<string>();
 
+    public bool GetResultsForUnqueriedDependencies { get; init; }
+
     public static T Create<T>(
         IReadOnlyDictionary<string, string> settings,
         PluginLoggerBase logger,

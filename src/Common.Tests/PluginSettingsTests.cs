@@ -351,16 +351,20 @@ public sealed class PluginSettingsTests
         CollectionAssert.AreEqual(expectedValue, pluginSettings.GlobalPropertiesToIgnore.ToList());
     }
 
+    [TestMethod]
+    public void GetResultsForUnqueriedDependenciesSetting()
+        => TestBoolSetting(nameof(PluginSettings.GetResultsForUnqueriedDependencies), pluginSettings => pluginSettings.GetResultsForUnqueriedDependencies);
+
     private static void TestBoolSetting(string settingName, Func<PluginSettings, bool> valueAccessor)
         => TestBasicSetting(
             settingName,
             valueAccessor,
-            testValues: new[] { false, true });
+            testValues: [false, true]);
 
     private static void TestBasicSetting<T>(
         string settingName,
         Func<PluginSettings, T> valueAccessor,
-        T[] testValues)
+        ReadOnlySpan<T> testValues)
     {
         T defaultValue = valueAccessor(DefaultPluginSettings);
 

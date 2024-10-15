@@ -36,7 +36,6 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase<
     protected override async Task<ICacheClient> CreateCacheClientAsync(PluginLoggerBase logger, CancellationToken cancellationToken)
     {
         if (Settings == null
-            || NodeContextRepository == null
             || FingerprintFactory == null
             || ContentHasher == null
             || NugetPackageRoot == null)
@@ -94,7 +93,6 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase<
             ContentHasher,
             Settings.RepoRoot,
             NugetPackageRoot,
-            NodeContextRepository,
             GetFileRealizationMode,
             Settings.MaxConcurrentCacheContentOperations,
             Settings.AsyncCachePublishing,
@@ -111,6 +109,10 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase<
                 {
                     throw new InvalidOperationException($"{nameof(AzureBlobStoragePluginSettings.BlobUri)} is required when using {nameof(AzureBlobStoragePluginSettings.CredentialsType)}={settings.CredentialsType}");
                 }
+
+                // InteractiveClientStorageCredentials expects the directory to exist.
+                // TODO: Remove after the bug fix makes it into BXL.
+                Directory.CreateDirectory(settings.InteractiveAuthTokenDirectory);
 
                 return new InteractiveClientStorageCredentials(settings.InteractiveAuthTokenDirectory, settings.BlobUri, cancellationToken);
             }
@@ -133,7 +135,7 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase<
 
                 if (string.IsNullOrEmpty(settings.ManagedIdentityClientId))
                 {
-                    throw new InvalidOperationException($"{nameof(AzureBlobStoragePluginSettings.BlobUri)} is required when using {nameof(AzureBlobStoragePluginSettings.CredentialsType)}={settings.CredentialsType}");
+                    throw new InvalidOperationException($"{nameof(AzureBlobStoragePluginSettings.ManagedIdentityClientId)} is required when using {nameof(AzureBlobStoragePluginSettings.CredentialsType)}={settings.CredentialsType}");
                 }
 
                 return new ManagedIdentityAzureStorageCredentials(settings.ManagedIdentityClientId!, settings.BlobUri);

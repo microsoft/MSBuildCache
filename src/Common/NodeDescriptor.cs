@@ -8,7 +8,7 @@ using System.Diagnostics;
 namespace Microsoft.MSBuildCache;
 
 [DebuggerDisplay($"{{{nameof(DebuggerDisplay)}, nq}}")]
-public readonly struct NodeDescriptor : IEquatable<NodeDescriptor>
+internal readonly struct NodeDescriptor : IEquatable<NodeDescriptor>
 {
     private readonly string _projectFullPath;
 

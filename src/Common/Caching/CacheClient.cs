@@ -20,7 +20,6 @@ using BuildXL.Cache.ContentStore.Tracing;
 using BuildXL.Cache.ContentStore.UtilitiesCore;
 using BuildXL.Cache.MemoizationStore.Interfaces.Caches;
 using BuildXL.Cache.MemoizationStore.Interfaces.Sessions;
-using Microsoft.Build.Graph;
 using Microsoft.CopyOnWrite;
 using Microsoft.MSBuildCache.Fingerprinting;
 using Microsoft.MSBuildCache.Hashing;
@@ -40,7 +39,6 @@ public abstract class CacheClient : ICacheClient
     private readonly ICopyOnWriteFilesystem _copyOnWriteFilesystem = CopyOnWriteFilesystemFactory.GetInstance();
     private readonly IContentHasher _hasher;
     private readonly IFingerprintFactory _fingerprintFactory;
-    private readonly INodeContextRepository _nodeContextRepository;
     private readonly bool _enableAsyncMaterialization;
     private readonly ICache _localCache;
     private readonly string _nugetPackageRoot;
@@ -52,7 +50,6 @@ public abstract class CacheClient : ICacheClient
         IContentHasher hasher,
         string repoRoot,
         string nugetPackageRoot,
-        INodeContextRepository nodeContextRepository,
         Func<string, FileRealizationMode> getFileRealizationMode,
         ICache localCache,
         IContentSession localCas,
@@ -66,7 +63,6 @@ public abstract class CacheClient : ICacheClient
         EmptySelector = new(hasher.Info.EmptyHash, EmptySelectorOutput);
         RepoRoot = repoRoot;
         _nugetPackageRoot = nugetPackageRoot;
-        _nodeContextRepository = nodeContextRepository;
         _localCache = localCache;
         LocalCacheSession = localCas;
         EnableAsyncPublishing = enableAsyncPublishing;
@@ -169,7 +165,7 @@ public abstract class CacheClient : ICacheClient
 
         _hasher.Dispose();
 
-        // HACK
+        // The logger does not properly dispose of its ILog instances, so we have to get them and dipose them ourselves.
         foreach (ILog log in ((Logger)RootContext.Logger).GetLog<ILog>())
         {
             log.Dispose();
@@ -223,7 +219,6 @@ public abstract class CacheClient : ICacheClient
 
     private async Task<IReadOnlyDictionary<string, ContentHash>> AddContentAsync(IReadOnlyCollection<string> paths, CancellationToken cancellationToken)
     {
-        Context context = new(RootContext);
         ConcurrentDictionary<string, ContentHash> outputs = new(StringComparer.OrdinalIgnoreCase);
         var outputProcessingTasks = new Task[paths.Count];
         int i = 0;
@@ -357,10 +352,9 @@ public abstract class CacheClient : ICacheClient
         // On cache miss ensure all dependencies are materialized before returning to MSBuild so that MSBuild's execution will actually work.
         if (_enableAsyncMaterialization && result.NodeBuildResult == null)
         {
-            foreach (ProjectGraphNode dependencyNode in nodeContext.Node.ProjectReferences)
+            foreach (NodeContext dependency in nodeContext.Dependencies)
             {
-                if (_nodeContextRepository.TryGetNodeContext(dependencyNode.ProjectInstance, out NodeContext? dependency)
-                    && _materializationTasks.TryGetValue(dependency, out Task? dependencyMaterializationTask))
+                if (_materializationTasks.TryGetValue(dependency, out Task? dependencyMaterializationTask))
                 {
                     await dependencyMaterializationTask;
                 }

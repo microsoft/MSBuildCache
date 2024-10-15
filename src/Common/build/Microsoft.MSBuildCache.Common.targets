@@ -30,11 +30,11 @@
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);EnableCaching</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);VSIDEResolvedNonMSBuildProjectOutputs</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);DevEnvDir</MSBuildCacheGlobalPropertiesToIgnore>
-      <!-- TargetFramework=="" explicitly -->
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheGetResultsForUnqueriedDependencies</MSBuildCacheGlobalPropertiesToIgnore>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(MSBuildCacheEnabled)' != 'false'">
-    <ProjectCachePlugin2 Include="$(MSBuildCacheAssembly)">
+    <ProjectCachePlugin Include="$(MSBuildCacheAssembly)">
       <LogDirectory>$(MSBuildCacheLogDirectory)</LogDirectory>
       <CacheUniverse>$(MSBuildCacheCacheUniverse)</CacheUniverse>
       <MaxConcurrentCacheContentOperations>$(MSBuildCacheMaxConcurrentCacheContentOperations)</MaxConcurrentCacheContentOperations>
@@ -50,8 +50,8 @@
       <AllowFileAccessAfterProjectFinishFilePatterns>$(MSBuildCacheAllowFileAccessAfterProjectFinishFilePatterns)</AllowFileAccessAfterProjectFinishFilePatterns>
       <AllowProcessCloseAfterProjectFinishProcessPatterns>$(MSBuildCacheAllowProcessCloseAfterProjectFinishProcessPatterns)</AllowProcessCloseAfterProjectFinishProcessPatterns>
       <GlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore)</GlobalPropertiesToIgnore>
-    </ProjectCachePlugin2>
-    <ProjectCachePlugin Include="@(ProjectCachePlugin2)" Condition="'$(EnableCaching)'=='true'" />
+      <GetResultsForUnqueriedDependencies>$(MSBuildCacheGetResultsForUnqueriedDependencies)</GetResultsForUnqueriedDependencies>
+    </ProjectCachePlugin>
   </ItemGroup>
 
   <ImportGroup Condition="'$(MSBuildCacheEnabled)' != 'false'">

@@ -11,7 +11,6 @@ using System.Threading.Tasks;
 using BuildXL.Cache.ContentStore.Hashing;
 using BuildXL.Cache.ContentStore.Interfaces.Extensions;
 using DotNet.Globbing;
-using Microsoft.Build.Graph;
 using Microsoft.MSBuildCache.Hashing;
 
 namespace Microsoft.MSBuildCache.Fingerprinting;
@@ -31,26 +30,20 @@ public sealed class FingerprintFactory : IFingerprintFactory
     private readonly ConcurrentDictionary<string, byte[]> _stringHashCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly IContentHasher _contentHasher;
     private readonly IInputHasher _inputHasher;
-    private readonly INodeContextRepository _nodeContextRepository;
     private readonly List<FingerprintEntry> _pluginSettingsFingerprintEntries;
     private readonly PluginSettings _pluginSettings;
     private readonly PathNormalizer _pathNormalizer;
-    private readonly string _repoRoot;
 
     public FingerprintFactory(
         IContentHasher contentHasher,
         IInputHasher inputHasher,
-        INodeContextRepository nodeRepository,
         PluginSettings pluginSettings,
-        PathNormalizer pathNormalizer,
-        string repoRoot)
+        PathNormalizer pathNormalizer)
     {
         _contentHasher = contentHasher;
         _inputHasher = inputHasher;
-        _nodeContextRepository = nodeRepository;
         _pluginSettings = pluginSettings;
         _pathNormalizer = pathNormalizer;
-        _repoRoot = repoRoot;
 
         _pluginSettingsFingerprintEntries = new List<FingerprintEntry>()
         {
@@ -100,14 +93,14 @@ public sealed class FingerprintFactory : IFingerprintFactory
                 entries.Add(CreateFingerprintEntry($"Targets: {targetList}"));
 
                 // If the VC toolchain changes, the node should rebuild.
-                string vcToolsVersion = nodeContext.Node.ProjectInstance.GetPropertyValue("VCToolsVersion");
+                string vcToolsVersion = nodeContext.ProjectInstance.GetPropertyValue("VCToolsVersion");
                 if (!string.IsNullOrEmpty(vcToolsVersion))
                 {
                     //entries.Add(CreateFingerprintEntry($"VCToolsVersion: {vcToolsVersion}"));
                 }
 
                 // If the .NET SDK changes, the node should rebuild.
-                string dotnetSdkVersion = nodeContext.Node.ProjectInstance.GetPropertyValue("NETCoreSdkVersion");
+                string dotnetSdkVersion = nodeContext.ProjectInstance.GetPropertyValue("NETCoreSdkVersion");
                 if (!string.IsNullOrEmpty(dotnetSdkVersion))
                 {
                     entries.Add(CreateFingerprintEntry($"DotnetSdkVersion: {dotnetSdkVersion}"));
@@ -118,18 +111,8 @@ public sealed class FingerprintFactory : IFingerprintFactory
 
                 // Gather dependencies. Dependencies are sorted for a consistent hash ordering.
                 SortedDictionary<string, NodeContext> dependencies = new(StringComparer.Ordinal);
-                foreach (ProjectGraphNode dependencyNode in nodeContext.Node.ProjectReferences)
+                foreach (NodeContext dependency in nodeContext.Dependencies)
                 {
-                    if (!_nodeContextRepository.TryGetNodeContext(dependencyNode.ProjectInstance, out NodeContext? dependency))
-                    {
-                        if (!dependencyNode.ProjectInstance.FullPath.IsUnderDirectory(_repoRoot))
-                        {
-                            continue;
-                        }
-
-                        return null;
-                    }
-
                     if (dependency.BuildResult == null)
                     {
                         // The dependency has not been built, or at least not successfully
