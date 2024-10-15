@@ -20,6 +20,7 @@
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheAllowFileAccessAfterProjectFinishFilePatterns</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheAllowProcessCloseAfterProjectFinishProcessPatterns</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheGlobalPropertiesToIgnore</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheGetResultsForUnqueriedDependencies</MSBuildCacheGlobalPropertiesToIgnore>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(MSBuildCacheEnabled)' != 'false'">
@@ -39,6 +40,7 @@
       <AllowFileAccessAfterProjectFinishFilePatterns>$(MSBuildCacheAllowFileAccessAfterProjectFinishFilePatterns)</AllowFileAccessAfterProjectFinishFilePatterns>
       <AllowProcessCloseAfterProjectFinishProcessPatterns>$(MSBuildCacheAllowProcessCloseAfterProjectFinishProcessPatterns)</AllowProcessCloseAfterProjectFinishProcessPatterns>
       <GlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore)</GlobalPropertiesToIgnore>
+      <GetResultsForUnqueriedDependencies>$(MSBuildCacheGetResultsForUnqueriedDependencies)</GetResultsForUnqueriedDependencies>
     </ProjectCachePlugin>
   </ItemGroup>
 

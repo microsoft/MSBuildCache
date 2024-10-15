@@ -67,6 +67,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     private DirectoryLock? _localCacheDirectoryLock;
     private SemaphoreSlim? _singlePluginInstanceMutex;
     private PathNormalizer? _pathNormalizer;
+    private Func<NodeContext, PluginLoggerBase, CancellationToken, Task<CacheResult>>? _getCacheResultAsync;
 
     private int _cacheHitCount;
     private long _cacheHitDurationMilliseconds;
@@ -122,7 +123,8 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         nameof(_fileAccessRepository),
         nameof(_cacheClient),
         nameof(_ignoredOutputPatterns),
-        nameof(_identicalDuplicateOutputPatterns)
+        nameof(_identicalDuplicateOutputPatterns),
+        nameof(_getCacheResultAsync)
     )]
     protected bool Initialized { get; private set; }
 
@@ -321,6 +323,16 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         _fileAccessRepository = new FileAccessRepository(logger, Settings);
         _cacheClient = await CreateCacheClientAsync(logger, cancellationToken);
 
+        if (Settings.GetResultsForUnqueriedDependencies)
+        {
+            ConcurrentDictionary<NodeContext, Lazy<Task<CacheResult>>> cacheResults = new(concurrencyLevel: Environment.ProcessorCount, _nodeContexts.Count);
+            _getCacheResultAsync = (nodeContext, logger, cancellationToken) => GetCacheResultRecursivelyAsync(cacheResults, nodeContext, logger, cancellationToken);
+        }
+        else
+        {
+            _getCacheResultAsync = GetCacheResultNonRecursiveAsync;
+        }
+
         // Ensure all logs are written
         await Task.WhenAll(dumpParserInfoTasks);
         await dumpNodeContextsTask;
@@ -372,13 +384,70 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             return CacheResult.IndicateNonCacheHit(CacheResultType.CacheNotApplicable);
         }
 
-        nodeContext.SetStartTime();
-
         if (!nodeContext.TargetNames.SetEquals(buildRequest.TargetNames))
         {
             logger.LogMessage($"`TargetNames` does not match for {nodeContext.Id}. `{string.Join(";", nodeContext.TargetNames)}` vs `{string.Join(";", buildRequest.TargetNames)}`.");
             return CacheResult.IndicateNonCacheHit(CacheResultType.CacheNotApplicable);
         }
+
+        return await _getCacheResultAsync(nodeContext, logger, cancellationToken);
+    }
+
+    private async Task<CacheResult> GetCacheResultRecursivelyAsync(
+        ConcurrentDictionary<NodeContext, Lazy<Task<CacheResult>>> cacheResults,
+        NodeContext nodeContext,
+        PluginLoggerBase logger,
+        CancellationToken cancellationToken)
+    {
+        // Ensure we only query a node exactly once. MSBuild won't query a project more than once, but when recursion is enabled,
+        // we might have multiple build requests querying the same unqueried dependency.
+        return await cacheResults.GetOrAdd(nodeContext, new Lazy<Task<CacheResult>>(
+            async () =>
+            {
+                foreach (NodeContext dependency in nodeContext.Dependencies)
+                {
+                    if (dependency.BuildResult == null)
+                    {
+                        logger.LogMessage($"Querying cache for missing build result for dependency '{dependency.Id}'");
+                        CacheResult dependencyResult = await GetCacheResultRecursivelyAsync(cacheResults, dependency, logger, cancellationToken);
+                        logger.LogMessage($"Dependency '{dependency.Id}' cache result: '{dependencyResult.ResultType}'");
+
+                        if (dependencyResult.ResultType != CacheResultType.CacheHit)
+                        {
+                            logger.LogMessage($"Cache miss due to failed build result for dependency '{dependency.Id}'");
+                            Interlocked.Increment(ref _cacheMissCount);
+                            return CacheResult.IndicateNonCacheHit(CacheResultType.CacheMiss);
+                        }
+                    }
+                }
+
+                return await GetCacheResultSingleAsync(nodeContext, logger, cancellationToken);
+            })).Value;
+    }
+
+    private async Task<CacheResult> GetCacheResultNonRecursiveAsync(NodeContext nodeContext, PluginLoggerBase logger, CancellationToken cancellationToken)
+    {
+        foreach (NodeContext dependency in nodeContext.Dependencies)
+        {
+            if (dependency.BuildResult == null)
+            {
+                logger.LogMessage($"Cache miss due to failed or missing build result for dependency '{dependency.Id}'");
+                Interlocked.Increment(ref _cacheMissCount);
+                return CacheResult.IndicateNonCacheHit(CacheResultType.CacheMiss);
+            }
+        }
+
+        return await GetCacheResultSingleAsync(nodeContext, logger, cancellationToken);
+    }
+
+    private async Task<CacheResult> GetCacheResultSingleAsync(NodeContext nodeContext, PluginLoggerBase logger, CancellationToken cancellationToken)
+    {
+        if (!Initialized)
+        {
+            throw new InvalidOperationException();
+        }
+
+        nodeContext.SetStartTime();
 
         (PathSet? pathSet, NodeBuildResult? nodeBuildResult) = await _cacheClient.GetNodeAsync(nodeContext, cancellationToken);
         if (nodeBuildResult is null)
