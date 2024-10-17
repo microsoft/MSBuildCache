@@ -29,7 +29,6 @@
     <PackageVersion Include="Microsoft.VisualStudio.Services.BlobStore.Client" Version="$(ArtifactsPackageVersion)" />
     <PackageVersion Include="Microsoft.VisualStudio.Services.BlobStore.Client.Cache" Version="$(ArtifactsPackageVersion)" />
     <PackageVersion Include="Microsoft.VisualStudio.Services.PipelineCache.WebApi" Version="$(ArtifactsPackageVersion)" />
-    <PackageVersion Include="MSTest" Version="3.5.0" />
     <!--
       An indirect dependency of BXL (Minimatch) depends on a very old and non-existing version of NETStandard.Library (>= 1.0.0-rc2-23910).
       This forces a good version of NETStandard.Library to mitigate.
