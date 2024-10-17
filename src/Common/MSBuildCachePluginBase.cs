@@ -386,7 +386,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
         nodeContext.SetStartTime();
 
-        if (!nodeContext.TargetNames.SetEquals(buildRequest.TargetNames))
+        if (!nodeContext.TargetNames.IsSupersetOf(buildRequest.TargetNames))
         {
             logger.LogMessage($"`TargetNames` does not match for {nodeContext.Id}. `{string.Join(";", nodeContext.TargetNames)}` vs `{string.Join(";", buildRequest.TargetNames)}`.");
             return CacheResult.IndicateNonCacheHit(CacheResultType.CacheNotApplicable);
