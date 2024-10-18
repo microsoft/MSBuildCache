@@ -38,11 +38,6 @@ internal sealed class NodeDescriptorFactory
                 continue;
             }
 
-            if (string.Equals(kvp.Key, "TargetFramework", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(kvp.Value))
-            {
-                continue;
-            }
-
             filteredGlobalProperties.Add(kvp.Key, kvp.Value);
         }
 
