@@ -93,10 +93,18 @@ public sealed class FingerprintFactory : IFingerprintFactory
                 entries.Add(CreateFingerprintEntry($"Targets: {targetList}"));
 
                 // If the VC toolchain changes, the node should rebuild.
-                string vcToolsVersion = nodeContext.ProjectInstance.GetPropertyValue("VCToolsVersion");
-                if (!string.IsNullOrEmpty(vcToolsVersion))
+                // This only applies to projects using MSVC, but the Developer Command Prompt and Visual Studio set it as an environment variable,
+                // making GetPropertyValue always return a value. To avoid projects which don't use MSVC from getting cache misses when the version
+                // changes, only apply this to vcxproj files. It's feasible but rare for other projects to use MSVC, so this is a compromise for better
+                // cache hits.
+                if (nodeContext.ProjectFileRelativePath.EndsWith(".vcxproj", StringComparison.OrdinalIgnoreCase)
+                    || nodeContext.ProjectFileRelativePath.EndsWith(".nativeproj", StringComparison.OrdinalIgnoreCase))
                 {
-                    entries.Add(CreateFingerprintEntry($"VCToolsVersion: {vcToolsVersion}"));
+                    string vcToolsVersion = nodeContext.ProjectInstance.GetPropertyValue("VCToolsVersion");
+                    if (!string.IsNullOrEmpty(vcToolsVersion))
+                    {
+                        entries.Add(CreateFingerprintEntry($"VCToolsVersion: {vcToolsVersion}"));
+                    }
                 }
 
                 // If the .NET SDK changes, the node should rebuild.
