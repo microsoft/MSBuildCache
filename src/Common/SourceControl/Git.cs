@@ -6,6 +6,9 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Build.Experimental.ProjectCache;
+#if NETFRAMEWORK
+using Process = Microsoft.MSBuildCache.SourceControl.GitProcess;
+#endif
 
 namespace Microsoft.MSBuildCache.SourceControl;
 
@@ -41,9 +44,7 @@ public static class Git
         process.StartInfo.RedirectStandardOutput = true;
         process.StartInfo.RedirectStandardError = true;
         process.StartInfo.StandardOutputEncoding = Encoding.UTF8;
-#if !NETFRAMEWORK
         process.StartInfo.StandardInputEncoding = InputEncoding;
-#endif
 
         Stopwatch sw = Stopwatch.StartNew();
 
@@ -66,18 +67,10 @@ public static class Git
 
         using (cancellationToken.Register(() => KillProcess(process)))
         {
-#if NETFRAMEWORK
-            // In .NET Framework the StandardInputEncoding cannot be set and is always Console.InputEncoding.
-            // To work around, wrap the underlying stream in a writer with the correct encoding.
-            using (StreamWriter stdin = new StreamWriter(process.StandardInput.BaseStream, InputEncoding, 4096))
-#else
             using (StreamWriter stdin = process.StandardInput)
-#endif
             using (StreamReader stdout = process.StandardOutput)
             using (StreamReader stderr = process.StandardError)
             {
-                stdin.AutoFlush = true;
-
                 Task<T> resultTask = Task.Run(async () =>
                 {
                     try
