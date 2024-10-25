@@ -145,12 +145,14 @@ These settings are available in addition to the [Common Settings](#common-settin
 
 | MSBuild Property Name | Setting Type | Default value | Description |
 | ------------- | ------------ | ------------- | ----------- |
-| `$(MSBuildCacheCredentialsType)` | `string` | "Interactive" | Indicates the credential type to use for authentication. Valid values are "Interactive", "ConnectionString", "ManagedIdentity" |
+| `$(MSBuildCacheCredentialsType)` | `string` | "Interactive" | Indicates the credential type to use for authentication. Valid values are "Interactive", "ConnectionString", "ManagedIdentity", "TokenCredential" |
 | `$(MSBuildCacheBlobUri)` | `Uri` | | Specifies the uri of the Azure Storage Blob. |
 | `$(MSBuildCacheManagedIdentityClientId)` | `string` | | Specifies the managed identity client id when using the "ManagedIdentity" credential type |
 | `$(MSBuildCacheInteractiveAuthTokenDirectory)` | `string` | "%LOCALAPPDATA%\MSBuildCache\AuthTokenCache" | Specifies a token cache directory when using the "Interactive" credential type |
 
 When using the "ConnectionString" credential type, the connection string to the blob storage account must be provided in the `MSBCACHE_CONNECTIONSTRING` environment variable. This connection string needs both read and write access to the resource.
+
+When using the "TokenCredential" credential type, an access token must be provided in the `MSBCACHE_ACCESSTOKEN` environment variable. Alternately, if using the programmatic project cache API, a [`TokenCredential`](https://learn.microsoft.com/en-us/dotnet/api/azure.core.tokencredential?view=azure-dotnet) may be provided in the plugin's constructor.
 
 ## Other Packages
 
