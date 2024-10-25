@@ -150,7 +150,7 @@ These settings are available in addition to the [Common Settings](#common-settin
 | `$(MSBuildCacheManagedIdentityClientId)` | `string` | | Specifies the managed identity client id when using the "ManagedIdentity" credential type |
 | `$(MSBuildCacheInteractiveAuthTokenDirectory)` | `string` | "%LOCALAPPDATA%\MSBuildCache\AuthTokenCache" | Specifies a token cache directory when using the "Interactive" credential type |
 
-When using the "ConnectionString" credential type, the connection string to the blob storage account must be provided in the `MSBUILDCACHE_CONNECTIONSTRING` environment variable. This connection string needs both read and write access to the resource.
+When using the "ConnectionString" credential type, the connection string to the blob storage account must be provided in the `MSBCACHE_CONNECTIONSTRING` environment variable. This connection string needs both read and write access to the resource.
 
 ## Other Packages
 

@@ -28,7 +28,7 @@ namespace Microsoft.MSBuildCache.AzureBlobStorage;
 public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase<AzureBlobStoragePluginSettings>
 {
     // Note: This is not in PluginSettings as that's configured through item metadata and thus makes it into MSBuild logs. This is a secret so that's not desirable.
-    private const string AzureBlobConnectionStringEnvVar = "MSBUILDCACHE_CONNECTIONSTRING";
+    private const string AzureBlobConnectionStringEnvVar = "MSBCACHE_CONNECTIONSTRING";
 
     // Although Azure Blob Storage is unrelated to Azure DevOps, Vso0 hashing is much faster than SHA256.
     protected override HashType HashType => HashType.Vso0;
