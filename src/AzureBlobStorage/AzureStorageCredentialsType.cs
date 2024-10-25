@@ -17,7 +17,7 @@ public enum AzureStorageCredentialsType
     /// Use a connection string to authenticate.
     /// </summary>
     /// <remarks>
-    /// The "MSBUILDCACHE_CONNECTIONSTRING" environment variable must contain the connection string to use.
+    /// The "MSBCACHE_CONNECTIONSTRING" environment variable must contain the connection string to use.
     /// </remarks>
     ConnectionString,
 
