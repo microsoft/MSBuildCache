@@ -25,4 +25,13 @@ public enum AzureStorageCredentialsType
     /// Use a managed identity to authenticate.
     /// </summary>
     ManagedIdentity,
+
+    /// <summary>
+    /// Use a token credential to authenticate.
+    /// </summary>
+    /// <remarks>
+    /// The "MSBCACHE_ACCESSTOKEN" environment variable must contain the access token to use. Alternately if using the programmatic
+    /// project cache API, a TokenCredential may be provided in the plugin's constructor.
+    /// </remarks>
+    TokenCredential,
 }

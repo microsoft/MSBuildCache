@@ -6,6 +6,7 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Azure.Core;
 using BuildXL.Cache.ContentStore.Distributed.Blob;
 using BuildXL.Cache.ContentStore.Distributed.NuCache;
 using BuildXL.Cache.ContentStore.Hashing;
@@ -27,11 +28,30 @@ namespace Microsoft.MSBuildCache.AzureBlobStorage;
 
 public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase<AzureBlobStoragePluginSettings>
 {
-    // Note: This is not in PluginSettings as that's configured through item metadata and thus makes it into MSBuild logs. This is a secret so that's not desirable.
+    // Note: These are not in PluginSettings as that's configured through item metadata and thus makes it into MSBuild logs. This is a secret so that's not desirable.
+    //       Environment variables are also prone to leaking, so other authentication types are preferred when possible.
     private const string AzureBlobConnectionStringEnvVar = "MSBCACHE_CONNECTIONSTRING";
+    private const string AzureBlobAccessTokenEnvVar = "MSBCACHE_ACCESSTOKEN";
+
+    private readonly TokenCredential? _tokenCredential;
 
     // Although Azure Blob Storage is unrelated to Azure DevOps, Vso0 hashing is much faster than SHA256.
     protected override HashType HashType => HashType.Vso0;
+
+    // Constructor used when MSBuild creates the plugin
+    public MSBuildCacheAzureBlobStoragePlugin()
+    {
+    }
+
+    public MSBuildCacheAzureBlobStoragePlugin(TokenCredential tokenCredential)
+    {
+        _tokenCredential = tokenCredential;
+    }
+
+    public MSBuildCacheAzureBlobStoragePlugin(string accessToken)
+        : this(new StaticTokenCredential(accessToken))
+    {
+    }
 
     protected override async Task<ICacheClient> CreateCacheClientAsync(PluginLoggerBase logger, CancellationToken cancellationToken)
     {
@@ -99,7 +119,7 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase<
             Settings.AsyncCacheMaterialization);
     }
 
-    private static IAzureStorageCredentials CreateAzureStorageCredentials(AzureBlobStoragePluginSettings settings, CancellationToken cancellationToken)
+    private IAzureStorageCredentials CreateAzureStorageCredentials(AzureBlobStoragePluginSettings settings, CancellationToken cancellationToken)
     {
         switch (settings.CredentialsType)
         {
@@ -139,6 +159,25 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase<
                 }
 
                 return new ManagedIdentityAzureStorageCredentials(settings.ManagedIdentityClientId!, settings.BlobUri);
+            }
+            case AzureStorageCredentialsType.TokenCredential:
+            {
+                if (settings.BlobUri is null)
+                {
+                    throw new InvalidOperationException($"{nameof(AzureBlobStoragePluginSettings.BlobUri)} is required when using {nameof(AzureBlobStoragePluginSettings.CredentialsType)}={settings.CredentialsType}");
+                }
+
+                // Allow the environment variable to supersede the constuctor-provided value.
+                string? accessToken = Environment.GetEnvironmentVariable(AzureBlobAccessTokenEnvVar);
+                TokenCredential? tokenCredential = !string.IsNullOrEmpty(accessToken)
+                        ? new StaticTokenCredential(accessToken)
+                        : _tokenCredential;
+                if (tokenCredential is null)
+                {
+                    throw new InvalidOperationException($"Required environment variable '{AzureBlobAccessTokenEnvVar}' not set");
+                }
+
+                return new TokenCredentialAzureStorageCredentials(settings.BlobUri, tokenCredential);
             }
             default:
             {
