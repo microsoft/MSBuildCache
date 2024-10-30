@@ -385,6 +385,7 @@ public abstract class CacheClient : ICacheClient
         if (!selector.HasValue)
         {
             // GetMatchingSelectorAsync logs sufficiently
+            MSBuildCachePluginBase.DumpPartialFingerprintLog("weak", nodeContext, weakFingerprint);
             return (null, null);
         }
 

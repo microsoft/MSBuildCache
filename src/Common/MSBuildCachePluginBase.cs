@@ -368,6 +368,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         if (!Initialized)
         {
             // BeginBuild didn't finish successfully. It's expected to log sufficiently, so just bail.
+            logger.LogWarning($"Cache Miss for build {buildRequest.ProjectFullPath}: cache is not initialized.");
             return CacheResult.IndicateNonCacheHit(CacheResultType.CacheNotApplicable);
         }
 
@@ -381,6 +382,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         NodeDescriptor nodeDescriptor = _nodeDescriptorFactory.Create(projectInstance);
         if (!_nodeContexts.TryGetValue(nodeDescriptor, out NodeContext? nodeContext))
         {
+            logger.LogWarning($"Cache Miss for build {buildRequest.ProjectFullPath}: cannot find node context {nodeDescriptor}");
             return CacheResult.IndicateNonCacheHit(CacheResultType.CacheNotApplicable);
         }
 
@@ -388,11 +390,16 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
         if (!nodeContext.TargetNames.IsSupersetOf(buildRequest.TargetNames))
         {
-            logger.LogMessage($"`TargetNames` does not match for {nodeContext.Id}. `{string.Join(";", nodeContext.TargetNames)}` vs `{string.Join(";", buildRequest.TargetNames)}`.");
+            logger.LogWarning($"Cache Miss for build {buildRequest.ProjectFullPath}: `TargetNames` does not match for {nodeContext.Id}. `{string.Join(";", nodeContext.TargetNames)}` vs `{string.Join(";", buildRequest.TargetNames)}`.");
             return CacheResult.IndicateNonCacheHit(CacheResultType.CacheNotApplicable);
         }
 
-        return await _getCacheResultAsync(nodeContext, logger, cancellationToken);
+        var result = await _getCacheResultAsync(nodeContext, logger, cancellationToken);
+
+        string targets = string.Join(";", buildRequest.TargetNames);
+        logger.LogWarning($"Cache {result.ResultType} for build {buildRequest.ProjectFullPath} ({targets})");
+
+        return result;
     }
 
     private async Task<CacheResult> GetCacheResultRecursivelyAsync(
@@ -416,7 +423,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
                         if (dependencyResult.ResultType != CacheResultType.CacheHit)
                         {
-                            logger.LogMessage($"Cache miss due to failed build result for dependency '{dependency.Id}'");
+                            logger.LogWarning($"Cache miss due to failed build result for dependency '{dependency.Id}'");
                             Interlocked.Increment(ref _cacheMissCount);
                             return CacheResult.IndicateNonCacheHit(CacheResultType.CacheMiss);
                         }
@@ -433,7 +440,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         {
             if (dependency.BuildResult == null)
             {
-                logger.LogMessage($"Cache miss due to failed or missing build result for dependency '{dependency.Id}'");
+                logger.LogWarning($"Cache miss due to failed or missing build result for dependency '{dependency.Id}'");
                 Interlocked.Increment(ref _cacheMissCount);
                 return CacheResult.IndicateNonCacheHit(CacheResultType.CacheMiss);
             }
@@ -454,6 +461,8 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         (PathSet? pathSet, NodeBuildResult? nodeBuildResult) = await _cacheClient.GetNodeAsync(nodeContext, cancellationToken);
         if (nodeBuildResult is null)
         {
+            logger.LogWarning($"Cache miss due to failed to find build result '{nodeContext.Id}'");
+
             Interlocked.Increment(ref _cacheMissCount);
             return CacheResult.IndicateNonCacheHit(CacheResultType.CacheMiss);
         }
@@ -870,36 +879,53 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         {
             logger.LogWarning($"Non-fatal exception while writing {filePath}. {ex.GetType().Name}: {ex.Message}");
         }
+    }
 
-        static void WriteFingerprintJson(Utf8JsonWriter jsonWriter, string propertyName, Fingerprint? fingerprint)
+    internal static void DumpPartialFingerprintLog(string fingerprintType, NodeContext nodeContext, Fingerprint fingerprint)
+    {
+        string filePath = Path.Combine(nodeContext.LogDirectory, $"fingerprint_{fingerprintType}.json");
+        try
         {
-            jsonWriter.WritePropertyName(propertyName);
-
-            if (fingerprint == null)
-            {
-                jsonWriter.WriteNullValue();
-                return;
-            }
+            using FileStream fileStream = File.Create(filePath);
+            using var jsonWriter = new Utf8JsonWriter(fileStream, SerializationHelper.WriterOptions);
 
             jsonWriter.WriteStartObject();
-
-            jsonWriter.WriteString("hash", fingerprint.Hash.ToHex());
-
-            jsonWriter.WritePropertyName("entries");
-            jsonWriter.WriteStartArray();
-
-            foreach (FingerprintEntry entry in fingerprint.Entries)
-            {
-                jsonWriter.WriteStartObject();
-                jsonWriter.WriteString("hash", entry.Hash.ToHex());
-                jsonWriter.WriteString("description", entry.Description);
-                jsonWriter.WriteEndObject();
-            }
-
-            jsonWriter.WriteEndArray(); // entries array
-
+            WriteFingerprintJson(jsonWriter, fingerprintType, fingerprint);
             jsonWriter.WriteEndObject();
         }
+        catch (Exception)
+        {
+        }
+    }
+
+    private static void WriteFingerprintJson(Utf8JsonWriter jsonWriter, string propertyName, Fingerprint? fingerprint)
+    {
+        jsonWriter.WritePropertyName(propertyName);
+
+        if (fingerprint == null)
+        {
+            jsonWriter.WriteNullValue();
+            return;
+        }
+
+        jsonWriter.WriteStartObject();
+
+        jsonWriter.WriteString("hash", fingerprint.Hash.ToHex());
+
+        jsonWriter.WritePropertyName("entries");
+        jsonWriter.WriteStartArray();
+
+        foreach (FingerprintEntry entry in fingerprint.Entries)
+        {
+            jsonWriter.WriteStartObject();
+            jsonWriter.WriteString("hash", entry.Hash.ToHex());
+            jsonWriter.WriteString("description", entry.Description);
+            jsonWriter.WriteEndObject();
+        }
+
+        jsonWriter.WriteEndArray(); // entries array
+
+        jsonWriter.WriteEndObject();
     }
 
     private static async Task DumpBuildResultLogAsync(
