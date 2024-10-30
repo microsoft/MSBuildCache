@@ -72,8 +72,7 @@ These settings are common across all plugins, although different implementations
 | `$(MSBuildCacheAllowProcessCloseAfterProjectFinishProcessPatterns)` | `Glob[]` | `\**\mspdbsrv.exe` | Processes to allow to exit after the project which launched it completes, ie detached processes. |
 | `$(MSBuildCacheGlobalPropertiesToIgnore)` | `string[]` | `CurrentSolutionConfigurationContents; ShouldUnsetParentConfigurationAndPlatform; BuildingInsideVisualStudio; BuildingSolutionFile; SolutionDir; SolutionExt; SolutionFileName; SolutionName; SolutionPath; _MSDeployUserAgent`, as well as all proeprties related to plugin settings | The list of global properties to exclude from consideration by the cache |
 | `$(MSBuildCacheGetResultsForUnqueriedDependencies)` | `bool` | false | Whether to try and query the cache for dependencies if they have not previously been requested. This option can help in cases where the build isn't done in graph order, or if some projects are skipped. |
-
-
+| `$(MSBuildCacheTargetsToIgnore)` | `string[]` | `GetTargetFrameworks;GetNativeManifest;GetCopyToOutputDirectoryItems;GetTargetFrameworksWithPlatformForSingleTargetFramework` | The list of targets to ignore when determining if a build request matches a cache entry. This is intended for "information gathering" targets which do not have side-effect. eg. a build with `/t:Build` and `/t:Build;GetTargetFrameworks` should be considered to have equivalent results. Note: This only works "one-way" in that the build request is allowed to have missing targets, while the cache entry is not. This is to avoid a situation where a build request recieves a cache hit with missing target results, where a cache hit with extra target results is acceptable. |
 
 When configuring settings which are list types, you should always append to the existing value to avoid overriding the defaults:
 
