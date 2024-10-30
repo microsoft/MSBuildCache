@@ -1,4 +1,4 @@
-<Project Sdk="MSTest.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- Only supports x64 due to the RocksDB dependency -->
     <Platform>x64</Platform>
@@ -11,6 +11,7 @@
     <NoWarn>$(NoWarn);CA1034</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="MSTest" />
     <PackageReference Include="morelinq" />
   </ItemGroup>
   <ItemGroup>
