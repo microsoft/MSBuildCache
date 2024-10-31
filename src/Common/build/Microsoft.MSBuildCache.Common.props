@@ -51,4 +51,14 @@
     <!-- Azure Pipelines provides _MSDeployUserAgent as a global property which we do not need to care about -->
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);_MSDeployUserAgent</MSBuildCacheGlobalPropertiesToIgnore>
   </PropertyGroup>
+
+  <!--
+    Defaults for MSBuild Targets to ignore when determining if a build request matches a cache entry
+  -->
+  <PropertyGroup Condition="'$(MSBuildCacheTargetsToIgnore)' == ''">
+    <MSBuildCacheTargetsToIgnore>$(MSBuildCacheTargetsToIgnore);GetTargetFrameworks</MSBuildCacheTargetsToIgnore>
+    <MSBuildCacheTargetsToIgnore>$(MSBuildCacheTargetsToIgnore);GetNativeManifest</MSBuildCacheTargetsToIgnore>
+    <MSBuildCacheTargetsToIgnore>$(MSBuildCacheTargetsToIgnore);GetCopyToOutputDirectoryItems</MSBuildCacheTargetsToIgnore>
+    <MSBuildCacheTargetsToIgnore>$(MSBuildCacheTargetsToIgnore);GetTargetFrameworksWithPlatformForSingleTargetFramework</MSBuildCacheTargetsToIgnore>
+  </PropertyGroup>
 </Project>

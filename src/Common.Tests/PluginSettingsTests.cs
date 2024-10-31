@@ -94,7 +94,169 @@ public sealed class PluginSettingsTests
             pluginSettings => pluginSettings.LocalCacheSizeInMegabytes,
             new[] { 123u, 456u, 789u });
 
-    private static IEnumerable<object[]> GlobTestData
+    [TestMethod]
+    [DynamicData(nameof(GlobTestCases), DynamicDataDisplayName = nameof(GetTestCaseDisplayName))]
+    public void IgnoredInputPatternsSetting(GlobTestCase testCase)
+        => TestGlobListSetting(
+            nameof(PluginSettings.IgnoredInputPatterns),
+            testCase,
+            pluginSettings => pluginSettings.IgnoredInputPatterns);
+
+    [TestMethod]
+    [DynamicData(nameof(GlobTestCases), DynamicDataDisplayName = nameof(GetTestCaseDisplayName))]
+    public void IgnoredOutputPatternsSetting(GlobTestCase testCase)
+        => TestGlobListSetting(
+            nameof(PluginSettings.IgnoredOutputPatterns),
+            testCase,
+            pluginSettings => pluginSettings.IgnoredOutputPatterns);
+
+    [TestMethod]
+    [DynamicData(nameof(GlobTestCases), DynamicDataDisplayName = nameof(GetTestCaseDisplayName))]
+    public void IdenticalDuplicateOutputPatternsSetting(GlobTestCase testCase)
+        => TestGlobListSetting(
+            nameof(PluginSettings.IdenticalDuplicateOutputPatterns),
+            testCase,
+            pluginSettings => pluginSettings.IdenticalDuplicateOutputPatterns);
+
+    [TestMethod]
+    public void RemoteCacheIsReadOnlySetting()
+        => TestBoolSetting(nameof(PluginSettings.RemoteCacheIsReadOnly), pluginSettings => pluginSettings.RemoteCacheIsReadOnly);
+
+    [TestMethod]
+    public void AsyncCachePublishingSetting()
+        => TestBoolSetting(nameof(PluginSettings.AsyncCachePublishing), pluginSettings => pluginSettings.AsyncCachePublishing);
+
+    [TestMethod]
+    public void AsyncCacheMaterializationSetting()
+        => TestBoolSetting(nameof(PluginSettings.AsyncCacheMaterialization), pluginSettings => pluginSettings.AsyncCacheMaterialization);
+
+    [TestMethod]
+    [DynamicData(nameof(GlobTestCases), DynamicDataDisplayName = nameof(GetTestCaseDisplayName))]
+    public void AllowFileAccessAfterProjectFinishProcessPatternsSetting(GlobTestCase testCase)
+        => TestGlobListSetting(
+            nameof(PluginSettings.AllowFileAccessAfterProjectFinishProcessPatterns),
+            testCase,
+            pluginSettings => pluginSettings.AllowFileAccessAfterProjectFinishProcessPatterns);
+
+    [TestMethod]
+    [DynamicData(nameof(GlobTestCases), DynamicDataDisplayName = nameof(GetTestCaseDisplayName))]
+    public void AllowFileAccessAfterProjectFinishFilePatternsSetting(GlobTestCase testCase)
+        => TestGlobListSetting(
+            nameof(PluginSettings.AllowFileAccessAfterProjectFinishFilePatterns),
+            testCase,
+            pluginSettings => pluginSettings.AllowFileAccessAfterProjectFinishFilePatterns);
+
+    [TestMethod]
+    [DynamicData(nameof(GlobTestCases), DynamicDataDisplayName = nameof(GetTestCaseDisplayName))]
+    public void AllowProcessCloseAfterProjectFinishProcessPatternsSetting(GlobTestCase testCase)
+        => TestGlobListSetting(
+            nameof(PluginSettings.AllowProcessCloseAfterProjectFinishProcessPatterns),
+            testCase,
+            pluginSettings => pluginSettings.AllowProcessCloseAfterProjectFinishProcessPatterns);
+
+    [TestMethod]
+    [DynamicData(nameof(StringListTestCases), DynamicDataDisplayName = nameof(GetTestCaseDisplayName))]
+    public void GlobalPropertiesToIgnoreSetting(StringListTestCase testCase)
+        => TestStringListSetting(nameof(PluginSettings.GlobalPropertiesToIgnore), testCase, pluginSettings => pluginSettings.GlobalPropertiesToIgnore);
+
+    [TestMethod]
+    public void GetResultsForUnqueriedDependenciesSetting()
+        => TestBoolSetting(nameof(PluginSettings.GetResultsForUnqueriedDependencies), pluginSettings => pluginSettings.GetResultsForUnqueriedDependencies);
+
+    [TestMethod]
+    [DynamicData(nameof(StringListTestCases), DynamicDataDisplayName = nameof(GetTestCaseDisplayName))]
+    public void TargetsToIgnoreSetting(StringListTestCase testCase)
+        => TestStringListSetting(nameof(PluginSettings.TargetsToIgnore), testCase, pluginSettings => pluginSettings.TargetsToIgnore);
+
+    private static void TestBoolSetting(string settingName, Func<PluginSettings, bool> valueAccessor)
+        => TestBasicSetting(
+            settingName,
+            valueAccessor,
+            testValues: [false, true]);
+
+    private static void TestBasicSetting<T>(
+        string settingName,
+        Func<PluginSettings, T> valueAccessor,
+        ReadOnlySpan<T> testValues)
+    {
+        T defaultValue = valueAccessor(DefaultPluginSettings);
+
+        TestBasicSettingValue(null, defaultValue);
+        TestBasicSettingValue(string.Empty, defaultValue);
+        TestBasicSettingValue(defaultValue?.ToString(), defaultValue);
+
+        foreach (T testValue in testValues)
+        {
+            TestBasicSettingValue(testValue?.ToString(), testValue);
+        }
+
+        void TestBasicSettingValue(string? settingValue, T expectedValue)
+        {
+            Dictionary<string, string> settings = new(StringComparer.OrdinalIgnoreCase);
+            if (settingValue != null)
+            {
+                settings.Add(settingName, settingValue);
+            }
+
+            PluginSettings pluginSettings = PluginSettings.Create<PluginSettings>(settings, NullPluginLogger.Instance, RepoRoot);
+
+            Assert.AreEqual(expectedValue, valueAccessor(pluginSettings));
+        }
+    }
+
+    private static void TestGlobListSetting(
+        string settingName,
+        GlobTestCase testCase,
+        Func<PluginSettings, IReadOnlyCollection<Glob>> valueAccessor)
+    {
+        Dictionary<string, string> settings = new(StringComparer.OrdinalIgnoreCase)
+        {
+            { settingName, testCase.Glob },
+        };
+
+        PluginSettings pluginSettings = PluginSettings.Create<PluginSettings>(settings, NullPluginLogger.Instance, RepoRoot);
+
+        foreach (string path in testCase.ExpectedMatching)
+        {
+            Assert.IsTrue(MatchesGlobs(path), $"Path did not match any patterns: {path}");
+        }
+
+        foreach (string path in testCase.ExpectedNotMatching)
+        {
+            Assert.IsFalse(MatchesGlobs(path), $"Path matched pattern unexpectedly: {path}");
+        }
+
+        bool MatchesGlobs(string path)
+        {
+            foreach (Glob glob in valueAccessor(pluginSettings))
+            {
+                if (glob.IsMatch(path))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    }
+
+    private static void TestStringListSetting(
+        string settingName,
+        StringListTestCase testCase,
+        Func<PluginSettings, IReadOnlyCollection<string>> valueAccessor)
+    {
+        Dictionary<string, string> settings = new(StringComparer.OrdinalIgnoreCase);
+        if (testCase.SettingValue != null)
+        {
+            settings.Add(settingName, testCase.SettingValue);
+        }
+
+        PluginSettings pluginSettings = PluginSettings.Create<PluginSettings>(settings, NullPluginLogger.Instance, RepoRoot);
+
+        CollectionAssert.AreEqual(testCase.ExpectedValues.ToList(), valueAccessor(pluginSettings).ToList());
+    }
+
+    public static IEnumerable<object[]> GlobTestCases
     {
         get
         {
@@ -273,157 +435,46 @@ public sealed class PluginSettingsTests
         }
     }
 
-    [TestMethod]
-    [DynamicData(nameof(GlobTestData), DynamicDataDisplayName = nameof(GetTestCaseDisplayName))]
-    public void IgnoredInputPatternsSetting(GlobTestCase testCase)
-        => TestGlobListSetting(
-            nameof(PluginSettings.IgnoredInputPatterns),
-            testCase,
-            pluginSettings => pluginSettings.IgnoredInputPatterns);
-
-    [TestMethod]
-    [DynamicData(nameof(GlobTestData), DynamicDataDisplayName = nameof(GetTestCaseDisplayName))]
-    public void IgnoredOutputPatternsSetting(GlobTestCase testCase)
-        => TestGlobListSetting(
-            nameof(PluginSettings.IgnoredOutputPatterns),
-            testCase,
-            pluginSettings => pluginSettings.IgnoredOutputPatterns);
-
-    [TestMethod]
-    [DynamicData(nameof(GlobTestData), DynamicDataDisplayName = nameof(GetTestCaseDisplayName))]
-    public void IdenticalDuplicateOutputPatternsSetting(GlobTestCase testCase)
-        => TestGlobListSetting(
-            nameof(PluginSettings.IdenticalDuplicateOutputPatterns),
-            testCase,
-            pluginSettings => pluginSettings.IdenticalDuplicateOutputPatterns);
-
-    [TestMethod]
-    public void RemoteCacheIsReadOnlySetting()
-        => TestBoolSetting(nameof(PluginSettings.RemoteCacheIsReadOnly), pluginSettings => pluginSettings.RemoteCacheIsReadOnly);
-
-    [TestMethod]
-    public void AsyncCachePublishingSetting()
-        => TestBoolSetting(nameof(PluginSettings.AsyncCachePublishing), pluginSettings => pluginSettings.AsyncCachePublishing);
-
-    [TestMethod]
-    public void AsyncCacheMaterializationSetting()
-        => TestBoolSetting(nameof(PluginSettings.AsyncCacheMaterialization), pluginSettings => pluginSettings.AsyncCacheMaterialization);
-
-    [TestMethod]
-    [DynamicData(nameof(GlobTestData), DynamicDataDisplayName = nameof(GetTestCaseDisplayName))]
-    public void AllowFileAccessAfterProjectFinishProcessPatternsSetting(GlobTestCase testCase)
-        => TestGlobListSetting(
-            nameof(PluginSettings.AllowFileAccessAfterProjectFinishProcessPatterns),
-            testCase,
-            pluginSettings => pluginSettings.AllowFileAccessAfterProjectFinishProcessPatterns);
-
-    [TestMethod]
-    [DynamicData(nameof(GlobTestData), DynamicDataDisplayName = nameof(GetTestCaseDisplayName))]
-    public void AllowFileAccessAfterProjectFinishFilePatternsSetting(GlobTestCase testCase)
-        => TestGlobListSetting(
-            nameof(PluginSettings.AllowFileAccessAfterProjectFinishFilePatterns),
-            testCase,
-            pluginSettings => pluginSettings.AllowFileAccessAfterProjectFinishFilePatterns);
-
-    [TestMethod]
-    [DynamicData(nameof(GlobTestData), DynamicDataDisplayName = nameof(GetTestCaseDisplayName))]
-    public void AllowProcessCloseAfterProjectFinishProcessPatternsSetting(GlobTestCase testCase)
-        => TestGlobListSetting(
-            nameof(PluginSettings.AllowProcessCloseAfterProjectFinishProcessPatterns),
-            testCase,
-            pluginSettings => pluginSettings.AllowProcessCloseAfterProjectFinishProcessPatterns);
-
-    [TestMethod]
-    [DataRow(null, new string[] { }, null, DisplayName = "Null")]
-    [DataRow("", new string[] { }, null, DisplayName = "Empty string")]
-    [DataRow("A;B;C", new string[] { "A", "B", "C" }, null, DisplayName = "Basic values")]
-    [DataRow(" ; A ;; ;;; B    ;\r\n\r\n;\r\nC;;;  ", new string[] { "A", "B", "C" }, null, DisplayName = "Whitespace and empty values")]
-    public void GlobalPropertiesToIgnoreSetting(string? settingValue, string[] expectedValue, object _)
+    public static IEnumerable<object[]> StringListTestCases
     {
-        Dictionary<string, string> settings = new(StringComparer.OrdinalIgnoreCase);
-        if (settingValue != null)
+        get
         {
-            settings.Add(nameof(PluginSettings.GlobalPropertiesToIgnore), settingValue);
-        }
-
-        PluginSettings pluginSettings = PluginSettings.Create<PluginSettings>(settings, NullPluginLogger.Instance, RepoRoot);
-
-        CollectionAssert.AreEqual(expectedValue, pluginSettings.GlobalPropertiesToIgnore.ToList());
-    }
-
-    [TestMethod]
-    public void GetResultsForUnqueriedDependenciesSetting()
-        => TestBoolSetting(nameof(PluginSettings.GetResultsForUnqueriedDependencies), pluginSettings => pluginSettings.GetResultsForUnqueriedDependencies);
-
-    private static void TestBoolSetting(string settingName, Func<PluginSettings, bool> valueAccessor)
-        => TestBasicSetting(
-            settingName,
-            valueAccessor,
-            testValues: [false, true]);
-
-    private static void TestBasicSetting<T>(
-        string settingName,
-        Func<PluginSettings, T> valueAccessor,
-        ReadOnlySpan<T> testValues)
-    {
-        T defaultValue = valueAccessor(DefaultPluginSettings);
-
-        TestBasicSettingValue(null, defaultValue);
-        TestBasicSettingValue(string.Empty, defaultValue);
-        TestBasicSettingValue(defaultValue?.ToString(), defaultValue);
-
-        foreach (T testValue in testValues)
-        {
-            TestBasicSettingValue(testValue?.ToString(), testValue);
-        }
-
-        void TestBasicSettingValue(string? settingValue, T expectedValue)
-        {
-            Dictionary<string, string> settings = new(StringComparer.OrdinalIgnoreCase);
-            if (settingValue != null)
+            yield return new object[]
             {
-                settings.Add(settingName, settingValue);
-            }
-
-            PluginSettings pluginSettings = PluginSettings.Create<PluginSettings>(settings, NullPluginLogger.Instance, RepoRoot);
-
-            Assert.AreEqual(expectedValue, valueAccessor(pluginSettings));
-        }
-    }
-
-    private static void TestGlobListSetting(
-        string settingName,
-        GlobTestCase testCase,
-        Func<PluginSettings, IReadOnlyCollection<Glob>> valueAccessor)
-    {
-        Dictionary<string, string> settings = new(StringComparer.OrdinalIgnoreCase)
-        {
-            { settingName, testCase.Glob },
-        };
-
-        PluginSettings pluginSettings = PluginSettings.Create<PluginSettings>(settings, NullPluginLogger.Instance, RepoRoot);
-
-        foreach (string path in testCase.ExpectedMatching)
-        {
-            Assert.IsTrue(MatchesGlobs(path), $"Path did not match any patterns: {path}");
-        }
-
-        foreach (string path in testCase.ExpectedNotMatching)
-        {
-            Assert.IsFalse(MatchesGlobs(path), $"Path matched pattern unexpectedly: {path}");
-        }
-
-        bool MatchesGlobs(string path)
-        {
-            foreach (Glob glob in valueAccessor(pluginSettings))
-            {
-                if (glob.IsMatch(path))
+                new StringListTestCase
                 {
-                    return true;
+                    DisplayName = "Null",
+                    SettingValue = null,
+                    ExpectedValues = [],
                 }
-            }
-
-            return false;
+            };
+            yield return new object[]
+            {
+                new StringListTestCase
+                {
+                    DisplayName = "Empty string",
+                    SettingValue = string.Empty,
+                    ExpectedValues = [],
+                }
+            };
+            yield return new object[]
+            {
+                new StringListTestCase
+                {
+                    DisplayName = "Basic values",
+                    SettingValue = "A;B;C",
+                    ExpectedValues = [ "A", "B", "C" ],
+                }
+            };
+            yield return new object[]
+            {
+                new StringListTestCase
+                {
+                    DisplayName = "Whitespace and empty values",
+                    SettingValue = " ; A ;; ;;; B    ;\r\n\r\n;\r\nC;;;  ",
+                    ExpectedValues = [ "A", "B", "C" ],
+                }
+            };
         }
     }
 
@@ -443,5 +494,12 @@ public sealed class PluginSettingsTests
         public required IReadOnlyList<string> ExpectedMatching { get; init; }
 
         public required IReadOnlyList<string> ExpectedNotMatching { get; init; }
+    }
+
+    public sealed class StringListTestCase : TestCaseBase
+    {
+        public required string? SettingValue { get; init; }
+
+        public required IReadOnlyList<string> ExpectedValues { get; init; }
     }
 }

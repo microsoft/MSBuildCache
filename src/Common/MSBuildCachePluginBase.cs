@@ -384,7 +384,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             return CacheResult.IndicateNonCacheHit(CacheResultType.CacheNotApplicable);
         }
 
-        if (!nodeContext.TargetNames.SetEquals(buildRequest.TargetNames))
+        if (!DoTargetsMatch(nodeContext.TargetNames, buildRequest.TargetNames))
         {
             logger.LogMessage($"`TargetNames` does not match for {nodeContext.Id}. `{string.Join(";", nodeContext.TargetNames)}` vs `{string.Join(";", buildRequest.TargetNames)}`.");
             return CacheResult.IndicateNonCacheHit(CacheResultType.CacheNotApplicable);
@@ -732,6 +732,29 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         }
 
         return nodeContext;
+    }
+
+    private bool DoTargetsMatch(HashSet<string> expectedTargets, IEnumerable<string> requestedTargets)
+    {
+        if (Settings is null || Settings.TargetsToIgnore.Count == 0)
+        {
+            return expectedTargets.SetEquals(requestedTargets);
+        }
+
+        HashSet<string> extraTargets = new(expectedTargets, StringComparer.OrdinalIgnoreCase);
+        foreach (string target in requestedTargets)
+        {
+            if (!expectedTargets.Contains(target))
+            {
+                // If a target was requested that we weren't expecting, no match
+                return false;
+            }
+
+            extraTargets.Remove(target);
+        }
+
+        extraTargets.ExceptWith(Settings.TargetsToIgnore);
+        return extraTargets.Count == 0;
     }
 
     private async Task DumpNodeContextsAsync(PluginLoggerBase logger, Dictionary<NodeDescriptor, NodeContext> nodeContexts)

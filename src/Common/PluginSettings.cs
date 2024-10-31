@@ -103,6 +103,8 @@ public class PluginSettings
 
     public bool GetResultsForUnqueriedDependencies { get; init; }
 
+    public IReadOnlyList<string> TargetsToIgnore { get; init; } = Array.Empty<string>();
+
     public static T Create<T>(
         IReadOnlyDictionary<string, string> settings,
         PluginLoggerBase logger,
