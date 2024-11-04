@@ -12,19 +12,10 @@ using Process = Microsoft.MSBuildCache.SourceControl.GitProcess;
 
 namespace Microsoft.MSBuildCache.SourceControl;
 
-public static class Git
+internal static class Git
 {
     // UTF8 - NO BOM
     private static readonly Encoding InputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
-
-    public static async Task<string> BranchNameAsync(PluginLoggerBase logger, string repoRoot)
-    {
-        string branchName = await RunAsync(logger, repoRoot, "rev-parse --abbrev-ref HEAD",
-            (_, stdout) => stdout.ReadToEndAsync(),
-            (exitCode, result) => result,
-            CancellationToken.None);
-        return branchName.Trim();
-    }
 
     public static async Task<T> RunAsync<T>(
         PluginLoggerBase logger,

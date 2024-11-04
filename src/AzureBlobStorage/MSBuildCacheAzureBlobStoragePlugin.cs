@@ -22,7 +22,6 @@ using BuildXL.Cache.MemoizationStore.Interfaces.Sessions;
 using BuildXL.Cache.MemoizationStore.Sessions;
 using Microsoft.Build.Experimental.ProjectCache;
 using Microsoft.MSBuildCache.Caching;
-using Microsoft.MSBuildCache.SourceControl;
 
 namespace Microsoft.MSBuildCache.AzureBlobStorage;
 
@@ -75,25 +74,17 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase<
 
         ICacheSession localCacheSession = await StartCacheSessionAsync(context, localCache, "local");
 
-        // We want our caches to be secure by default.  For Pipeline Caching, branches are isolated on the server-side.
-        // For Blob L3, we need to isolate the cache namespace on the client-side.  We do this by using the branch name as the cache namespace.
-        // Note: The build still has access to broad access to the underlying Storage account, so this is *not* a true security boundary,
-        // but rather a best effort attempt.
-
-        // The cache universe and namespace are directly applied to the name of the container, so we need to sanitize and summarize with hash.
-        string @namespace = await Git.BranchNameAsync(logger, Settings.RepoRoot);
-        string cacheContainer = $"{Settings.CacheUniverse}-{@namespace}";
-
+        // The cache universe and namespace are directly applied to the name of the container, so we need to sanitize and summarize with lowercase hash.
 #pragma warning disable CA1308 // Azure Storage only supports lowercase
-        string cacheContainerHash = ContentHasher.GetContentHash(Encoding.UTF8.GetBytes(cacheContainer)).ToShortString(includeHashType: false).ToLowerInvariant();
+        string cacheUniverse = ContentHasher.GetContentHash(Encoding.UTF8.GetBytes(Settings.CacheUniverse)).ToShortString(includeHashType: false).ToLowerInvariant();
 #pragma warning restore CA1308 // Azure Storage only supports lowercase
 
-        logger.LogMessage($"Using cache namespace '{cacheContainer}' as '{cacheContainerHash}'.");
+        logger.LogMessage($"Using cache universe '{Settings.CacheUniverse}' as '{cacheUniverse}'.");
 
         IAzureStorageCredentials credentials = CreateAzureStorageCredentials(Settings, cancellationToken);
 
 #pragma warning disable CA2000 // Dispose objects before losing scope. Expected to be disposed by TwoLevelCache
-        ICache remoteCache = CreateRemoteCache(new OperationContext(context, cancellationToken), cacheContainerHash, Settings.RemoteCacheIsReadOnly, credentials);
+        ICache remoteCache = CreateRemoteCache(new OperationContext(context, cancellationToken), cacheUniverse, Settings.RemoteCacheIsReadOnly, credentials);
 #pragma warning restore CA2000 // Dispose objects before losing scope
 
         ICacheSession remoteCacheSession = await StartCacheSessionAsync(context, remoteCache, "remote");
@@ -192,7 +183,7 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase<
         AzureBlobStorageCacheFactory.Configuration cacheConfig = new(
             ShardingScheme: new ShardingScheme(ShardingAlgorithm.SingleShard, [accountName]),
             Universe: cacheUniverse,
-            Namespace: "0",
+            Namespace: AzureBlobStorageCacheFactory.Configuration.DefaultNamespace,
             RetentionPolicyInDays: null,
             IsReadOnly: isReadOnly);
         return AzureBlobStorageCacheFactory.Create(context, cacheConfig, new StaticBlobCacheSecretsProvider(credentials)).Cache;
