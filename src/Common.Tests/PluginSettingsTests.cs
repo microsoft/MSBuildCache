@@ -168,6 +168,10 @@ public sealed class PluginSettingsTests
     public void TargetsToIgnoreSetting(StringListTestCase testCase)
         => TestStringListSetting(nameof(PluginSettings.TargetsToIgnore), testCase, pluginSettings => pluginSettings.TargetsToIgnore);
 
+    [TestMethod]
+    public void IgnoreDotNetSdkPatchVersionSetting()
+        => TestBoolSetting(nameof(PluginSettings.IgnoreDotNetSdkPatchVersion), pluginSettings => pluginSettings.IgnoreDotNetSdkPatchVersion);
+
     private static void TestBoolSetting(string settingName, Func<PluginSettings, bool> valueAccessor)
         => TestBasicSetting(
             settingName,

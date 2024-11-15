@@ -15,6 +15,7 @@
     <PackageReference Include="Microsoft.BuildXL.Cache.ContentStore.Interfaces" />
     <PackageReference Include="Microsoft.BuildXL.Cache.MemoizationStore.Interfaces" />
     <PackageReference Include="Microsoft.BuildXL.Cache.MemoizationStore.Library" />
+    <PackageReference Include="NuGet.Versioning" />
     <PackageReference Include="System.Threading.Channels" />
   </ItemGroup>
   <ItemGroup>

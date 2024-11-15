@@ -105,6 +105,8 @@ public class PluginSettings
 
     public IReadOnlyList<string> TargetsToIgnore { get; init; } = Array.Empty<string>();
 
+    public bool IgnoreDotNetSdkPatchVersion { get; init; }
+
     public static T Create<T>(
         IReadOnlyDictionary<string, string> settings,
         PluginLoggerBase logger,

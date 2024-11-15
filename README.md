@@ -148,6 +148,7 @@ These settings are available in addition to the [Common Settings](#common-settin
 | `$(MSBuildCacheBlobUri)` | `Uri` | | Specifies the uri of the Azure Storage Blob. |
 | `$(MSBuildCacheManagedIdentityClientId)` | `string` | | Specifies the managed identity client id when using the "ManagedIdentity" credential type |
 | `$(MSBuildCacheInteractiveAuthTokenDirectory)` | `string` | "%LOCALAPPDATA%\MSBuildCache\AuthTokenCache" | Specifies a token cache directory when using the "Interactive" credential type |
+| `$(MSBuildCacheIgnoreDotNetSdkPatchVersion)` | `bool` | false | Whether to ignore the patch version when doing cache lookups. This trades off some correctness for the sake of getting cache hits when the SDK version isn't exactly the same. The default behavior is to consider the exact SDK version, eg. "8.0.404". With this setting set to true, it will instead use something like "8.0.4XX". Note that the major version, minor version, and feature bands are still considered. |
 
 When using the "ConnectionString" credential type, the connection string to the blob storage account must be provided in the `MSBCACHE_CONNECTIONSTRING` environment variable. This connection string needs both read and write access to the resource.
 
