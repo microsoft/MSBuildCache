@@ -22,6 +22,7 @@
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheGlobalPropertiesToIgnore</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheGetResultsForUnqueriedDependencies</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheTargetsToIgnore</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheIgnoreDotNetSdkPatchVersion</MSBuildCacheGlobalPropertiesToIgnore>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(MSBuildCacheEnabled)' != 'false'">
@@ -43,6 +44,7 @@
       <GlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore)</GlobalPropertiesToIgnore>
       <GetResultsForUnqueriedDependencies>$(MSBuildCacheGetResultsForUnqueriedDependencies)</GetResultsForUnqueriedDependencies>
       <TargetsToIgnore>$(MSBuildCacheTargetsToIgnore)</TargetsToIgnore>
+      <IgnoreDotNetSdkPatchVersion>$(MSBuildCacheIgnoreDotNetSdkPatchVersion)</IgnoreDotNetSdkPatchVersion>
     </ProjectCachePlugin>
   </ItemGroup>
 

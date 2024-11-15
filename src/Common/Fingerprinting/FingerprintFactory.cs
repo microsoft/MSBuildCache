@@ -12,6 +12,7 @@ using BuildXL.Cache.ContentStore.Hashing;
 using BuildXL.Cache.ContentStore.Interfaces.Extensions;
 using DotNet.Globbing;
 using Microsoft.MSBuildCache.Hashing;
+using NuGet.Versioning;
 
 namespace Microsoft.MSBuildCache.Fingerprinting;
 
@@ -111,7 +112,20 @@ public sealed class FingerprintFactory : IFingerprintFactory
                 string dotnetSdkVersion = nodeContext.ProjectInstance.GetPropertyValue("NETCoreSdkVersion");
                 if (!string.IsNullOrEmpty(dotnetSdkVersion))
                 {
-                    entries.Add(CreateFingerprintEntry($"DotnetSdkVersion: {dotnetSdkVersion}"));
+                    if (_pluginSettings.IgnoreDotNetSdkPatchVersion
+                        && NuGetVersion.TryParse(dotnetSdkVersion, out NuGetVersion? parsedDotnetSdkVersion))
+                    {
+                        // The "feature band" indicates the feature set and is aligned with the Visual Studio version. It's "C00" in a version like A.B.CDD
+                        // Extract it by removing the last two digits of the patch number, eg 123 -> 1.
+                        int featureBand = parsedDotnetSdkVersion.Patch / 100;
+
+                        // Eg: "8.0.404" -> "8.0.4XX", or "9.0.100-rc.2.24474.11" -> "9.0.100"
+                        entries.Add(CreateFingerprintEntry($"DotnetSdkVersion: {parsedDotnetSdkVersion.Major}.{parsedDotnetSdkVersion.Minor}.{featureBand}XX"));
+                    }
+                    else
+                    {
+                        entries.Add(CreateFingerprintEntry($"DotnetSdkVersion: {dotnetSdkVersion}"));
+                    }
                 }
 
                 // Add predicted inputs
