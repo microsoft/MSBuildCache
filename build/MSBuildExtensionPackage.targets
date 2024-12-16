@@ -32,8 +32,9 @@
     </ItemGroup>
 
     <ItemGroup>
-      <!-- Somewhat hard-code this as there isn't a good way to identify it -->
+      <!-- Somewhat hard-code these as there isn't a good way to identify them -->
       <BuildOutputInPackage Include="@(None-&gt;WithMetadataValue('Link', 'native\amd64\rocksdb.dll'))" TargetPath="%(None.Link)" />
+      <BuildOutputInPackage Include="@(None-&gt;WithMetadataValue('Link', 'runtimes\win-x64\native\msalruntime.dll'))" TargetPath="%(None.Link)" />
     </ItemGroup>
   </Target>
 

@@ -20,6 +20,7 @@ using BuildXL.Cache.MemoizationStore.Distributed.Stores;
 using BuildXL.Cache.MemoizationStore.Interfaces.Caches;
 using BuildXL.Cache.MemoizationStore.Interfaces.Sessions;
 using BuildXL.Cache.MemoizationStore.Sessions;
+using BuildXL.Utilities.Tracing;
 using Microsoft.Build.Experimental.ProjectCache;
 using Microsoft.MSBuildCache.Caching;
 
@@ -81,7 +82,7 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase<
 
         logger.LogMessage($"Using cache universe '{Settings.CacheUniverse}' as '{cacheUniverse}'.");
 
-        IAzureStorageCredentials credentials = CreateAzureStorageCredentials(Settings, cancellationToken);
+        IAzureStorageCredentials credentials = CreateAzureStorageCredentials(context, Settings, cancellationToken);
 
 #pragma warning disable CA2000 // Dispose objects before losing scope. Expected to be disposed by TwoLevelCache
         ICache remoteCache = CreateRemoteCache(new OperationContext(context, cancellationToken), cacheUniverse, Settings.RemoteCacheIsReadOnly, credentials);
@@ -110,7 +111,7 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase<
             Settings.AsyncCacheMaterialization);
     }
 
-    private IAzureStorageCredentials CreateAzureStorageCredentials(AzureBlobStoragePluginSettings settings, CancellationToken cancellationToken)
+    private IAzureStorageCredentials CreateAzureStorageCredentials(Context context, AzureBlobStoragePluginSettings settings, CancellationToken cancellationToken)
     {
         switch (settings.CredentialsType)
         {
@@ -121,11 +122,9 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase<
                     throw new InvalidOperationException($"{nameof(AzureBlobStoragePluginSettings.BlobUri)} is required when using {nameof(AzureBlobStoragePluginSettings.CredentialsType)}={settings.CredentialsType}");
                 }
 
-                // InteractiveClientStorageCredentials expects the directory to exist.
-                // TODO: Remove after the bug fix makes it into BXL.
-                Directory.CreateDirectory(settings.InteractiveAuthTokenDirectory);
-
-                return new InteractiveClientStorageCredentials(settings.InteractiveAuthTokenDirectory, settings.BlobUri, cancellationToken);
+                using StandardConsole console = new(colorize: false, animateTaskbar: false, supportsOverwriting: false, pathTranslator: null);
+                InteractiveClientTokenCredential tokenCredential = new(context, settings.InteractiveAuthTokenDirectory, GetHashForTokenIdentifier(settings.BlobUri), console, cancellationToken);
+                return new UriAzureStorageTokenCredential(tokenCredential, settings.BlobUri);
             }
             case AzureStorageCredentialsType.ConnectionString:
             {
@@ -201,4 +200,8 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase<
 
         return session;
     }
+
+    private static ContentHash GetHashForTokenIdentifier(Uri uri) => GetHashForTokenIdentifier(uri.ToString());
+
+    private static ContentHash GetHashForTokenIdentifier(string identifier) => HashInfoLookup.GetContentHasher(HashType.SHA256).GetContentHash(Encoding.UTF8.GetBytes(identifier));
 }

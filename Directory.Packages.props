@@ -2,7 +2,7 @@
 <Project>
   <PropertyGroup>
     <ArtifactsPackageVersion>19.239.34907-buildid28083504</ArtifactsPackageVersion>
-    <BuildXLPackageVersion>0.1.0-20240606.3</BuildXLPackageVersion>
+    <BuildXLPackageVersion>0.1.0-20241212.3</BuildXLPackageVersion>
     <MSBuildPackageVersion>17.9.5</MSBuildPackageVersion>
   </PropertyGroup>
   <ItemGroup>
@@ -40,14 +40,14 @@
     <PackageVersion Include="protobuf-net" Version="3.2.26" />
     <PackageVersion Include="protobuf-net.Core" Version="3.2.26" />
     <PackageVersion Include="protobuf-net.Grpc" Version="1.1.1" />
-    <PackageVersion Include="RocksDbNative" Version="8.1.1-20240419.2" />
-    <PackageVersion Include="RocksDbSharp" Version="8.1.1-20240419.2" />
+    <PackageVersion Include="RocksDbNative" Version="8.1.1-20241011.2" />
+    <PackageVersion Include="RocksDbSharp" Version="8.1.1-20241011.2" />
     <PackageVersion Include="System.Collections.Immutable" Version="8.0.0" />
     <PackageVersion Include="System.Memory" Version="4.5.5" />
     <PackageVersion Include="System.Private.ServiceModel" Version="4.10.3" />
     <PackageVersion Include="System.Reflection.Metadata" Version="8.0.0" />
     <PackageVersion Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
-    <PackageVersion Include="System.Text.Json" Version="8.0.0" />
+    <PackageVersion Include="System.Text.Json" Version="8.0.5" />
     <PackageVersion Include="System.Threading.Channels" Version="8.0.0" />
     <PackageVersion Include="System.Threading.Tasks.Dataflow" Version="8.0.0" />
   </ItemGroup>
