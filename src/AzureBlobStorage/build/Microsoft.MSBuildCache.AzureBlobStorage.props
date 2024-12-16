@@ -2,6 +2,11 @@
   <PropertyGroup>
     <MSBuildCacheAssembly Condition="'$(MSBuildRuntimeType)' != 'Core'">$(MSBuildThisFileDirectory)net472\Microsoft.MSBuildCache.AzureBlobStorage.dll</MSBuildCacheAssembly>
     <MSBuildCacheAssembly Condition="'$(MSBuildRuntimeType)' == 'Core'">$(MSBuildThisFileDirectory)net8.0\Microsoft.MSBuildCache.AzureBlobStorage.dll</MSBuildCacheAssembly>
+
+    <!-- Enable interactive auth by default, unless running in Azure Pipelines or GitHub Actions -->
+    <MSBuildCacheAllowInteractiveAuth Condition="'$(MSBuildCacheAllowInteractiveAuth)' == '' and '$(TF_BUILD)' != ''">false</MSBuildCacheAllowInteractiveAuth>
+    <MSBuildCacheAllowInteractiveAuth Condition="'$(MSBuildCacheAllowInteractiveAuth)' == '' and '$(GITHUB_ACTIONS)' != ''">false</MSBuildCacheAllowInteractiveAuth>
+    <MSBuildCacheAllowInteractiveAuth Condition="'$(MSBuildCacheAllowInteractiveAuth)' == ''">true</MSBuildCacheAllowInteractiveAuth>
   </PropertyGroup>
 
   <Import Project="Microsoft.MSBuildCache.Common.props" />

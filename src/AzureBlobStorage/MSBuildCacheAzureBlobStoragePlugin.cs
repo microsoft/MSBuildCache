@@ -2,11 +2,15 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Azure.Core;
+using Azure.Identity;
+using BuildXL.Cache.BuildCacheResource.Helper;
+using BuildXL.Cache.BuildCacheResource.Model;
 using BuildXL.Cache.ContentStore.Distributed.Blob;
 using BuildXL.Cache.ContentStore.Distributed.NuCache;
 using BuildXL.Cache.ContentStore.Hashing;
@@ -20,6 +24,7 @@ using BuildXL.Cache.MemoizationStore.Distributed.Stores;
 using BuildXL.Cache.MemoizationStore.Interfaces.Caches;
 using BuildXL.Cache.MemoizationStore.Interfaces.Sessions;
 using BuildXL.Cache.MemoizationStore.Sessions;
+using BuildXL.Cache.MemoizationStore.Stores;
 using BuildXL.Utilities.Tracing;
 using Microsoft.Build.Experimental.ProjectCache;
 using Microsoft.MSBuildCache.Caching;
@@ -82,10 +87,8 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase<
 
         logger.LogMessage($"Using cache universe '{Settings.CacheUniverse}' as '{cacheUniverse}'.");
 
-        IAzureStorageCredentials credentials = CreateAzureStorageCredentials(context, Settings, cancellationToken);
-
 #pragma warning disable CA2000 // Dispose objects before losing scope. Expected to be disposed by TwoLevelCache
-        ICache remoteCache = CreateRemoteCache(new OperationContext(context, cancellationToken), cacheUniverse, Settings.RemoteCacheIsReadOnly, credentials);
+        ICache remoteCache = await CreateRemoteCacheAsync(new OperationContext(context, cancellationToken), Settings, cacheUniverse);
 #pragma warning restore CA2000 // Dispose objects before losing scope
 
         ICacheSession remoteCacheSession = await StartCacheSessionAsync(context, remoteCache, "remote");
@@ -112,81 +115,61 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase<
             Settings.SkipUnchangedOutputFiles);
     }
 
-    private IAzureStorageCredentials CreateAzureStorageCredentials(Context context, AzureBlobStoragePluginSettings settings, CancellationToken cancellationToken)
+    private async Task<ICache> CreateRemoteCacheAsync(
+        OperationContext context,
+        AzureBlobStoragePluginSettings settings,
+        string cacheUniverse)
     {
-        switch (settings.CredentialsType)
+        List<BlobCacheStorageAccountName> accounts;
+        IBlobCacheContainerSecretsProvider secretsProvider;
+        string? connectionString;
+        BuildCacheConfiguration? buildCacheConfiguration = await GetBuildCacheConfigurationAsync(context, settings);
+        if (buildCacheConfiguration is not null)
         {
-            case AzureStorageCredentialsType.Interactive:
+            accounts = new List<BlobCacheStorageAccountName>(buildCacheConfiguration!.Shards.Count);
+            foreach (BuildCacheShard shard in buildCacheConfiguration.Shards)
             {
-                if (settings.BlobUri is null)
-                {
-                    throw new InvalidOperationException($"{nameof(AzureBlobStoragePluginSettings.BlobUri)} is required when using {nameof(AzureBlobStoragePluginSettings.CredentialsType)}={settings.CredentialsType}");
-                }
-
-                using StandardConsole console = new(colorize: false, animateTaskbar: false, supportsOverwriting: false, pathTranslator: null);
-                InteractiveClientTokenCredential tokenCredential = new(context, settings.InteractiveAuthTokenDirectory, GetHashForTokenIdentifier(settings.BlobUri), console, cancellationToken);
-                return new UriAzureStorageTokenCredential(tokenCredential, settings.BlobUri);
+                accounts.Add(shard.GetAccountName());
             }
-            case AzureStorageCredentialsType.ConnectionString:
-            {
-                string? connectionString = Environment.GetEnvironmentVariable(AzureBlobConnectionStringEnvVar);
-                if (string.IsNullOrEmpty(connectionString))
-                {
-                    throw new InvalidOperationException($"Required environment variable '{AzureBlobConnectionStringEnvVar}' not set");
-                }
 
-                return new SecretBasedAzureStorageCredentials(connectionString);
-            }
-            case AzureStorageCredentialsType.ManagedIdentity:
-            {
-                if (settings.BlobUri is null)
-                {
-                    throw new InvalidOperationException($"{nameof(AzureBlobStoragePluginSettings.BlobUri)} is required when using {nameof(AzureBlobStoragePluginSettings.CredentialsType)}={settings.CredentialsType}");
-                }
-
-                if (string.IsNullOrEmpty(settings.ManagedIdentityClientId))
-                {
-                    throw new InvalidOperationException($"{nameof(AzureBlobStoragePluginSettings.ManagedIdentityClientId)} is required when using {nameof(AzureBlobStoragePluginSettings.CredentialsType)}={settings.CredentialsType}");
-                }
-
-                return new ManagedIdentityAzureStorageCredentials(settings.ManagedIdentityClientId!, settings.BlobUri);
-            }
-            case AzureStorageCredentialsType.TokenCredential:
-            {
-                if (settings.BlobUri is null)
-                {
-                    throw new InvalidOperationException($"{nameof(AzureBlobStoragePluginSettings.BlobUri)} is required when using {nameof(AzureBlobStoragePluginSettings.CredentialsType)}={settings.CredentialsType}");
-                }
-
-                // Allow the environment variable to supersede the constuctor-provided value.
-                string? accessToken = Environment.GetEnvironmentVariable(AzureBlobAccessTokenEnvVar);
-                TokenCredential? tokenCredential = !string.IsNullOrEmpty(accessToken)
-                        ? new StaticTokenCredential(accessToken)
-                        : _tokenCredential;
-                if (tokenCredential is null)
-                {
-                    throw new InvalidOperationException($"Required environment variable '{AzureBlobAccessTokenEnvVar}' not set");
-                }
-
-                return new TokenCredentialAzureStorageCredentials(settings.BlobUri, tokenCredential);
-            }
-            default:
-            {
-                throw new InvalidOperationException($"Unknown {nameof(AzureBlobStoragePluginSettings.CredentialsType)}: {settings.CredentialsType}");
-            }
+            secretsProvider = new AzureBuildCacheSecretsProvider(buildCacheConfiguration);
         }
-    }
+        else if (!string.IsNullOrEmpty(connectionString = Environment.GetEnvironmentVariable(AzureBlobConnectionStringEnvVar)))
+        {
+            SecretBasedAzureStorageCredentials credentials = new(connectionString);
+            BlobCacheStorageAccountName accountName = BlobCacheStorageAccountName.Parse(credentials.GetAccountName());
+            accounts = [accountName];
+            secretsProvider = new StaticBlobCacheSecretsProvider(credentials);
+        }
+        else if (settings.BlobUri is not null)
+        {
+            TokenCredential tokenCredential = GetTokenCredential(context, settings, settings.BlobUri.ToString());
+            UriAzureStorageTokenCredential credentials = new UriAzureStorageTokenCredential(tokenCredential, settings.BlobUri);
+            BlobCacheStorageAccountName accountName = BlobCacheStorageAccountName.Parse(credentials.GetAccountName());
+            accounts = [accountName];
+            secretsProvider = new StaticBlobCacheSecretsProvider(credentials);
+        }
+        else
+        {
+            throw new InvalidOperationException($"Either {nameof(AzureBlobStoragePluginSettings.BuildCacheConfigurationFile)}, {nameof(AzureBlobStoragePluginSettings.BuildCacheResourceId)}, or {nameof(AzureBlobStoragePluginSettings.BlobUri)} is required.");
+        }
 
-    private static ICache CreateRemoteCache(OperationContext context, string cacheUniverse, bool isReadOnly, IAzureStorageCredentials credentials)
-    {
-        BlobCacheStorageAccountName accountName = BlobCacheStorageAccountName.Parse(credentials.GetAccountName());
+        ShardingScheme shardingScheme = new(
+            accounts.Count == 1 ? ShardingAlgorithm.SingleShard : ShardingAlgorithm.JumpHash,
+            accounts);
+
         AzureBlobStorageCacheFactory.Configuration cacheConfig = new(
-            ShardingScheme: new ShardingScheme(ShardingAlgorithm.SingleShard, [accountName]),
+            ShardingScheme: shardingScheme,
             Universe: cacheUniverse,
             Namespace: AzureBlobStorageCacheFactory.Configuration.DefaultNamespace,
             RetentionPolicyInDays: null,
-            IsReadOnly: isReadOnly);
-        return AzureBlobStorageCacheFactory.Create(context, cacheConfig, new StaticBlobCacheSecretsProvider(credentials)).Cache;
+            IsReadOnly: settings.RemoteCacheIsReadOnly)
+        {
+            BuildCacheConfiguration = buildCacheConfiguration,
+            ContentHashListReplacementCheckBehavior = ContentHashListReplacementCheckBehavior.AllowPinElision,
+        };
+
+        return AzureBlobStorageCacheFactory.Create(context, cacheConfig, secretsProvider).Cache;
     }
 
     private static async Task<ICacheSession> StartCacheSessionAsync(Context context, ICache cache, string name)
@@ -202,7 +185,57 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase<
         return session;
     }
 
-    private static ContentHash GetHashForTokenIdentifier(Uri uri) => GetHashForTokenIdentifier(uri.ToString());
+    private async Task<BuildCacheConfiguration?> GetBuildCacheConfigurationAsync(OperationContext context, AzureBlobStoragePluginSettings settings)
+    {
+        if (!string.IsNullOrEmpty(settings.BuildCacheConfigurationFile))
+        {
+            string credentials = BlobCacheCredentialsHelper.ReadCredentials(new BuildXL.Cache.ContentStore.Interfaces.FileSystem.AbsolutePath(settings.BuildCacheConfigurationFile!), BlobCacheCredentialsHelper.FileEncryption.None);
+            HostedPoolBuildCacheConfiguration hostedPoolBuildCacheConfiguration = BuildCacheResourceHelper.LoadFromString(credentials);
 
-    private static ContentHash GetHashForTokenIdentifier(string identifier) => HashInfoLookup.GetContentHasher(HashType.SHA256).GetContentHash(Encoding.UTF8.GetBytes(identifier));
+            if (!hostedPoolBuildCacheConfiguration.TrySelectBuildCache(hostedPoolActiveBuildCacheName: null, out BuildCacheConfiguration? buildCacheConfiguration))
+            {
+                throw new InvalidOperationException("No available caches");
+            }
+
+            return buildCacheConfiguration;
+        }
+
+        if (!string.IsNullOrEmpty(settings.BuildCacheResourceId))
+        {
+            TokenCredential tokenCredential = GetTokenCredential(context, settings, settings.BuildCacheResourceId!);
+            return (await BuildCacheConfigurationProvider.TryGetBuildCacheConfigurationAsync(tokenCredential, settings.BuildCacheResourceId!, context.Token))
+                .ThrowIfFailure()
+                .Result;
+        }
+
+        return null;
+    }
+
+    private TokenCredential GetTokenCredential(OperationContext context, AzureBlobStoragePluginSettings settings, string tokenIdentifier)
+    {
+        string? accessToken = Environment.GetEnvironmentVariable(AzureBlobAccessTokenEnvVar);
+        if (!string.IsNullOrEmpty(accessToken))
+        {
+            return new StaticTokenCredential(accessToken);
+        }
+
+        if (_tokenCredential is not null)
+        {
+            return _tokenCredential;
+        }
+
+        if (!string.IsNullOrEmpty(settings.ManagedIdentityClientId))
+        {
+            return new ManagedIdentityCredential(settings.ManagedIdentityClientId);
+        }
+
+        if (settings.AllowInteractiveAuth)
+        {
+            using StandardConsole console = new(colorize: false, animateTaskbar: false, supportsOverwriting: false, pathTranslator: null);
+            ContentHash persistentTokenIdentifier = HashInfoLookup.GetContentHasher(HashType.SHA256).GetContentHash(Encoding.UTF8.GetBytes(tokenIdentifier));
+            return new InteractiveClientTokenCredential(context, settings.InteractiveAuthTokenDirectory, persistentTokenIdentifier, console, context.Token);
+        }
+
+        throw new InvalidOperationException("Authentication parameters must be provided or interactive auth must be allowed.");
+    }
 }

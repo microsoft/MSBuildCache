@@ -1,19 +1,23 @@
 <Project>
   <PropertyGroup Condition="'$(MSBuildCacheEnabled)' != 'false'">
-    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheCredentialsType</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheBlobUri</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheManagedIdentityClientId</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheAllowInteractiveAuth</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheInteractiveAuthTokenDirectory</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheBuildCacheConfigurationFile</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheBuildCacheResourceId</MSBuildCacheGlobalPropertiesToIgnore>
   </PropertyGroup>
 
   <Import Project="Microsoft.MSBuildCache.Common.targets" />
 
   <ItemGroup Condition="'$(MSBuildCacheEnabled)' != 'false'">
     <ProjectCachePlugin Update="$(MSBuildCacheAssembly)">
-      <CredentialsType>$(MSBuildCacheCredentialsType)</CredentialsType>
       <BlobUri>$(MSBuildCacheBlobUri)</BlobUri>
       <ManagedIdentityClientId>$(MSBuildCacheManagedIdentityClientId)</ManagedIdentityClientId>
+      <AllowInteractiveAuth>$(MSBuildCacheAllowInteractiveAuth)</AllowInteractiveAuth>
       <InteractiveAuthTokenDirectory>$(MSBuildCacheInteractiveAuthTokenDirectory)</InteractiveAuthTokenDirectory>
+      <BuildCacheConfigurationFile>$(MSBuildCacheBuildCacheConfigurationFile)</BuildCacheConfigurationFile>
+      <BuildCacheResourceId>$(MSBuildCacheBuildCacheResourceId)</BuildCacheResourceId>
   </ProjectCachePlugin>
   </ItemGroup>
 </Project>
