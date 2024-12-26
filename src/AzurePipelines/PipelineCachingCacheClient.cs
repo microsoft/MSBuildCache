@@ -105,8 +105,9 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         int maxConcurrentCacheContentOperations,
         bool remoteCacheIsReadOnly,
         bool enableAsyncPublishing,
-        bool enableAsyncMaterialization)
-        : base(rootContext, fingerprintFactory, hasher, repoRoot, nugetPackageRoot, getFileRealizationMode, localCache, localCAS, maxConcurrentCacheContentOperations, enableAsyncPublishing, enableAsyncMaterialization)
+        bool enableAsyncMaterialization,
+        bool skipUnchangedOutputFiles)
+        : base(rootContext, fingerprintFactory, hasher, repoRoot, nugetPackageRoot, getFileRealizationMode, localCache, localCAS, maxConcurrentCacheContentOperations, enableAsyncPublishing, enableAsyncMaterialization, skipUnchangedOutputFiles)
     {
         _remoteCacheIsReadOnly = remoteCacheIsReadOnly;
         _universe = $"pccc-{(int)hasher.Info.HashType}-{InternalSeed}-" + (string.IsNullOrEmpty(universe) ? "DEFAULT" : universe);

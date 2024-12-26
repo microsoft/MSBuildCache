@@ -43,6 +43,7 @@ public abstract class CacheClient : ICacheClient
     private readonly ICache _localCache;
     private readonly string _nugetPackageRoot;
     private readonly bool _canCloneInNugetCachePath;
+    private readonly LocalCacheStateManager? _localCacheStateManager;
 
     protected CacheClient(
         Context rootContext,
@@ -55,7 +56,8 @@ public abstract class CacheClient : ICacheClient
         IContentSession localCas,
         int maxConcurrentCacheContentOperations,
         bool enableAsyncPublishing,
-        bool enableAsyncMaterialization)
+        bool enableAsyncMaterialization,
+        bool skipUnchangedOutputFiles)
     {
         RootContext = rootContext;
         _fingerprintFactory = fingerprintFactory;
@@ -89,6 +91,11 @@ public abstract class CacheClient : ICacheClient
         }
 
         _canCloneInNugetCachePath = _copyOnWriteFilesystem.CopyOnWriteLinkSupportedInDirectoryTree(_nugetPackageRoot);
+
+        if (skipUnchangedOutputFiles)
+        {
+            _localCacheStateManager = new LocalCacheStateManager(repoRoot);
+        }
     }
 
     protected Tracer Tracer { get; } = new Tracer(nameof(CacheClient));
@@ -341,6 +348,11 @@ public abstract class CacheClient : ICacheClient
             (nodeBuildResultHash, nodeBuildResultBytes),
             pathSetBytes,
             cancellationToken);
+
+        if (_localCacheStateManager is not null)
+        {
+            await _localCacheStateManager.WriteStateFileAsync(nodeContext, nodeBuildResult);
+        }
     }
 
     public async Task<(PathSet?, NodeBuildResult?)> GetNodeAsync(
@@ -447,8 +459,22 @@ public abstract class CacheClient : ICacheClient
         {
             List<Task> tasks = new(nodeBuildResult.PackageFilesToCopy.Count + 1);
 
-            Dictionary<string, ContentHash> outputsToPlace = new(nodeBuildResult.Outputs.Count - nodeBuildResult.PackageFilesToCopy.Count);
-            foreach (KeyValuePair<string, ContentHash> kvp in nodeBuildResult.Outputs)
+            IEnumerable<KeyValuePair<string, ContentHash>> outputs;
+            int outputsToPlaceSizeEstimate;
+            if (_localCacheStateManager is not null)
+            {
+                List<KeyValuePair<string, ContentHash>> outOfDateFiles = await _localCacheStateManager.GetOutOfDateFilesAsync(context, nodeContext, nodeBuildResult);
+                outputs = outOfDateFiles;
+                outputsToPlaceSizeEstimate = outOfDateFiles.Count;
+            }
+            else
+            {
+                outputs = nodeBuildResult.Outputs;
+                outputsToPlaceSizeEstimate = nodeBuildResult.Outputs.Count - nodeBuildResult.PackageFilesToCopy.Count;
+            }
+
+            Dictionary<string, ContentHash> outputsToPlace = new(outputsToPlaceSizeEstimate);
+            foreach (KeyValuePair<string, ContentHash> kvp in outputs)
             {
                 string destinationAbsolutePath = Path.Combine(RepoRoot, kvp.Key);
                 if (nodeBuildResult.PackageFilesToCopy.TryGetValue(kvp.Key, out string? packageFile))
@@ -465,8 +491,13 @@ public abstract class CacheClient : ICacheClient
             Task placeFilesTask = cacheEntry.PlaceFilesAsync(context, outputsToPlace, ct);
             tasks.Add(placeFilesTask);
 
+            if (_localCacheStateManager is not null)
+            {
+                await _localCacheStateManager.WriteStateFileAsync(nodeContext, nodeBuildResult);
+            }
+
             await Task.WhenAll(tasks);
-        };
+        }
 
         if (_enableAsyncMaterialization)
         {
