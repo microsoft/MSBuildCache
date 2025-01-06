@@ -107,6 +107,8 @@ public class PluginSettings
 
     public bool IgnoreDotNetSdkPatchVersion { get; init; }
 
+    public bool SkipUnchangedOutputFiles { get; init; }
+
     public static T Create<T>(
         IReadOnlyDictionary<string, string> settings,
         PluginLoggerBase logger,
