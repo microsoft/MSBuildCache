@@ -490,13 +490,12 @@ public abstract class CacheClient : ICacheClient
 
             Task placeFilesTask = cacheEntry.PlaceFilesAsync(context, outputsToPlace, ct);
             tasks.Add(placeFilesTask);
+            await Task.WhenAll(tasks);
 
             if (_localCacheStateManager is not null)
             {
                 await _localCacheStateManager.WriteStateFileAsync(nodeContext, nodeBuildResult);
             }
-
-            await Task.WhenAll(tasks);
         }
 
         if (_enableAsyncMaterialization)
