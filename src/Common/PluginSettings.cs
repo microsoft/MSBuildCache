@@ -390,7 +390,7 @@ public class PluginSettings
 
                     return SettingParseResult.Success;
                 }
-            };
+            }
         }
 
         settingValue = null;
