@@ -453,7 +453,7 @@ public abstract class CacheClient : ICacheClient
             {
                 Tracer.Warning(context, $"Package content `{sourceAbsolutePath}` was not copied to `{destinationAbsolutePath}` because package content `{firstSourceAbsolutePath}` already was.");
             }
-        };
+        }
 
         async Task PlaceFilesAsync(CancellationToken ct)
         {
