@@ -543,6 +543,10 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         // If file access reports are disabled in MSBuild we can't cache anything as we don't know what to cache.
         if (!_hasHadFileAccessReport)
         {
+            // We still want to dump the fingerprint to help debug cache misses.
+            // However, note that because we do not have the file accesses, we cannot know the PathSet.
+            // This means that any cache miss analysis will need to take this into account.
+            await DumpFingerprintLogAsync(logger, nodeContext, null);
             return;
         }
 
