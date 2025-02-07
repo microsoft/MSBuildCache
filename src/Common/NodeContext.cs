@@ -12,8 +12,8 @@ namespace Microsoft.MSBuildCache;
 
 public sealed class NodeContext
 {
-    private static readonly byte[] PropertyHashDelimiter = new byte[] { 0x01 };
-    private static readonly byte[] PropertyValueHashDelimiter = new byte[] { 0x02 };
+    private static readonly byte[] PropertyHashDelimiter = [0x01];
+    private static readonly byte[] PropertyValueHashDelimiter = [0x02];
 
     private readonly string _logDirectory;
     private bool _logDirectoryCreated;
@@ -25,6 +25,7 @@ public sealed class NodeContext
         string projectFileRelativePath,
         IReadOnlyDictionary<string, string> filteredGlobalProperties,
         IReadOnlyList<string> inputs,
+        string? referenceAssemblyRelativePath,
         HashSet<string> targetNames)
     {
         Id = GenerateId(projectFileRelativePath, filteredGlobalProperties);
@@ -34,6 +35,7 @@ public sealed class NodeContext
         ProjectFileRelativePath = projectFileRelativePath;
         FilteredGlobalProperties = filteredGlobalProperties;
         Inputs = inputs;
+        ReferenceAssemblyRelativePath = referenceAssemblyRelativePath;
         TargetNames = targetNames;
     }
 
@@ -63,6 +65,8 @@ public sealed class NodeContext
     public IReadOnlyDictionary<string, string> FilteredGlobalProperties { get; }
 
     public IReadOnlyList<string> Inputs { get; }
+
+    public string? ReferenceAssemblyRelativePath { get; }
 
     public HashSet<string> TargetNames { get; }
 

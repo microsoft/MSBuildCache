@@ -293,7 +293,15 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             nodeDependencies.Add(node, dependencies);
 
             NodeDescriptor nodeDescriptor = _nodeDescriptorFactory.Create(node.ProjectInstance);
-            NodeContext nodeContext = new(Settings.LogDirectory, node.ProjectInstance, dependencies, parserInfo.ProjectFileRelativePath, nodeDescriptor.FilteredGlobalProperties, inputs, targetNames);
+            NodeContext nodeContext = new(
+                Settings.LogDirectory,
+                node.ProjectInstance,
+                dependencies,
+                parserInfo.ProjectFileRelativePath,
+                nodeDescriptor.FilteredGlobalProperties,
+                inputs,
+                parserInfo.ReferenceAssemblyRelativePath,
+                targetNames);
 
             dumpParserInfoTasks.Add(Task.Run(() => DumpParserInfoAsync(logger, nodeContext, parserInfo), cancellationToken));
             _nodeContexts.Add(nodeDescriptor, nodeContext);

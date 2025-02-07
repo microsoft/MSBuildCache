@@ -14,9 +14,7 @@ namespace Microsoft.MSBuildCache.Parsing;
 internal sealed class ProjectPredictionCollector : IProjectPredictionCollector
 {
     private static readonly char[] DirectorySeparatorChars = { Path.DirectorySeparatorChar };
-    private readonly string _repoRoot;
     private readonly string _projectDirectory;
-    private readonly string _projectFileRelativePath;
 
     // A cache of paths (relative or absolute) to their absolute form.
     // This is scoped per build file since the paths are relative to different directories.
@@ -24,29 +22,27 @@ internal sealed class ProjectPredictionCollector : IProjectPredictionCollector
 
     private readonly ConcurrentDictionary<string, PredictedInput> _inputs = new(StringComparer.OrdinalIgnoreCase);
 
-    public ProjectPredictionCollector(ProjectGraphNode node, string repoRoot)
+    public ProjectPredictionCollector(ProjectGraphNode node)
     {
         Node = node;
-        _repoRoot = repoRoot;
-
-        string projectFilePath = node.ProjectInstance.FullPath;
-        _projectDirectory = Path.GetDirectoryName(projectFilePath)!;
-
-        _projectFileRelativePath = projectFilePath.MakePathRelativeTo(_repoRoot) ?? throw new ArgumentException($"Project \"{projectFilePath}\" is not under the repo root \"{repoRoot}\"", nameof(node));
+        _projectDirectory = Path.GetDirectoryName(node.ProjectInstance.FullPath)!;
     }
 
     public ProjectGraphNode Node { get; }
 
-    public ParserInfo ToParserInfo()
+    public IReadOnlyList<PredictedInput> Inputs
     {
-        var inputs = new PredictedInput[_inputs.Count];
-        int inputIndex = 0;
-        foreach (KeyValuePair<string, PredictedInput> kvp in _inputs)
+        get
         {
-            inputs[inputIndex++] = kvp.Value;
-        }
+            var inputs = new PredictedInput[_inputs.Count];
+            int inputIndex = 0;
+            foreach (KeyValuePair<string, PredictedInput> kvp in _inputs)
+            {
+                inputs[inputIndex++] = kvp.Value;
+            }
 
-        return new ParserInfo(_projectFileRelativePath, inputs);
+            return inputs;
+        }
     }
 
     public void AddInputFile(string path, ProjectInstance projectInstance, string predictorName)
