@@ -357,9 +357,10 @@ public abstract class CacheClient : ICacheClient
 
     public async Task<(PathSet?, NodeBuildResult?)> GetNodeAsync(
         NodeContext nodeContext,
+        bool materializeOutputs,
         CancellationToken cancellationToken)
     {
-        (PathSet? PathSet, NodeBuildResult? NodeBuildResult) result = await GetNodeInternalAsync(nodeContext, cancellationToken);
+        (PathSet? PathSet, NodeBuildResult? NodeBuildResult) result = await GetNodeInternalAsync(nodeContext, materializeOutputs, cancellationToken);
 
         // On cache miss ensure all dependencies are materialized before returning to MSBuild so that MSBuild's execution will actually work.
         if (_enableAsyncMaterialization && result.NodeBuildResult == null)
@@ -378,6 +379,7 @@ public abstract class CacheClient : ICacheClient
 
     public async Task<(PathSet?, NodeBuildResult?)> GetNodeInternalAsync(
         NodeContext nodeContext,
+        bool materializeOutputs,
         CancellationToken cancellationToken)
     {
         Context context = new(RootContext);
@@ -498,23 +500,26 @@ public abstract class CacheClient : ICacheClient
             }
         }
 
-        if (_enableAsyncMaterialization)
+        if (materializeOutputs)
         {
-            _materializationTasks.TryAdd(
-                nodeContext,
-                // Avoid using a cancellation token since MSBuild will cancel it when it thinks the build is finished and we await these tasks at that point.
-                // Note that this means that we effectively cannot cancel this operation once started and the user will have to wait.
-                Task.Run(
-                    async () =>
-                    {
-                        await PlaceFilesAsync(CancellationToken.None);
-                        _materializationTasks.TryRemove(nodeContext, out _);
-                    },
-                    CancellationToken.None));
-        }
-        else
-        {
-            await PlaceFilesAsync(cancellationToken);
+            if (_enableAsyncMaterialization)
+            {
+                _materializationTasks.TryAdd(
+                    nodeContext,
+                    // Avoid using a cancellation token since MSBuild will cancel it when it thinks the build is finished and we await these tasks at that point.
+                    // Note that this means that we effectively cannot cancel this operation once started and the user will have to wait.
+                    Task.Run(
+                        async () =>
+                        {
+                            await PlaceFilesAsync(CancellationToken.None);
+                            _materializationTasks.TryRemove(nodeContext, out _);
+                        },
+                        CancellationToken.None));
+            }
+            else
+            {
+                await PlaceFilesAsync(cancellationToken);
+            }
         }
 
         return (pathSet, nodeBuildResult);
