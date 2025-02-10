@@ -334,7 +334,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         if (Settings.GetResultsForUnqueriedDependencies)
         {
             ConcurrentDictionary<NodeContext, Lazy<Task<CacheResult>>> cacheResults = new(concurrencyLevel: Environment.ProcessorCount, _nodeContexts.Count);
-            _getCacheResultAsync = (nodeContext, logger, cancellationToken) => GetCacheResultRecursivelyAsync(cacheResults, nodeContext, logger, cancellationToken);
+            _getCacheResultAsync = (nodeContext, logger, cancellationToken) => GetCacheResultRecursivelyAsync(cacheResults, nodeContext, materializeOutputs: true, logger, cancellationToken);
         }
         else
         {
@@ -405,6 +405,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     private async Task<CacheResult> GetCacheResultRecursivelyAsync(
         ConcurrentDictionary<NodeContext, Lazy<Task<CacheResult>>> cacheResults,
         NodeContext nodeContext,
+        bool materializeOutputs,
         PluginLoggerBase logger,
         CancellationToken cancellationToken)
     {
@@ -413,12 +414,21 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         return await cacheResults.GetOrAdd(nodeContext, new Lazy<Task<CacheResult>>(
             async () =>
             {
+                bool isOuterBuild = nodeContext.ProjectInstance.IsOuterBuild();
+
                 foreach (NodeContext dependency in nodeContext.Dependencies)
                 {
                     if (dependency.BuildResult == null)
                     {
+                        // When querying recursively, avoid materializing the outputs. That node was never directly queried, so its outputs
+                        // are not desired from the caller. Note that there is an assumption that the node won't be queried directly later
+                        // as that would break the expected "bottom-up" build order of graph builds.
+                        // Special-case the outer build of a multitargeting project which dependencies on the inner builds for which we do
+                        // want the outputs.
+                        bool materializeOutputs = isOuterBuild && dependency.ProjectInstance.IsInnerBuild();
+
                         logger.LogMessage($"Querying cache for missing build result for dependency '{dependency.Id}'");
-                        CacheResult dependencyResult = await GetCacheResultRecursivelyAsync(cacheResults, dependency, logger, cancellationToken);
+                        CacheResult dependencyResult = await GetCacheResultRecursivelyAsync(cacheResults, dependency, materializeOutputs, logger, cancellationToken);
                         logger.LogMessage($"Dependency '{dependency.Id}' cache result: '{dependencyResult.ResultType}'");
 
                         if (dependencyResult.ResultType != CacheResultType.CacheHit)
@@ -430,7 +440,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
                     }
                 }
 
-                return await GetCacheResultSingleAsync(nodeContext, logger, cancellationToken);
+                return await GetCacheResultSingleAsync(nodeContext, materializeOutputs, logger, cancellationToken);
             })).Value;
     }
 
@@ -446,10 +456,10 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             }
         }
 
-        return await GetCacheResultSingleAsync(nodeContext, logger, cancellationToken);
+        return await GetCacheResultSingleAsync(nodeContext, materializeOutputs: true, logger, cancellationToken);
     }
 
-    private async Task<CacheResult> GetCacheResultSingleAsync(NodeContext nodeContext, PluginLoggerBase logger, CancellationToken cancellationToken)
+    private async Task<CacheResult> GetCacheResultSingleAsync(NodeContext nodeContext, bool materializeOutputs, PluginLoggerBase logger, CancellationToken cancellationToken)
     {
         if (!Initialized)
         {
@@ -458,7 +468,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
         nodeContext.SetStartTime();
 
-        (PathSet? pathSet, NodeBuildResult? nodeBuildResult) = await _cacheClient.GetNodeAsync(nodeContext, cancellationToken);
+        (PathSet? pathSet, NodeBuildResult? nodeBuildResult) = await _cacheClient.GetNodeAsync(nodeContext, materializeOutputs, cancellationToken);
         if (nodeBuildResult is null)
         {
             Interlocked.Increment(ref _cacheMissCount);
