@@ -406,6 +406,8 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         return await cacheResults.GetOrAdd(nodeContext, new Lazy<Task<CacheResult>>(
             async () =>
             {
+                bool isOuterBuild = nodeContext.ProjectInstance.IsOuterBuild();
+
                 foreach (NodeContext dependency in nodeContext.Dependencies)
                 {
                     if (dependency.BuildResult == null)
@@ -413,8 +415,12 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
                         // When querying recursively, avoid materializing the outputs. That node was never directly queried, so its outputs
                         // are not desired from the caller. Note that there is an assumption that the node won't be queried directly later
                         // as that would break the expected "bottom-up" build order of graph builds.
+                        // Special-case the outer build of a multitargeting project which dependencies on the inner builds for which we do
+                        // want the outputs.
+                        bool materializeOutputs = isOuterBuild && dependency.ProjectInstance.IsInnerBuild();
+
                         logger.LogMessage($"Querying cache for missing build result for dependency '{dependency.Id}'");
-                        CacheResult dependencyResult = await GetCacheResultRecursivelyAsync(cacheResults, dependency, materializeOutputs: false, logger, cancellationToken);
+                        CacheResult dependencyResult = await GetCacheResultRecursivelyAsync(cacheResults, dependency, materializeOutputs, logger, cancellationToken);
                         logger.LogMessage($"Dependency '{dependency.Id}' cache result: '{dependencyResult.ResultType}'");
 
                         if (dependencyResult.ResultType != CacheResultType.CacheHit)
