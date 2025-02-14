@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project>
   <PropertyGroup>
-    <ArtifactsPackageVersion>19.239.34907-buildid28083504</ArtifactsPackageVersion>
-    <BuildXLPackageVersion>0.1.0-20241212.3</BuildXLPackageVersion>
-    <MSBuildPackageVersion>17.9.5</MSBuildPackageVersion>
+    <ArtifactsPackageVersion>19.250.35814-buildid29613111</ArtifactsPackageVersion>
+    <BuildXLPackageVersion>0.1.0-20250207.7.2</BuildXLPackageVersion>
+    <MSBuildPackageVersion>17.11.4</MSBuildPackageVersion>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="CopyOnWrite" Version="0.3.8" />
@@ -25,7 +26,7 @@
     <PackageVersion Include="Microsoft.BuildXL.Utilities" Version="$(BuildXLPackageVersion)" />
     <PackageVersion Include="Microsoft.BuildXL.Utilities.Core" Version="$(BuildXLPackageVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis" Version="3.8.0" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.1" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
     <PackageVersion Include="Microsoft.VisualStudio.Services.BlobStore.Client" Version="$(ArtifactsPackageVersion)" />
     <PackageVersion Include="Microsoft.VisualStudio.Services.BlobStore.Client.Cache" Version="$(ArtifactsPackageVersion)" />
     <PackageVersion Include="Microsoft.VisualStudio.Services.PipelineCache.WebApi" Version="$(ArtifactsPackageVersion)" />
@@ -50,6 +51,11 @@
     <PackageVersion Include="System.Text.Json" Version="8.0.5" />
     <PackageVersion Include="System.Threading.Channels" Version="8.0.0" />
     <PackageVersion Include="System.Threading.Tasks.Dataflow" Version="8.0.0" />
+
+    <!-- Transitive deps for security updates -->
+    <PackageVersion Include="Microsoft.IO.Redist" Version="6.0.1" />
+    <PackageVersion Include="System.Formats.Asn1" Version="6.0.1" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="6.0.4" />
   </ItemGroup>
   <ItemGroup>
     <GlobalPackageReference Include="Microsoft.VisualStudioEng.MicroBuild.Core" Version="1.0.0" />
