@@ -7,11 +7,15 @@ namespace Microsoft.MSBuildCache.AzureBlobStorage;
 
 public class AzureBlobStoragePluginSettings : PluginSettings
 {
-    public AzureStorageCredentialsType CredentialsType { get; init; } = AzureStorageCredentialsType.Interactive;
-
     public Uri? BlobUri { get; init; }
 
     public string? ManagedIdentityClientId { get; init; }
 
+    public bool AllowInteractiveAuth { get; set; }
+
     public string InteractiveAuthTokenDirectory { get; init; } = Environment.ExpandEnvironmentVariables(@"%LOCALAPPDATA%\MSBuildCache\AuthTokenCache");
+
+    public string? BuildCacheConfigurationFile { get; init; }
+
+    public string? BuildCacheResourceId { get; init; }
 }

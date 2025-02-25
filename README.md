@@ -74,6 +74,7 @@ These settings are common across all plugins, although different implementations
 | `$(MSBuildCacheGetResultsForUnqueriedDependencies)` | `bool` | false | Whether to try and query the cache for dependencies if they have not previously been requested. This option can help in cases where the build isn't done in graph order, or if some projects are skipped. |
 | `$(MSBuildCacheTargetsToIgnore)` | `string[]` | `GetTargetFrameworks;GetNativeManifest;GetCopyToOutputDirectoryItems;GetTargetFrameworksWithPlatformForSingleTargetFramework` | The list of targets to ignore when determining if a build request matches a cache entry. This is intended for "information gathering" targets which do not have side-effect. eg. a build with `/t:Build` and `/t:Build;GetTargetFrameworks` should be considered to have equivalent results. Note: This only works "one-way" in that the build request is allowed to have missing targets, while the cache entry is not. This is to avoid a situation where a build request recieves a cache hit with missing target results, where a cache hit with extra target results is acceptable. |
 | `$(MSBuildCacheSkipUnchangedOutputFiles)` | `bool` | false | Whether to avoid writing output files on cache hit if the file is unchanged, which can improve performance for incremental builds. A file is considered unchanged if it exists, the previously placed file and file to be placed have the same hash, and the the previously placed file and current file on disk have the same timestamp and file size. |
+| `$(MSBuildCacheIgnoreDotNetSdkPatchVersion)` | `bool` | false | Whether to ignore the patch version when doing cache lookups. This trades off some correctness for the sake of getting cache hits when the SDK version isn't exactly the same. The default behavior is to consider the exact SDK version, eg. "8.0.404". With this setting set to true, it will instead use something like "8.0.4XX". Note that the major version, minor version, and feature bands are still considered. |
 
 When configuring settings which are list types, you should always append to the existing value to avoid overriding the defaults:
 
@@ -145,15 +146,26 @@ These settings are available in addition to the [Common Settings](#common-settin
 
 | MSBuild Property Name | Setting Type | Default value | Description |
 | ------------- | ------------ | ------------- | ----------- |
-| `$(MSBuildCacheCredentialsType)` | `string` | "Interactive" | Indicates the credential type to use for authentication. Valid values are "Interactive", "ConnectionString", "ManagedIdentity", "TokenCredential" |
 | `$(MSBuildCacheBlobUri)` | `Uri` | | Specifies the uri of the Azure Storage Blob. |
 | `$(MSBuildCacheManagedIdentityClientId)` | `string` | | Specifies the managed identity client id when using the "ManagedIdentity" credential type |
+| `$(MSBuildCacheAllowInteractiveAuth)` | `bool` | true, except when running in Azure Pipelines or GitHub Actions | Whether interactive auth is allowed |
 | `$(MSBuildCacheInteractiveAuthTokenDirectory)` | `string` | "%LOCALAPPDATA%\MSBuildCache\AuthTokenCache" | Specifies a token cache directory when using the "Interactive" credential type |
-| `$(MSBuildCacheIgnoreDotNetSdkPatchVersion)` | `bool` | false | Whether to ignore the patch version when doing cache lookups. This trades off some correctness for the sake of getting cache hits when the SDK version isn't exactly the same. The default behavior is to consider the exact SDK version, eg. "8.0.404". With this setting set to true, it will instead use something like "8.0.4XX". Note that the major version, minor version, and feature bands are still considered. |
+| `$(MSBuildCacheBuildCacheConfigurationFile)` | `string` | | The path to the 1ES Build Cache configuration file when. This scenario is typically when running in a 1ES Hosted Pool |
+| `$(MSBuildCacheBuildCacheResourceId)` | `string` | | The 1ES Build Cache resource ID. This scenario is typically when consuming 1ES Build Cache from a developer machine. |
 
-When using the "ConnectionString" credential type, the connection string to the blob storage account must be provided in the `MSBCACHE_CONNECTIONSTRING` environment variable. This connection string needs both read and write access to the resource.
+Either `$(MSBuildCacheBlobUri)`, `$(MSBuildCacheBuildCacheConfigurationFile)`, or `$(MSBuildCacheBuildCacheResourceId)` must be provided.
 
-When using the "TokenCredential" credential type, an access token must be provided in the `MSBCACHE_ACCESSTOKEN` environment variable. Alternately, if using the programmatic project cache API, a [`TokenCredential`](https://learn.microsoft.com/en-us/dotnet/api/azure.core.tokencredential?view=azure-dotnet) may be provided in the plugin's constructor.
+The various methods of authenticating are as follows and attempted in priority order:
+1. If `$(MSBuildCacheBuildCacheConfigurationFile)` is set, it will be used for both the blob endpoints and authentication.
+2. If `$(MSBuildCacheBuildCacheResourceId)` is set, an Azure credential will be used to authenticate to the resource (see below).
+3. If the `MSBCACHE_CONNECTIONSTRING` environment variable is set, its value will be used as a connection string to connect. This connection string needs both read and write access to the resource. This is not recommended as it is difficult to propertly secure and should only be used for prototyping.
+4. If `$(MSBuildCacheBlobUri)` is set, an Azure credential will be used to authenticate to the blob (see below).
+
+In the cases where an Azure credential is acquired, the following methods will be used:
+1. If the `MSBCACHE_ACCESSTOKEN` environment variable is set, its value will be used directly.
+2. If a [`TokenCredential`](https://learn.microsoft.com/en-us/dotnet/api/azure.core.tokencredential?view=azure-dotnet) is provided directly in the plugin's constructor, it will be used. This only applies when using the programmatic project cache API.
+3. If `$(MSBuildCacheManagedIdentityClientId)` is set, it will be used as a user-assigned [managed identity](https://learn.microsoft.com/en-us/entra/identity/managed-identities-azure-resources/overview). This is recommended for non-interactive scenarios.
+4. If `$(MSBuildCacheAllowInteractiveAuth)` is true, credentials will be obtained interactively. This is recommended for developer scenarios.
 
 ## Other Packages
 
