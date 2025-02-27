@@ -1,4 +1,16 @@
 <Project>
+  <PropertyGroup>
+    <!--
+      Do not read assemblies from the NugetFallbackFolder since this causes non-determinism with packages
+      sometimes being pulled from the NuGet cache and sometimes pulled from the NugetFallbackFolder, which
+      can causes cache misses.
+
+      Note that the NugetFallbackFolder no longer is created, but it may still exist on machines which ever
+      had older versions of the .NET SDK (< 3.0?) installed.
+    -->
+    <DisableImplicitNuGetFallbackFolder>true</DisableImplicitNuGetFallbackFolder>
+  </PropertyGroup>
+
   <!--
     Defaults for well-known files which should be ignored. These are generally intermediate files used for incremental builds and can be safely ignored.
     The reason to ignore these files is if a referencing project can trigger one of these files to be written, usually to cache some expensive computation in that project.
