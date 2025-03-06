@@ -24,6 +24,7 @@
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheTargetsToIgnore</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheIgnoreDotNetSdkPatchVersion</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheSkipUnchangedOutputFiles</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheTouchOutputFiles</MSBuildCacheGlobalPropertiesToIgnore>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(MSBuildCacheEnabled)' != 'false'">
@@ -47,6 +48,7 @@
       <TargetsToIgnore>$(MSBuildCacheTargetsToIgnore)</TargetsToIgnore>
       <IgnoreDotNetSdkPatchVersion>$(MSBuildCacheIgnoreDotNetSdkPatchVersion)</IgnoreDotNetSdkPatchVersion>
       <SkipUnchangedOutputFiles>$(MSBuildCacheSkipUnchangedOutputFiles)</SkipUnchangedOutputFiles>
+      <TouchOutputFiles>$(MSBuildCacheTouchOutputFiles)</TouchOutputFiles>
     </ProjectCachePlugin>
   </ItemGroup>
 

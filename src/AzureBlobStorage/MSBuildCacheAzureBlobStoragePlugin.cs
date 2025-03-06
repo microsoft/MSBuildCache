@@ -112,7 +112,8 @@ public sealed class MSBuildCacheAzureBlobStoragePlugin : MSBuildCachePluginBase<
             Settings.MaxConcurrentCacheContentOperations,
             Settings.AsyncCachePublishing,
             Settings.AsyncCacheMaterialization,
-            Settings.SkipUnchangedOutputFiles);
+            Settings.SkipUnchangedOutputFiles,
+            Settings.TouchOutputFiles);
     }
 
     private async Task<ICache> CreateRemoteCacheAsync(
