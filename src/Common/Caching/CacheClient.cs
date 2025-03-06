@@ -40,6 +40,7 @@ public abstract class CacheClient : ICacheClient
     private readonly IContentHasher _hasher;
     private readonly IFingerprintFactory _fingerprintFactory;
     private readonly bool _enableAsyncMaterialization;
+    private readonly bool _touchOutputFiles;
     private readonly ICache _localCache;
     private readonly string _nugetPackageRoot;
     private readonly bool _canCloneInNugetCachePath;
@@ -57,7 +58,8 @@ public abstract class CacheClient : ICacheClient
         int maxConcurrentCacheContentOperations,
         bool enableAsyncPublishing,
         bool enableAsyncMaterialization,
-        bool skipUnchangedOutputFiles)
+        bool skipUnchangedOutputFiles,
+        bool touchOutputFiles)
     {
         RootContext = rootContext;
         _fingerprintFactory = fingerprintFactory;
@@ -69,6 +71,7 @@ public abstract class CacheClient : ICacheClient
         LocalCacheSession = localCas;
         EnableAsyncPublishing = enableAsyncPublishing;
         _enableAsyncMaterialization = enableAsyncMaterialization;
+        _touchOutputFiles = touchOutputFiles;
         GetFileRealizationMode = getFileRealizationMode;
 
         PutOrPlaceFileGate = new SemaphoreSlim(maxConcurrentCacheContentOperations);
@@ -493,6 +496,26 @@ public abstract class CacheClient : ICacheClient
             Task placeFilesTask = cacheEntry.PlaceFilesAsync(context, outputsToPlace, ct);
             tasks.Add(placeFilesTask);
             await Task.WhenAll(tasks);
+
+            if (_touchOutputFiles)
+            {
+                // When touching files, use the same timestamp for every file to ensure we don't end up with some outputs with slightly different timestamps, which may lead to missed incrementality.
+                DateTime fileTimestamp = DateTime.Now;
+                foreach (KeyValuePair<string, ContentHash> kvp in nodeBuildResult.Outputs)
+                {
+                    string relativeFilePath = kvp.Key;
+
+                    // Avoid touching the reference assembly as incremental build functionality heavily depends on this file not being updated when it does not change.
+                    if (string.Equals(relativeFilePath, nodeContext.ReferenceAssemblyRelativePath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    // Touch the file to ensure incremental builds understand that the file is up to date
+                    string absoluteFilePath = Path.Combine(RepoRoot, relativeFilePath);
+                    File.SetLastWriteTime(absoluteFilePath, fileTimestamp);
+                }
+            }
 
             if (_localCacheStateManager is not null)
             {

@@ -52,8 +52,9 @@ public sealed class CasCacheClient : CacheClient
         int maxConcurrentCacheContentOperations,
         bool enableAsyncPublishing,
         bool enableAsyncMaterialization,
-        bool skipUnchangedOutputFiles)
-        : base(rootContext, fingerprintFactory, hasher, repoRoot, nugetPackageRoot, getFileRealizationMode, localCache, localCacheSession, maxConcurrentCacheContentOperations, enableAsyncPublishing, enableAsyncMaterialization, skipUnchangedOutputFiles)
+        bool skipUnchangedOutputFiles,
+        bool touchOutputFiles)
+        : base(rootContext, fingerprintFactory, hasher, repoRoot, nugetPackageRoot, getFileRealizationMode, localCache, localCacheSession, maxConcurrentCacheContentOperations, enableAsyncPublishing, enableAsyncMaterialization, skipUnchangedOutputFiles, touchOutputFiles)
     {
         ICacheSession cacheSession;
         if (remoteCache == null)

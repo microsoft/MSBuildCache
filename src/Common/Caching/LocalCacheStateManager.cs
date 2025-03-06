@@ -86,27 +86,11 @@ internal sealed class LocalCacheStateManager
         }
 
         List<KeyValuePair<string, ContentHash>> outOfDateFiles = new(nodeBuildResult.Outputs.Count);
-
-        // When touching files, use the same timestamp for every file to ensure we don't end up with some outputs with slightly different timestamps, which may lead to missed incrementality.
-        DateTime fileTimestamp = DateTime.Now;
-
         foreach (KeyValuePair<string, ContentHash> kvp in nodeBuildResult.Outputs)
         {
             string relativeFilePath = kvp.Key;
             ContentHash contentHash = kvp.Value;
-            if (IsFileUpToDate(context, depFile, relativeFilePath, contentHash))
-            {
-                // Avoid touching the reference assembly as incremental build functionality heavily depends on this file not being updated when it does not change.
-                if (string.Equals(relativeFilePath, nodeContext.ReferenceAssemblyRelativePath, StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                // Touch the file to ensure incremental builds understand that the file is up to date
-                string absoluteFilePath = Path.Combine(_repoRoot, relativeFilePath);
-                File.SetLastWriteTime(absoluteFilePath, fileTimestamp);
-            }
-            else
+            if (!IsFileUpToDate(context, depFile, relativeFilePath, contentHash))
             {
                 outOfDateFiles.Add(kvp);
             }

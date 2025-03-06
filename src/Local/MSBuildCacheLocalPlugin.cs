@@ -63,6 +63,7 @@ public sealed class MSBuildCacheLocalPlugin : MSBuildCachePluginBase
             Settings.MaxConcurrentCacheContentOperations,
             Settings.AsyncCachePublishing,
             Settings.AsyncCacheMaterialization,
-            Settings.SkipUnchangedOutputFiles);
+            Settings.SkipUnchangedOutputFiles,
+            Settings.TouchOutputFiles);
     }
 }

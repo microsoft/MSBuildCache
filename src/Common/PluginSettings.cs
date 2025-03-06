@@ -109,6 +109,8 @@ public class PluginSettings
 
     public bool SkipUnchangedOutputFiles { get; init; }
 
+    public bool TouchOutputFiles { get; init; }
+
     public static T Create<T>(
         IReadOnlyDictionary<string, string> settings,
         PluginLoggerBase logger,

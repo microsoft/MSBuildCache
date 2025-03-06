@@ -62,7 +62,8 @@ public sealed class MSBuildCacheAzurePipelinesPlugin : MSBuildCachePluginBase
             Settings.RemoteCacheIsReadOnly,
             Settings.AsyncCachePublishing,
             Settings.AsyncCacheMaterialization,
-            Settings.SkipUnchangedOutputFiles);
+            Settings.SkipUnchangedOutputFiles,
+            Settings.TouchOutputFiles);
     }
 
     private static async Task<ICacheSession> StartCacheSessionAsync(Context context, LocalCache cache, string name)
