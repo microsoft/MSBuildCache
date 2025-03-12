@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using DotNet.Globbing;
 using Microsoft.Build.Experimental.FileAccess;
 using Microsoft.Build.Experimental.ProjectCache;
@@ -69,6 +70,8 @@ internal sealed class FileAccessRepository : IDisposable
         private readonly ConcurrentDictionary<ulong, string> _processTable;
 
         private readonly StreamWriter _logFileStream;
+
+        private readonly StringBuilder _stringBuilder = new();
 
         private Dictionary<string, FileAccessInfo>? _fileTable = new(StringComparer.OrdinalIgnoreCase);
 
@@ -168,9 +171,30 @@ internal sealed class FileAccessRepository : IDisposable
                     _processTable.TryAdd(processId, path);
                 }
 
-                _logFileStream.WriteLine(isAnAugmentedFileAccess
-                    ? $"{processId}, {desiredAccess}, {flagsAndAttributes}, {requestedAccess}, {operation}, {path}, {error} (Augmented)"
-                    : $"{processId}, {desiredAccess}, {flagsAndAttributes}, {requestedAccess}, {operation}, {path}, {error}");
+                // Note: This is a hot path, so using a reuseable string builder here to avoid the overhead of a string.Format with many arguments.
+                // The same string builder can be used since we're under the _stateLock
+                _stringBuilder.Append(processId);
+                _stringBuilder.Append(", ");
+                _stringBuilder.Append(desiredAccess);
+                _stringBuilder.Append(", ");
+                _stringBuilder.Append(flagsAndAttributes);
+                _stringBuilder.Append(", ");
+                _stringBuilder.Append(requestedAccess);
+                _stringBuilder.Append(", ");
+                _stringBuilder.Append(operation);
+                _stringBuilder.Append(", ");
+                _stringBuilder.Append(path);
+                _stringBuilder.Append(", ");
+                _stringBuilder.Append(error);
+                if (isAnAugmentedFileAccess)
+                {
+                    _stringBuilder.Append(" (Augmented)");
+                }
+
+                _logFileStream.WriteLine(_stringBuilder.ToString());
+
+                // Clear for next use
+                _stringBuilder.Clear();
 
                 if (error != 0)
                 {
