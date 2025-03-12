@@ -6,7 +6,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using DotNet.Globbing;
 using Microsoft.Build.Experimental.FileAccess;
 using Microsoft.Build.Experimental.ProjectCache;
@@ -15,6 +14,9 @@ namespace Microsoft.MSBuildCache.FileAccess;
 
 internal sealed class FileAccessRepository : IDisposable
 {
+    // Perf optimization over Enum.ToString()
+    private static readonly string[] ReportedFileOperationNames = Enum.GetNames(typeof(ReportedFileOperation));
+
     private readonly ConcurrentDictionary<NodeContext, FileAccessesState> _fileAccessStates = new();
 
     // Use a shared process table for all nodes. This helps facilitate cases where "server" processes are used across projects such as vctip.exe.
@@ -70,8 +72,6 @@ internal sealed class FileAccessRepository : IDisposable
         private readonly ConcurrentDictionary<ulong, string> _processTable;
 
         private readonly StreamWriter _logFileStream;
-
-        private readonly StringBuilder _stringBuilder = new();
 
         private Dictionary<string, FileAccessInfo>? _fileTable = new(StringComparer.OrdinalIgnoreCase);
 
@@ -171,30 +171,26 @@ internal sealed class FileAccessRepository : IDisposable
                     _processTable.TryAdd(processId, path);
                 }
 
-                // Note: This is a hot path, so using a reuseable string builder here to avoid the overhead of a string.Format with many arguments.
-                // The same string builder can be used since we're under the _stateLock
-                _stringBuilder.Append(processId);
-                _stringBuilder.Append(", ");
-                _stringBuilder.Append(desiredAccess);
-                _stringBuilder.Append(", ");
-                _stringBuilder.Append(flagsAndAttributes);
-                _stringBuilder.Append(", ");
-                _stringBuilder.Append(requestedAccess);
-                _stringBuilder.Append(", ");
-                _stringBuilder.Append(operation);
-                _stringBuilder.Append(", ");
-                _stringBuilder.Append(path);
-                _stringBuilder.Append(", ");
-                _stringBuilder.Append(error);
+                // Note: This is a hot path, so writing fields one at a time to avoid the overhead of a string.Format with many arguments.
+                _logFileStream.Write(processId);
+                _logFileStream.Write(", ");
+                UInt32FlagsFormatter<DesiredAccess>.Write(_logFileStream, (uint)desiredAccess);
+                _logFileStream.Write(", ");
+                UInt32FlagsFormatter<FlagsAndAttributes>.Write(_logFileStream, (uint)flagsAndAttributes);
+                _logFileStream.Write(", ");
+                WriteRequestedAccess(_logFileStream, requestedAccess);
+                _logFileStream.Write(", ");
+                _logFileStream.Write(ReportedFileOperationNames[(int)operation]);
+                _logFileStream.Write(", ");
+                _logFileStream.Write(path);
+                _logFileStream.Write(", ");
+                _logFileStream.Write(error);
                 if (isAnAugmentedFileAccess)
                 {
-                    _stringBuilder.Append(" (Augmented)");
+                    _logFileStream.Write(" (Augmented)");
                 }
 
-                _logFileStream.WriteLine(_stringBuilder.ToString());
-
-                // Clear for next use
-                _stringBuilder.Clear();
+                _logFileStream.WriteLine();
 
                 if (error != 0)
                 {
@@ -425,6 +421,70 @@ internal sealed class FileAccessRepository : IDisposable
 
         private static bool EverWritten(FileAccessInfo fileInfo)
             => fileInfo.AccessAndOperations.Any(access => (access.RequestedAccess & RequestedAccess.Write) != 0);
+
+        // Fast formatter for the RequestedAccess enum.
+        private static void WriteRequestedAccess(StreamWriter writer, RequestedAccess requestedAccess)
+        {
+            if (requestedAccess == RequestedAccess.None)
+            {
+                writer.Write(nameof(RequestedAccess.None));
+                return;
+            }
+
+            if (requestedAccess == RequestedAccess.All)
+            {
+                writer.Write(nameof(RequestedAccess.All));
+                return;
+            }
+
+            bool isFirst = true;
+
+            if ((requestedAccess & (RequestedAccess.ReadWrite)) != 0)
+            {
+                Write(writer, nameof(RequestedAccess.ReadWrite), ref isFirst);
+            }
+            else
+            {
+                if ((requestedAccess & (RequestedAccess.Read)) != 0)
+                {
+                    Write(writer, nameof(RequestedAccess.Read), ref isFirst);
+                }
+
+                if ((requestedAccess & (RequestedAccess.Write)) != 0)
+                {
+                    Write(writer, nameof(RequestedAccess.Write), ref isFirst);
+                }
+            }
+
+            if ((requestedAccess & (RequestedAccess.Probe)) != 0)
+            {
+                Write(writer, nameof(RequestedAccess.Probe), ref isFirst);
+            }
+
+            if ((requestedAccess & (RequestedAccess.Enumerate)) != 0)
+            {
+                Write(writer, nameof(RequestedAccess.Enumerate), ref isFirst);
+            }
+
+            if ((requestedAccess & (RequestedAccess.EnumerationProbe)) != 0)
+            {
+                Write(writer, nameof(RequestedAccess.EnumerationProbe), ref isFirst);
+            }
+
+            static void Write(StreamWriter writer, string value, ref bool isFirst)
+            {
+                if (isFirst)
+                {
+                    isFirst = false;
+                }
+                else
+                {
+                    writer.Write('|');
+                }
+
+                writer.Write(value);
+            }
+        }
 
         private sealed class FileAccessInfo
         {
