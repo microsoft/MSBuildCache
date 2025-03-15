@@ -393,7 +393,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             return CacheResult.IndicateNonCacheHit(CacheResultType.CacheNotApplicable);
         }
 
-        if (!DoTargetsMatch(nodeContext.TargetNames, buildRequest.TargetNames))
+        if (!DoTargetsMatchForRead(nodeContext.TargetNames, buildRequest.TargetNames))
         {
             logger.LogMessage($"`TargetNames` does not match for {nodeContext.Id}. `{string.Join(";", nodeContext.TargetNames)}` vs `{string.Join(";", buildRequest.TargetNames)}`.");
             return CacheResult.IndicateNonCacheHit(CacheResultType.CacheNotApplicable);
@@ -497,7 +497,12 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         _hasHadFileAccessReport = true;
 
         NodeContext? nodeContext = GetNodeContext(fileAccessContext);
-        if (nodeContext == null)
+        if (nodeContext is null)
+        {
+            return;
+        }
+
+        if (!DoTargetsMatchForWrite(nodeContext.TargetNames, fileAccessContext.Targets))
         {
             return;
         }
@@ -516,7 +521,12 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     private void HandleProcessInner(FileAccessContext fileAccessContext, ProcessData processData)
     {
         NodeContext? nodeContext = GetNodeContext(fileAccessContext);
-        if (nodeContext == null)
+        if (nodeContext is null)
+        {
+            return;
+        }
+
+        if (!DoTargetsMatchForWrite(nodeContext.TargetNames, fileAccessContext.Targets))
         {
             return;
         }
@@ -539,8 +549,43 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         }
 
         NodeContext? nodeContext = GetNodeContext(fileAccessContext);
-        if (nodeContext == null)
+        if (nodeContext is null)
         {
+            return;
+        }
+
+        // If the target do not match for write, the result is not sufficient to cache as it's missing targets.
+        if (!DoTargetsMatchForWrite(nodeContext.TargetNames, fileAccessContext.Targets))
+        {
+            // Remove the initial targets, if any, from the reported targets to guess at the originally requested targets.
+            IReadOnlyList<string> requestedTargets;
+            if (nodeContext.ProjectInstance.InitialTargets.Count > 0)
+            {
+                List<string> requestedTargetsList = new(fileAccessContext.Targets.Count - nodeContext.ProjectInstance.InitialTargets.Count);
+                foreach (string reportedTarget in fileAccessContext.Targets)
+                {
+                    if (!nodeContext.ProjectInstance.InitialTargets.Contains(reportedTarget, StringComparer.OrdinalIgnoreCase))
+                    {
+                        requestedTargetsList.Add(reportedTarget);
+                    }
+                }
+
+                requestedTargets = requestedTargetsList;
+            }
+            else
+            {
+                requestedTargets = fileAccessContext.Targets;
+            }
+
+            // If the targets match for read, it is very unlikely that we will later get a result that does match for write as the
+            // targets ignored for reads should be information-gathering only. To help debug cache misses dump the fingerprint.
+            if (DoTargetsMatchForRead(nodeContext.TargetNames, requestedTargets))
+            {
+                // Because we do not have the file accesses, we cannot know the PathSet.
+                // This means that any cache miss analysis will need to take this into account.
+                await DumpFingerprintLogAsync(logger, nodeContext, null);
+            }
+
             return;
         }
 
@@ -556,17 +601,13 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             }
         }
 
-        FileAccesses fileAccesses = _fileAccessRepository.FinishProject(nodeContext);
-
         // If file access reports are disabled in MSBuild we can't cache anything as we don't know what to cache.
         if (!_hasHadFileAccessReport)
         {
-            // We still want to dump the fingerprint to help debug cache misses.
-            // However, note that because we do not have the file accesses, we cannot know the PathSet.
-            // This means that any cache miss analysis will need to take this into account.
-            await DumpFingerprintLogAsync(logger, nodeContext, null);
             return;
         }
+
+        FileAccesses fileAccesses = _fileAccessRepository.FinishProject(nodeContext);
 
         // Package files are commonly just copied as outputs, so track the package inputs to compare with package outputs to avoid caching them.
         Dictionary<ContentHash, string> hashesToPackageFiles = new();
@@ -743,22 +784,10 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         }
 
         NodeDescriptor nodeDescriptor = _nodeDescriptorFactory.Create(fileAccessContext.ProjectFullPath, fileAccessContext.GlobalProperties);
-        if (!_nodeContexts.TryGetValue(nodeDescriptor, out NodeContext? nodeContext))
-        {
-            return null;
-        }
-
-        // Note: Checking if the targets we expect is a subset of the targets we got. InitialTargets in particular may cause extra targets to be executed.
-        // We will end up caching these extra results, but this is also intended as they do end up executing with the original request.
-        if (!nodeContext.TargetNames.IsSubsetOf(fileAccessContext.Targets))
-        {
-            return null;
-        }
-
-        return nodeContext;
+        return _nodeContexts.TryGetValue(nodeDescriptor, out NodeContext? nodeContext) ? nodeContext : null;
     }
 
-    private bool DoTargetsMatch(HashSet<string> expectedTargets, IEnumerable<string> requestedTargets)
+    private bool DoTargetsMatchForRead(HashSet<string> expectedTargets, IEnumerable<string> requestedTargets)
     {
         if (Settings is null || Settings.TargetsToIgnore.Count == 0)
         {
@@ -779,6 +808,13 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
         extraTargets.ExceptWith(Settings.TargetsToIgnore);
         return extraTargets.Count == 0;
+    }
+
+    private static bool DoTargetsMatchForWrite(HashSet<string> expectedTargets, IEnumerable<string> reportedTargets)
+    {
+        // Check if the targets we expect is a subset of the targets we got. InitialTargets in particular may cause extra targets to be executed.
+        // We will end up caching these extra results, but this is also intended as they do end up executing with the original request.
+        return expectedTargets.IsSubsetOf(reportedTargets);
     }
 
     private async Task DumpNodeContextsAsync(PluginLoggerBase logger, Dictionary<NodeDescriptor, NodeContext> nodeContexts)
@@ -899,6 +935,15 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             return;
         }
 
+        Fingerprint? weakFingerprint = await FingerprintFactory.GetWeakFingerprintAsync(nodeContext);
+        if (weakFingerprint is null)
+        {
+            // Nothing to dump. Likely dependencies failed or cache missed.
+            return;
+        }
+
+        Fingerprint? strongFingerprint = await FingerprintFactory.GetStrongFingerprintAsync(pathSet);
+
         string filePath = Path.Combine(nodeContext.LogDirectory, "fingerprint.json");
         try
         {
@@ -906,8 +951,8 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             await using var jsonWriter = new Utf8JsonWriter(fileStream, SerializationHelper.WriterOptions);
 
             jsonWriter.WriteStartObject();
-            WriteFingerprintJson(jsonWriter, "weak", await FingerprintFactory.GetWeakFingerprintAsync(nodeContext));
-            WriteFingerprintJson(jsonWriter, "strong", await FingerprintFactory.GetStrongFingerprintAsync(pathSet));
+            WriteFingerprintJson(jsonWriter, "weak", weakFingerprint);
+            WriteFingerprintJson(jsonWriter, "strong", strongFingerprint);
             jsonWriter.WriteEndObject();
         }
         catch (Exception ex)
