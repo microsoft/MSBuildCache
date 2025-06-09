@@ -5,6 +5,7 @@
     <BuildXLPackageVersion>0.1.0-20250207.7.2</BuildXLPackageVersion>
     <MSBuildPackageVersion>17.11.4</MSBuildPackageVersion>
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+    <RestoreUseStaticGraphEvaluation>true</RestoreUseStaticGraphEvaluation>
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="CopyOnWrite" Version="0.5.0" />
