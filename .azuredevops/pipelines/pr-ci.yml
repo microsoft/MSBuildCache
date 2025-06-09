@@ -54,7 +54,7 @@ jobs:
     inputs:
       command: test
       projects: $(Build.SourcesDirectory)/MSBuildCache.sln
-      arguments: -restore:false --no-build --configuration $(BuildConfiguration)
+      arguments: -restore:false --no-build --configuration $(BuildConfiguration) -- --report-trx
 
   - publish: $(ArtifactsDirectory)
     displayName: Publish Artifacts
