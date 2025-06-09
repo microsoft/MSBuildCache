@@ -3,3 +3,4 @@
 -NodeReuse:false
 -Restore
 -Property:NuGetInteractive=True
+-Graph
