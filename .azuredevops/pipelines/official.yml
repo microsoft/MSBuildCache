@@ -99,4 +99,4 @@ extends:
           inputs:
             command: test
             projects: $(Build.SourcesDirectory)/MSBuildCache.sln
-            arguments: -restore:false --no-build --configuration $(BuildConfiguration) -- --report-trx
+            arguments: -restore:false --no-build --configuration $(BuildConfiguration) -- --report-trx --results-directory $(Agent.TempDirectory)
