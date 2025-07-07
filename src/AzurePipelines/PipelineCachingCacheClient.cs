@@ -292,12 +292,22 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                 result.ProofNodes,
                 ContentFormatConstants.Files);
 
-            CreateResult createResult = await WithHttpRetries(
-                () => _cacheClient.CreatePipelineCacheArtifactAsync(entry, null, cancellationToken),
+            await WithHttpRetries(
+                async () =>
+                {
+                    try
+                    {
+                        CreateResult createResult = await _cacheClient.CreatePipelineCacheArtifactAsync(entry, null, cancellationToken);
+                        Tracer.Debug(context, $"Cache entry for {fingerprint} stored in scope `{createResult.ScopeUsed}`");
+                    }
+                    catch (PipelineCacheItemAlreadyExistsException)
+                    {
+                        Tracer.Debug(context, $"Cache entry for {fingerprint} already exists.");
+                    }
+                },
                 cacheContext: context,
                 message: $"Storing cache key for {fingerprint}",
                 cancellationToken);
-            Tracer.Debug(context, $"Cache entry stored in scope `{createResult.ScopeUsed}`");
         }
         finally
         {
@@ -730,16 +740,27 @@ internal sealed class PipelineCachingCacheClient : CacheClient
             cancellationToken);
     }
 
+    private Task WithHttpRetries(Func<Task> taskFactory, Context cacheContext, string message, CancellationToken token)
+        => WithHttpRetries(
+                async () =>
+                {
+                    await taskFactory();
+                    return 0; // we don't care about the result, just that it succeeded
+                },
+                cacheContext,
+                message,
+                token);
+
     private Task<T> WithHttpRetries<T>(Func<Task<T>> taskFactory, Context cacheContext, string message, CancellationToken token)
     {
         return AsyncHttpRetryHelper<T>.InvokeAsync(
-                taskFactory,
-                maxRetries: 10,
-                tracer: _azureDevopsTracer,
-                canRetryDelegate: _ => true, // retry on any exception
-                cancellationToken: token,
-                continueOnCapturedContext: false,
-                context: EmbedCacheContext(cacheContext, message));
+            taskFactory,
+            maxRetries: 10,
+            tracer: _azureDevopsTracer,
+            canRetryDelegate: _ => true, // retry on any exception
+            cancellationToken: token,
+            continueOnCapturedContext: false,
+            context: EmbedCacheContext(cacheContext, message));
     }
 
     public override async ValueTask DisposeAsync()
