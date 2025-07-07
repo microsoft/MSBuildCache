@@ -740,6 +740,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
             cancellationToken);
     }
 
+#pragma warning disable CA1859 // returning Task<int> would be misleading
     private Task WithHttpRetries(Func<Task> taskFactory, Context cacheContext, string message, CancellationToken token)
         => WithHttpRetries(
                 async () =>
@@ -750,6 +751,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                 cacheContext,
                 message,
                 token);
+#pragma warning restore CA1859 // returning Task<int> would be misleading
 
     private Task<T> WithHttpRetries<T>(Func<Task<T>> taskFactory, Context cacheContext, string message, CancellationToken token)
     {
