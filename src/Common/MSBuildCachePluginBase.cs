@@ -1071,8 +1071,9 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
         static string? GetRepoRootInternal(string path)
         {
-            string gitDir = Path.Combine(path, ".git");
-            if (Directory.Exists(gitDir))
+            // Note: When using git worktrees, .git may be a file instead of a directory.
+            string gitPath = Path.Combine(path, ".git");
+            if (Directory.Exists(gitPath) || File.Exists(gitPath))
             {
                 return path;
             }
