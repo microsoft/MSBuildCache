@@ -8,7 +8,7 @@ namespace Microsoft.MSBuildCache.Tests;
 [TestClass]
 public class PathHelperTests
 {
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(@"X:\A\B\C", @"X:\A", @"B\C")]
     // Lots of .. and .
     [DataRow(@"X:\Z\..\A\B\.\C", @"X:\Y\..\D\..\A\.\.", @"B\C")]
@@ -27,7 +27,7 @@ public class PathHelperTests
     public void MakePathRelative(string path, string basePath, string? expectedResult)
         => Assert.AreEqual(expectedResult, path.MakePathRelativeTo(basePath));
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(@"X:\A\B\C\file.txt", @"X:\A", true)]
     // Lots of .. and .
     [DataRow(@"X:\Z\..\A\B\.\C\file.txt", @"X:\Y\..\D\..\A\.\.", true)]
