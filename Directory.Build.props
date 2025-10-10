@@ -61,10 +61,9 @@
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(TestProject)'=='true'">
+  <ItemGroup Condition="'$(IsTestingPlatformApplication)'=='true'">
     <!-- https://github.com/microsoft/testfx/issues/4116 -->
     <AssemblyAttribute Include="Microsoft.VisualStudio.TestTools.UnitTesting.Parallelize">
-
       <_Parameter1>Workers = 0</_Parameter1>
       <_Parameter1_IsLiteral>true</_Parameter1_IsLiteral>
       <_Parameter2>Scope = Microsoft.VisualStudio.TestTools.UnitTesting.ExecutionScope.MethodLevel</_Parameter2>
