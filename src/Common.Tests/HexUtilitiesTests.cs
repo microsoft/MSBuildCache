@@ -10,7 +10,7 @@ namespace Microsoft.MSBuildCache.Tests;
 [TestClass]
 public class HexUtilitiesTests
 {
-    [DataTestMethod]
+    [TestMethod]
     [DataRow("0123456789ABCDEFabcdef", new byte[] { 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, 0xAB, 0xCD, 0xEF, })]
     [DataRow("", null)]
     [DataRow(null, null)]
@@ -29,12 +29,12 @@ public class HexUtilitiesTests
         Assert.AreEqual(expectedBytes.Length, bytes.Length);
         for (int i = 0; i < expectedBytes.Length; i++)
         {
-            Assert.AreEqual(expectedBytes[i], bytes[i], "Index {0}", i);
+            Assert.AreEqual(expectedBytes[i], bytes[i], $"Index {i}");
         }
     }
 
     [TestMethod]
-    public void HexToBytesOddChars() => Assert.ThrowsException<ArgumentException>(() => HexUtilities.HexToBytes("fAbCd"));
+    public void HexToBytesOddChars() => Assert.ThrowsExactly<ArgumentException>(() => HexUtilities.HexToBytes("fAbCd"));
 
     [TestMethod]
     public void HexToBytesBadChars()

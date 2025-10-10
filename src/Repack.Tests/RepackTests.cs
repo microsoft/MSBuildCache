@@ -16,7 +16,7 @@ namespace Microsoft.MSBuildCache.Repack.Tests;
 [TestClass]
 public class RepackTests
 {
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(typeof(MSBuildCacheAzureBlobStoragePlugin))]
     [DataRow(typeof(MSBuildCacheAzurePipelinesPlugin))]
     [DataRow(typeof(MSBuildCacheLocalPlugin))]
