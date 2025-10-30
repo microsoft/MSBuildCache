@@ -16,7 +16,7 @@ namespace Microsoft.MSBuildCache.Repack.Tests;
 [TestClass]
 public class RepackTests
 {
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(typeof(MSBuildCacheAzureBlobStoragePlugin))]
     [DataRow(typeof(MSBuildCacheAzurePipelinesPlugin))]
     [DataRow(typeof(MSBuildCacheLocalPlugin))]
@@ -38,7 +38,7 @@ public class RepackTests
         foreach (string expectedRefFileName in PluginInterfaceTypeCheckTests.PluginInterfaceNuGetAssemblies)
         {
             string expectedRef = Path.GetFileNameWithoutExtension(expectedRefFileName);
-            Assert.IsTrue(references.Contains(expectedRef));
+            Assert.Contains(expectedRef, references);
         }
     }
 }

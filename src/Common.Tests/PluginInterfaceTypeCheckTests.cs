@@ -39,15 +39,15 @@ public class PluginInterfaceTypeCheckTests
 
     private static void AssertAssembly(Type t)
     {
-        Assert.IsTrue(PluginInterfaceAssemblies.Contains(Path.GetFileName(t.Assembly.Location)),
-            $"Type {t.FullName} is in assembly {t.Assembly.Location} which is not expected");
+        Assert.Contains(Path.GetFileName(t.Assembly.Location),
+PluginInterfaceAssemblies, $"Type {t.FullName} is in assembly {t.Assembly.Location} which is not expected");
     }
 
     private static void CheckAssembliesForType(Type t)
     {
         var alreadyChecked = new HashSet<Type>();
         CheckAssemblies(t, alreadyChecked, 5);
-        Assert.IsTrue(alreadyChecked.Count > 10, "Failed to find types.");
+        Assert.IsGreaterThan(10, alreadyChecked.Count, "Failed to find types.");
     }
 
     private static void CheckAssemblies(Type t, HashSet<Type> alreadyChecked, int depth)
