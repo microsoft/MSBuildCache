@@ -10,6 +10,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.BuildXL.Cache.MemoizationStore.Distributed" />
+    <PackageReference Include="Sytem.Text.Json" />
   </ItemGroup>
   <ItemGroup>
     <None Include="build\*">
