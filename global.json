@@ -1,5 +1,8 @@
 {
   "msbuild-sdks": {
     "MSTest.Sdk": "3.11.1"
+  },
+  "test": {
+    "runner": "Microsoft.Testing.Platform"
   }
 }
