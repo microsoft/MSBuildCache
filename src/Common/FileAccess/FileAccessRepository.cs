@@ -15,7 +15,12 @@ namespace Microsoft.MSBuildCache.FileAccess;
 internal sealed class FileAccessRepository : IDisposable
 {
     // Perf optimization over Enum.ToString()
-    private static readonly string[] ReportedFileOperationNames = Enum.GetNames(typeof(ReportedFileOperation));
+    private static readonly string[] ReportedFileOperationNames =
+#if NET9_0_OR_GREATER
+        Enum.GetNames<ReportedFileOperation>();
+#else
+        Enum.GetNames(typeof(ReportedFileOperation));
+#endif
 
     private readonly ConcurrentDictionary<NodeContext, FileAccessesState> _fileAccessStates = new();
 
