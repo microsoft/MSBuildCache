@@ -38,9 +38,10 @@ jobs:
     fetchDepth: 0
 
   - task: UseDotNet@2
-    displayName: 'Install .NET $(DotNetVersion)'
+    displayName: 'Install .NET SDK from global.json'
     inputs:
-      version: '$(DotNetVersion)'
+      packageType: 'sdk'
+      useGlobalJson: true
 
   - task: NuGetAuthenticate@1
     displayName: NuGet Authenticate
@@ -54,7 +55,7 @@ jobs:
     inputs:
       command: test
       projects: $(Build.SourcesDirectory)/MSBuildCache.sln
-      arguments: -restore:false --no-build --configuration $(BuildConfiguration) -- --report-trx --results-directory $(Agent.TempDirectory)
+      arguments: -restore:false --no-build --configuration $(BuildConfiguration) --report-trx --results-directory $(Agent.TempDirectory)
 
   - publish: $(ArtifactsDirectory)
     displayName: Publish Artifacts

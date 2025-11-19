@@ -19,7 +19,7 @@ public class DirectoryFileHasherTests
     public TestContext TestContext { get; set; }
 #pragma warning restore CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(@"X:\Dir\Foo\1.0.0\lib\Foo.dll", true)]
     [DataRow(@"x:\dIR\Foo\1.0.0\lib\Foo.dll", true)]
     [DataRow(@"x:\OtherDir\foo.txt", false)]
@@ -30,7 +30,7 @@ public class DirectoryFileHasherTests
         Assert.AreEqual(expectedResult, hasher.ContainsPath(path));
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(@"Dir\Foo\1.0.0\lib\Foo.dll", true)]
     [DataRow(@"dIR\Foo\2.0.0\lib\Foo.dll", true)]
     [DataRow(@"OtherDir\foo.txt", false)]

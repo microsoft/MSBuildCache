@@ -50,7 +50,7 @@ public class OutputHasherTests
         string file = Path.Combine(dir, "file.txt");
 
         // Ensure exceptions are propagated correctly.
-        await Assert.ThrowsExceptionAsync<FileNotFoundException>(async () => await hasher.ComputeHashAsync(file, CancellationToken.None));
+        await Assert.ThrowsExactlyAsync<FileNotFoundException>(async () => await hasher.ComputeHashAsync(file, CancellationToken.None));
     }
 
     [TestMethod]
