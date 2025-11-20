@@ -3,7 +3,7 @@
     <!-- Only supports x64 due to the RocksDB dependency -->
     <Platform>x64</Platform>
     <Platforms>$(Platform)</Platforms>
-    <TargetFrameworks>net472;net8.0</TargetFrameworks>
+    <TargetFrameworks>net472;net9.0</TargetFrameworks>
     <RootNamespace>Microsoft.MSBuildCache.Tests</RootNamespace>
     <!-- Suppress "Avoid constant arrays as arguments". UTs have many one-off test data arrays. -->
     <NoWarn>$(NoWarn);CA1861</NoWarn>

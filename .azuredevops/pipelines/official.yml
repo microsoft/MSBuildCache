@@ -87,6 +87,10 @@ extends:
         - checkout: self
           fetchDepth: 0
         - task: UseDotNet@2
+          displayName: 'Install .NET 9.x'
+          inputs:
+            version: '9.x'
+        - task: UseDotNet@2
           displayName: 'Install .NET $(DotNetVersion)'
           inputs:
             version: '$(DotNetVersion)'

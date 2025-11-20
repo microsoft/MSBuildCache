@@ -380,14 +380,14 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             return CacheResult.IndicateNonCacheHit(CacheResultType.CacheNotApplicable);
         }
 
-        ProjectInstance projectInstance = buildRequest.ProjectInstance;
+        ProjectInstance? projectInstance = buildRequest.ProjectInstance; // Nullable in newer frameworks
         if (projectInstance == null)
         {
             logger.LogWarning($"Project instance was unexpectedly null for build request for project {buildRequest.ProjectFullPath}");
             return CacheResult.IndicateNonCacheHit(CacheResultType.CacheNotApplicable);
         }
 
-        NodeDescriptor nodeDescriptor = _nodeDescriptorFactory.Create(projectInstance);
+        NodeDescriptor nodeDescriptor = _nodeDescriptorFactory.Create(projectInstance!);
         if (!_nodeContexts.TryGetValue(nodeDescriptor, out NodeContext? nodeContext))
         {
             return CacheResult.IndicateNonCacheHit(CacheResultType.CacheNotApplicable);
