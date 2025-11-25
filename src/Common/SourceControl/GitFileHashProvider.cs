@@ -232,7 +232,7 @@ internal sealed class GitFileHashProvider : ISourceControlFileHashProvider
             {
                 if (exitCode != 0)
                 {
-                    throw new SourceControlHashException("git ls-files failed with exit code  " + exitCode);
+                    throw new SourceControlHashException("git hash-object failed with exit code  " + exitCode);
                 }
 
                 return result;
