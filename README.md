@@ -32,7 +32,7 @@ Here is an example if you're using NuGet's [Central Package Management](https://
   </ItemGroup>
 ```
 
-For repos using C++, you will need to add the projects to a packages.config and import the props/targets files directly.
+For repos using C++, you will need to add the projects to a packages.config and import the props/targets files directly. For caching to work, the target solution needs to be above its projects. 
 
 `Directory.Build.props`:
 ```xml
