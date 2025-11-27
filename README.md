@@ -8,7 +8,7 @@ This project provides plugin implementations for the experimental [MSBuild Proje
 
 ## Usage
 
-This feature requires Visual Studio 17.9 or later.
+This feature requires Visual Studio 17.9 or later and assumes the repo uses Git or Unity Version Control.
 
 To enable caching, simply add a `<PackageReference>` for the desired cache implementation and set various properties to configure it.
 
