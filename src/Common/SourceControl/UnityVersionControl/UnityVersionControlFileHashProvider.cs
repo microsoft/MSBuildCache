@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using BuildXL.Utilities.Core.Tasks;
@@ -43,11 +45,11 @@ namespace Microsoft.MSBuildCache.SourceControl.UnityVersionControl
         Func<List<string>, Dictionary<string, byte[]>, Task> hasher)
         {
             // relativePathInRepository<tab>hash
-            //using var reader = new GitLsFileOutputReader(cmOutput);
+            using var reader = new UnityVersionContorlLsFileOutputReader(cmOutput);
             var fileHashes = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
             var filesToRehash = new List<string>();
-            string? line;
-            while ((line = await cmOutput.ReadLineAsync()) != null)
+            StringBuilder? line;
+            while ((line = reader.ReadLine()) != null)
             {
                 var splitLine = line.ToString().Split('\t');
                 string file = splitLine[0];
@@ -58,6 +60,7 @@ namespace Microsoft.MSBuildCache.SourceControl.UnityVersionControl
                 }
                 else
                 {
+                    _logger.LogMessage($"{file} is missing a hash and will be rehashed.");
                     filesToRehash.Add(file);
                 }
             }
@@ -119,5 +122,75 @@ namespace Microsoft.MSBuildCache.SourceControl.UnityVersionControl
                 },
                 cancellationToken);
         }
+
+        private sealed class UnityVersionContorlLsFileOutputReader : IDisposable
+        {
+            readonly BlockingCollection<StringBuilder> _lines = new BlockingCollection<StringBuilder>();
+
+            public UnityVersionContorlLsFileOutputReader(TextReader reader)
+            {
+                Task.Run(() => PopulateAsync(reader));
+            }
+
+            private void PopulateAsync(TextReader reader)
+            {
+                int overflowLength = 0;
+                var buffer = new char[4096]; // must be large enough to hold at least one line of output
+                while (true)
+                {
+                    int readCnt = reader.Read(buffer, overflowLength, buffer.Length - overflowLength);
+                    if (readCnt == 0) // end of stream
+                    {
+                        if (overflowLength > 0)
+                        {
+                            _lines.Add(new StringBuilder(overflowLength).Append(buffer, 0, overflowLength));
+                        }
+                        _lines.CompleteAdding();
+                        return;
+                    }
+
+                    readCnt += overflowLength;
+                    int startIdx = 0, eolIdx;
+                    while (startIdx < readCnt && (eolIdx = Array.IndexOf(buffer, '\n', startIdx)) != -1)
+                    {
+                        int lineLength = eolIdx - startIdx;
+                        if (overflowLength > 0)
+                        {
+                            overflowLength = 0;
+                            startIdx = 0;
+                        }
+                        _lines.Add(new StringBuilder(lineLength).Append(buffer, startIdx, lineLength));
+                        startIdx = eolIdx + 1;
+                    }
+                    if (startIdx < readCnt)
+                    {
+                        if (overflowLength > 0) // we already have some overflow left, but the line could not fit the buffer
+                        {
+                            throw new InvalidDataException($"Internal: cm ls output line length {readCnt - startIdx} exceeds {nameof(buffer)} size {buffer.Length}. Increase the latter.");
+                        }
+                        overflowLength = readCnt - startIdx;
+                        Array.Copy(buffer, startIdx, buffer, 0, overflowLength);
+                    }
+                }
+            }
+
+            public StringBuilder? ReadLine()
+            {
+                while (!_lines.IsCompleted)
+                {
+                    if (_lines.TryTake(out StringBuilder? result, -1))
+                    {
+                        return result;
+                    }
+                }
+                return null;
+            }
+
+            public void Dispose()
+            {
+                _lines.Dispose();
+            }
+        }
     }
+
 }
