@@ -64,4 +64,10 @@ public static class HexUtilities
 
         return result;
     }
+
+    public static byte[] Base64ToBytes(string base64Hash)
+    {
+        byte[] hashBytes = Convert.FromBase64String(base64Hash);
+        return hashBytes;
+    }
 }
