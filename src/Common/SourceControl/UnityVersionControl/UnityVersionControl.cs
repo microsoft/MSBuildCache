@@ -14,7 +14,7 @@ namespace Microsoft.MSBuildCache.SourceControl.UnityVersionControl
         public static async Task<T> RunAsync<T>(
         PluginLoggerBase logger,
         string workingDir, string args,
-        Func<StreamWriter, StreamReader, Task<T>> onRunning,
+        Func<StreamReader, Task<T>> onRunning,
         Func<int, T, T> onExit,
         CancellationToken cancellationToken)
         {
@@ -54,18 +54,12 @@ namespace Microsoft.MSBuildCache.SourceControl.UnityVersionControl
                 using (StreamReader stdout = process.StandardOutput)
                 using (StreamReader stderr = process.StandardError)
                 {
-
                     Task<T> resultTask = Task.Run(async () =>
                     {
-                        try
-                        {
-                            return await onRunning(stdin, stdout);
-                        }
-                        finally
-                        {
-                            stdin.Close();
-                        }
+                        return await onRunning(stdout);
                     });
+                    Task<string> errorTask = Task.Run(() => stderr.ReadToEndAsync());
+
 #if NETFRAMEWORK
                     process.WaitForExit();
                     cancellationToken.ThrowIfCancellationRequested();
@@ -73,7 +67,6 @@ namespace Microsoft.MSBuildCache.SourceControl.UnityVersionControl
                     await process.WaitForExitAsync(cancellationToken);
 #endif
 
-                    Task<string> errorTask = Task.Run(() => stderr.ReadToEndAsync());
                     if (process.ExitCode == 0)
                     {
                         logger.LogMessage($"cm.exe {args} (@{process.StartInfo.WorkingDirectory}) took {sw.ElapsedMilliseconds} msec and returned {process.ExitCode}.");

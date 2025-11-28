@@ -47,10 +47,10 @@ public class UnityVersionControlFileHashProviderTests
         Assert.AreEqual("0001020304", hashes[Path.Combine(repoRoot, "bar.txt")].ToHex());
     }
 
-    [TestMethod, Ignore, Timeout(10000)]
+    [TestMethod, Timeout(10000)]
     public async Task ParseRealCmLsFiles()
     {
-        const string repoRoot = @"C:\work\MSBuildCacheTestLarge";
+        const string repoRoot = @"C:\work\devroot";
         UnityVersionControlFileHashProvider unityFileHashProvider = new(NullPluginLogger.Instance);
         var dict = await unityFileHashProvider.GetFileHashesAsync(repoRoot, CancellationToken.None);
         int filesExpected = 116921;

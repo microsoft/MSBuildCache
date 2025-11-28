@@ -27,7 +27,7 @@ namespace Microsoft.MSBuildCache.SourceControl.UnityVersionControl
         private async Task<Dictionary<string, byte[]>> GetRepoFileHashesAsync(string basePath, CancellationToken cancellationToken)
         {
             return await UnityVersionControl.RunAsync(_logger, workingDir: basePath, "ls -R --format=\"{path}\t{hash}\"",
-                (_, stdout) => Task.Run(() => ParseUnityLsFiles(stdout, (filesToRehash, fileHashes) => GitHashObjectAsync(basePath, filesToRehash, fileHashes, cancellationToken))),
+                async (stdout) => await ParseUnityLsFiles(stdout, (filesToRehash, fileHashes) => GitHashObjectAsync(basePath, filesToRehash, fileHashes, cancellationToken)),
                 (exitCode, result) =>
                 {
                     if (exitCode != 0)
@@ -45,7 +45,9 @@ namespace Microsoft.MSBuildCache.SourceControl.UnityVersionControl
         Func<List<string>, Dictionary<string, byte[]>, Task> hasher)
         {
             // relativePathInRepository<tab>hash
+            _logger.LogMessage("Begin reading in the output");
             using var reader = new UnityVersionContorlLsFileOutputReader(cmOutput);
+            _logger.LogMessage("Begin parsing the read output");
             var fileHashes = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
             var filesToRehash = new List<string>();
             StringBuilder? line;
@@ -56,6 +58,10 @@ namespace Microsoft.MSBuildCache.SourceControl.UnityVersionControl
                 if (splitLine.Length > 1 && splitLine[1].Length > 0)
                 {
                     string hash = splitLine[1];
+                    if (hash.Length == 0)
+                    {
+                        throw new InvalidOperationException("hash cant be of zero length");
+                    }
                     fileHashes[file] = HexUtilities.Base64ToBytes(hash);
                 }
                 else
@@ -129,7 +135,7 @@ namespace Microsoft.MSBuildCache.SourceControl.UnityVersionControl
 
             public UnityVersionContorlLsFileOutputReader(TextReader reader)
             {
-                Task.Run(() => PopulateAsync(reader));
+                PopulateAsync(reader);
             }
 
             private void PopulateAsync(TextReader reader)
