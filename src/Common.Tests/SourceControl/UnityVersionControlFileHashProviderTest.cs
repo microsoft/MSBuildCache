@@ -31,7 +31,7 @@ public class UnityVersionControlFileHashProviderTests
         return Task.CompletedTask;
     }
 
-    [TestMethod]
+    [TestMethod, Timeout(10000)]
     public async Task ParseCmLsFiles()
     {
         const string repoRoot = @"C:\work\MSBuildCacheTest";
@@ -47,13 +47,13 @@ public class UnityVersionControlFileHashProviderTests
         Assert.AreEqual("0001020304", hashes[Path.Combine(repoRoot, "bar.txt")].ToHex());
     }
 
-    [TestMethod, Ignore("Only useful if there is an UVCS workspace at the repoRoot")]
+    [TestMethod, Ignore, Timeout(10000)]
     public async Task ParseRealCmLsFiles()
     {
-        const string repoRoot = @"C:\work\MSBuildCacheTest";
+        const string repoRoot = @"C:\work\MSBuildCacheTestLarge";
         UnityVersionControlFileHashProvider unityFileHashProvider = new(NullPluginLogger.Instance);
         var dict = await unityFileHashProvider.GetFileHashesAsync(repoRoot, CancellationToken.None);
-        int filesExpected = 116898;
+        int filesExpected = 116921;
         Assert.AreEqual(filesExpected, dict.Count, $"should be {filesExpected} files in this output");
     }
 }
