@@ -45,7 +45,18 @@ public abstract class MSBuildCachePluginBase : MSBuildCachePluginBase<PluginSett
 public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePluginBase, IAsyncDisposable
     where TPluginSettings : PluginSettings
 {
-    enum VersionControl { git, uvcs };
+    private class RepoInfo
+    {
+        public string Root { get; set; }
+        public VersionControl VersionControl { get; set; }
+
+        public RepoInfo(string root, VersionControl versionControl)
+        {
+            Root = root;
+            VersionControl = versionControl;
+        }
+    }
+    enum VersionControl { Git, UVCS };
     private static readonly string PluginAssemblyDirectory = Path.GetDirectoryName(typeof(MSBuildCachePluginBase<TPluginSettings>).Assembly.Location)!;
 
     private static readonly SemaphoreSlim SinglePluginInstanceLock = new(1, 1);
@@ -217,12 +228,13 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     private async Task BeginBuildInnerAsync(CacheContext context, PluginLoggerBase logger, CancellationToken cancellationToken)
     {
         _pluginLogger = logger;
-
-        (_repoRoot, _versionControl) = GetRepoRoot(context, logger);
-        if (_repoRoot == null)
+        RepoInfo? repoInfo = GetRepoInfo(context, logger);
+        if (repoInfo == null)
         {
             return;
         }
+        _repoRoot = repoInfo.Root;
+        _versionControl = repoInfo.VersionControl;
 
         _buildId = GetBuildId();
 
@@ -1036,9 +1048,9 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         return true;
     }
 
-    private static (string?, VersionControl?) GetRepoRoot(CacheContext context, PluginLoggerBase logger)
+    private static RepoInfo? GetRepoInfo(CacheContext context, PluginLoggerBase logger)
     {
-        VersionControl versionControl = VersionControl.git;
+        RepoInfo? repoInfo = null;
         IEnumerable<string> projectFilePaths = context.Graph != null
             ? context.Graph.EntryPointNodes.Select(node => node.ProjectInstance.FullPath)
             : context.GraphEntryPoints != null
@@ -1048,53 +1060,46 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         HashSet<string> repoRoots = new(StringComparer.OrdinalIgnoreCase);
         foreach (string projectFilePath in projectFilePaths)
         {
-            (string? repoRoot, VersionControl? vc) = GetRepoRootInternal(Path.GetDirectoryName(projectFilePath)!, logger);
-
-            // Tolerate projects which aren't under any git repo.
-            if (repoRoot != null)
+            repoInfo = GetRepoInfoInternal(Path.GetDirectoryName(projectFilePath)!, logger);
+            if (repoInfo != null)
             {
-                repoRoots.Add(repoRoot);
-            }
-
-            if (vc != null)
-            {
-                versionControl = vc.Value;
+                repoRoots.Add(repoInfo.Root);
             }
         }
 
         if (repoRoots.Count == 0)
         {
             logger.LogWarning("No projects are under git source control. Disabling the cache.");
-            return (null, null);
+            return null;
         }
 
         if (repoRoots.Count == 1)
         {
             string repoRoot = repoRoots.First();
             logger.LogMessage($"Repo root: {repoRoot}");
-            return (repoRoot, versionControl);
+            return repoInfo;
         }
 
         logger.LogWarning($"Graph contains projects from multiple git repositories. Disabling the cache. Repo roots: {string.Join(", ", repoRoots)}");
-        return (null, null);
+        return null;
 
-        static (string?, VersionControl?) GetRepoRootInternal(string path, PluginLoggerBase logger)
+        static RepoInfo? GetRepoInfoInternal(string path, PluginLoggerBase logger)
         {
             // Note: When using git worktrees, .git may be a file instead of a directory.
             string gitPath = Path.Combine(path, ".git");
             if (Directory.Exists(gitPath) || File.Exists(gitPath))
             {
-                return (path, VersionControl.git);
+                return new RepoInfo(path, VersionControl.Git);
             }
 
             string unityVersionControlPath = Path.Combine(path, ".plastic");
             if (Directory.Exists(unityVersionControlPath))
             {
-                return (path, VersionControl.uvcs);
+                return new RepoInfo(path, VersionControl.UVCS);
             }
 
             string? parentDir = Path.GetDirectoryName(path);
-            return parentDir != null ? GetRepoRootInternal(parentDir, logger) : (null, null);
+            return parentDir != null ? GetRepoInfoInternal(parentDir, logger) : null;
         }
     }
 
@@ -1144,7 +1149,13 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         logger.LogMessage($"Source Control: Getting hashes from {_versionControl.Value}");
         Stopwatch stopwatch = Stopwatch.StartNew();
 
-        ISourceControlFileHashProvider hashProvider = _versionControl == VersionControl.git ? new GitFileHashProvider(logger) : new UnityVersionControlFileHashProvider(logger);
+        ISourceControlFileHashProvider hashProvider = _versionControl switch
+        {
+            VersionControl.Git => new GitFileHashProvider(logger),
+            VersionControl.UVCS => new UnityVersionControlFileHashProvider(logger),
+            _ => throw new NotImplementedException()
+        };
+
         IReadOnlyDictionary<string, byte[]> fileHashes = await hashProvider.GetFileHashesAsync(_repoRoot, cancellationToken);
         logger.LogMessage($"Source Control: File hashes query took {stopwatch.ElapsedMilliseconds} ms");
 
