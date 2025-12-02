@@ -69,7 +69,7 @@ namespace Microsoft.MSBuildCache.SourceControl.UnityVersionControl
                 string file = lineSb.ToString(0, delimiterIndex);
                 int hashStartIndex = delimiterIndex + 1;
                 // Check that the line contains a hash, i.e. more than just the file path
-                if (hashStartIndex <= lineSb.Length)
+                if (hashStartIndex < lineSb.Length)
                 {
                     string hash = lineSb.ToString(hashStartIndex, lineSb.Length - hashStartIndex);
 
