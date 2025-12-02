@@ -102,7 +102,7 @@ internal sealed class GitFileHashProvider : ISourceControlFileHashProvider
             _logger,
             workingDir: basePath,
             "ls-files -z -cmos --exclude-standard",
-            (_, stdout) => Task.Run(() => ParseGitLsFiles(basePath, stdout, (filesToRehash, fileHashes) => GitHashObjectAsync(basePath, filesToRehash, fileHashes, cancellationToken))),
+            (_, stdout) => Task.Run(() => ParseGitLsFiles(basePath, stdout, (filesToRehash, fileHashes) => Git.HashObjectAsync(basePath, filesToRehash, fileHashes, _logger, cancellationToken))),
             (exitCode, result) =>
             {
                 if (exitCode != 0)
@@ -191,53 +191,6 @@ internal sealed class GitFileHashProvider : ISourceControlFileHashProvider
         }
 
         return fileHashes;
-    }
-
-    internal Task GitHashObjectAsync(string basePath, List<string> filesToRehash, Dictionary<string, byte[]> filehashes, CancellationToken cancellationToken)
-    {
-        return Git.RunAsync(
-            _logger,
-            workingDir: basePath,
-            "hash-object --stdin-paths",
-            async (stdin, stdout) =>
-            {
-                foreach (string file in filesToRehash)
-                {
-                    string? gitHashOfFile;
-
-                    if (File.Exists(file))
-                    {
-                        await stdin.WriteLineAsync(file);
-                        gitHashOfFile = await stdout.ReadLineAsync();
-
-                        if (string.IsNullOrWhiteSpace(gitHashOfFile))
-                        {
-                            _logger.LogMessage($"git hash-object returned an empty string for {file}. Forcing a cache miss by using a Guid");
-
-                            // Guids are only 32 characters and git hashes are 40. Prepend 8 characters to match and to generally be recognizable.
-                            gitHashOfFile = "bad00000" + Guid.NewGuid().ToString("N");
-                        }
-                    }
-                    else
-                    {
-                        gitHashOfFile = null;
-                    }
-
-                    filehashes[file] = HexUtilities.HexToBytes(gitHashOfFile);
-                }
-
-                return Unit.Void;
-            },
-            (exitCode, result) =>
-            {
-                if (exitCode != 0)
-                {
-                    throw new SourceControlHashException("git hash-object failed with exit code  " + exitCode);
-                }
-
-                return result;
-            },
-            cancellationToken);
     }
 
     private Task<List<string>> GetInitializedSubmodulesAsync(string repoRoot, CancellationToken cancellationToken)
