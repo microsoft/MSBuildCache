@@ -12,11 +12,11 @@ namespace Microsoft.MSBuildCache.SourceControl.UnityVersionControl
     internal static class UnityVersionControl
     {
         public static async Task<T> RunAsync<T>(
-        PluginLoggerBase logger,
-        string workingDir, string args,
-        Func<StreamReader, Task<T>> onRunning,
-        Func<int, T, T> onExit,
-        CancellationToken cancellationToken)
+            PluginLoggerBase logger,
+            string workingDir, string args,
+            Func<StreamReader, Task<T>> onRunning,
+            Func<int, T, T> onExit,
+            CancellationToken cancellationToken)
         {
             using Process process = new();
             process.StartInfo.FileName = "cm"; // Unity Version Control command line "cm" is expected to be on the PATH
