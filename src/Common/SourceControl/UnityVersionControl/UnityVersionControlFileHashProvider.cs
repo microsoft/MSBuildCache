@@ -106,10 +106,10 @@ namespace Microsoft.MSBuildCache.SourceControl.UnityVersionControl
 
             public UnityVersionContorlLsFileOutputReader(TextReader reader)
             {
-                PopulateAsync(reader);
+                Populate(reader);
             }
 
-            private void PopulateAsync(TextReader reader)
+            private void Populate(TextReader reader)
             {
                 int overflowLength = 0;
                 var buffer = new char[4096]; // must be large enough to hold at least one line of output
