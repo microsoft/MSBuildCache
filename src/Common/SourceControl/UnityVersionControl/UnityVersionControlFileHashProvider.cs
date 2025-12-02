@@ -45,24 +45,43 @@ namespace Microsoft.MSBuildCache.SourceControl.UnityVersionControl
         Func<List<string>, Dictionary<string, byte[]>, Task> hasher)
         {
             // relativePathInRepository<tab>hash
-            _logger.LogMessage("Begin reading in the output");
             using var reader = new UnityVersionContorlLsFileOutputReader(cmOutput);
-            _logger.LogMessage("Begin parsing the read output");
             var fileHashes = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
             var filesToRehash = new List<string>();
-            StringBuilder? line;
-            while ((line = reader.ReadLine()) != null)
+            StringBuilder? lineSb;
+            while ((lineSb = reader.ReadLine()) != null)
             {
-                var splitLine = line.ToString().Split('\t');
-                string file = splitLine[0];
-                if (splitLine.Length > 1 && splitLine[1].Length > 0)
+                int delimiterIndex = -1;
+                char delimiter = '\t';
+                for (int i = 0; i < lineSb.Length; i++)
                 {
-                    string hash = splitLine[1];
-                    if (hash.Length == 0)
+                    if (lineSb[i] == delimiter)
                     {
-                        throw new InvalidOperationException("hash cant be of zero length");
+                        delimiterIndex = i;
+                        break;
                     }
-                    fileHashes[file] = HexUtilities.Base64ToBytes(hash);
+                }
+                if (delimiterIndex == -1)
+                {
+                    throw new InvalidDataException("Failed to split the string, missing a tab");
+                }
+
+                string file = lineSb.ToString(0, delimiterIndex);
+                int hashStartIndex = delimiterIndex + 1;
+                // Check that the line contains a hash, i.e. more than just the file path
+                if (hashStartIndex <= lineSb.Length)
+                {
+                    string hash = lineSb.ToString(hashStartIndex, lineSb.Length - hashStartIndex);
+
+                    try
+                    {
+                        fileHashes[file] = Convert.FromBase64String(hash);
+                    }
+                    catch (FormatException fe)
+                    {
+                        // Add the file and hash to the exception so the log is a bit easier to troubleshoot
+                        throw new FormatException($"Failed to convert base64 hash to bytes for file: {file}, hash: {hash}", fe);
+                    }
                 }
                 else
                 {
