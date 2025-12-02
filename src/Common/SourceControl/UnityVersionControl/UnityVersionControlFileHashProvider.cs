@@ -1,0 +1,173 @@
+﻿using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Build.Experimental.ProjectCache;
+
+namespace Microsoft.MSBuildCache.SourceControl.UnityVersionControl
+{
+    internal class UnityVersionControlFileHashProvider : ISourceControlFileHashProvider
+    {
+        private readonly PluginLoggerBase _logger;
+        public UnityVersionControlFileHashProvider(PluginLoggerBase logger)
+        {
+            _logger = logger;
+        }
+        public async Task<IReadOnlyDictionary<string, byte[]>> GetFileHashesAsync(string repoRoot, CancellationToken cancellationToken)
+        {
+            Task<Dictionary<string, byte[]>> hashesTask = GetRepoFileHashesAsync(repoRoot, cancellationToken);
+            return await hashesTask;
+        }
+
+        private async Task<Dictionary<string, byte[]>> GetRepoFileHashesAsync(string basePath, CancellationToken cancellationToken)
+        {
+            return await UnityVersionControl.RunAsync(_logger, workingDir: basePath, "ls -R --format=\"{path}\t{hash}\"",
+                async (stdout) => await ParseUnityLsFiles(stdout, (filesToRehash, fileHashes) => Git.HashObjectAsync(basePath, filesToRehash, fileHashes, _logger, cancellationToken)),
+                (exitCode, result) =>
+                {
+                    if (exitCode != 0)
+                    {
+                        throw new SourceControlHashException("cm ls failed with exit code " + exitCode);
+                    }
+
+                    return result;
+                },
+                cancellationToken);
+        }
+
+        internal async Task<Dictionary<string, byte[]>> ParseUnityLsFiles(
+        TextReader cmOutput,
+        Func<List<string>, Dictionary<string, byte[]>, Task> hasher)
+        {
+            // relativePathInRepository<tab>hash
+            using var reader = new UnityVersionContorlLsFileOutputReader(cmOutput);
+            var fileHashes = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+            var filesToRehash = new List<string>();
+            StringBuilder? lineSb;
+            while ((lineSb = reader.ReadLine()) != null)
+            {
+                int delimiterIndex = -1;
+                char delimiter = '\t';
+                for (int i = 0; i < lineSb.Length; i++)
+                {
+                    if (lineSb[i] == delimiter)
+                    {
+                        delimiterIndex = i;
+                        break;
+                    }
+                }
+                if (delimiterIndex == -1)
+                {
+                    throw new InvalidDataException("Failed to split the string, missing a tab");
+                }
+
+                string file = lineSb.ToString(0, delimiterIndex);
+                int hashStartIndex = delimiterIndex + 1;
+                // Check that the line contains a hash, i.e. more than just the file path
+                if (hashStartIndex < lineSb.Length)
+                {
+                    string hash = lineSb.ToString(hashStartIndex, lineSb.Length - hashStartIndex);
+
+                    try
+                    {
+                        fileHashes[file] = Convert.FromBase64String(hash);
+                    }
+                    catch (FormatException fe)
+                    {
+                        // Add the file and hash to the exception so the log is a bit easier to troubleshoot
+                        throw new FormatException($"Failed to convert base64 hash to bytes for file: {file}, hash: {hash}", fe);
+                    }
+                }
+                else
+                {
+                    _logger.LogMessage($"{file} is missing a hash and will be rehashed.");
+                    filesToRehash.Add(file);
+                }
+            }
+
+            if (filesToRehash.Count > 0)
+            {
+                Stopwatch sw = Stopwatch.StartNew();
+                // we could do this as new files come in just not clear it's worth it
+                await hasher(filesToRehash, fileHashes);
+                _logger.LogMessage($"{fileHashes.Count} files Rehashing {filesToRehash.Count} modified files took {sw.ElapsedMilliseconds} msec");
+            }
+
+            return fileHashes;
+        }
+
+        private sealed class UnityVersionContorlLsFileOutputReader : IDisposable
+        {
+            readonly BlockingCollection<StringBuilder> _lines = new BlockingCollection<StringBuilder>();
+
+            public UnityVersionContorlLsFileOutputReader(TextReader reader)
+            {
+                Populate(reader);
+            }
+
+            private void Populate(TextReader reader)
+            {
+                int overflowLength = 0;
+                var buffer = new char[4096]; // must be large enough to hold at least one line of output
+                while (true)
+                {
+                    int readCnt = reader.Read(buffer, overflowLength, buffer.Length - overflowLength);
+                    if (readCnt == 0) // end of stream
+                    {
+                        if (overflowLength > 0)
+                        {
+                            _lines.Add(new StringBuilder(overflowLength).Append(buffer, 0, overflowLength));
+                        }
+                        _lines.CompleteAdding();
+                        return;
+                    }
+
+                    readCnt += overflowLength;
+                    int startIdx = 0, eolIdx;
+                    while (startIdx < readCnt && (eolIdx = Array.IndexOf(buffer, '\n', startIdx)) != -1)
+                    {
+                        int lineLength = eolIdx - startIdx;
+                        if (overflowLength > 0)
+                        {
+                            overflowLength = 0;
+                            startIdx = 0;
+                        }
+                        _lines.Add(new StringBuilder(lineLength).Append(buffer, startIdx, lineLength));
+                        startIdx = eolIdx + 1;
+                    }
+                    if (startIdx < readCnt)
+                    {
+                        if (overflowLength > 0) // we already have some overflow left, but the line could not fit the buffer
+                        {
+                            throw new InvalidDataException($"Internal: cm ls output line length {readCnt - startIdx} exceeds {nameof(buffer)} size {buffer.Length}. Increase the latter.");
+                        }
+                        overflowLength = readCnt - startIdx;
+                        Array.Copy(buffer, startIdx, buffer, 0, overflowLength);
+                    }
+                }
+            }
+
+            public StringBuilder? ReadLine()
+            {
+                while (!_lines.IsCompleted)
+                {
+                    if (_lines.TryTake(out StringBuilder? result, -1))
+                    {
+                        return result;
+                    }
+                }
+                return null;
+            }
+
+            public void Dispose()
+            {
+                _lines.Dispose();
+            }
+        }
+    }
+
+}
