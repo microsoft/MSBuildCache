@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <MSBuildCacheAssembly Condition="'$(MSBuildRuntimeType)' != 'Core'">$(MSBuildThisFileDirectory)net472\Microsoft.MSBuildCache.AzureBlobStorage.dll</MSBuildCacheAssembly>
-    <MSBuildCacheAssembly Condition="'$(MSBuildRuntimeType)' == 'Core'">$(MSBuildThisFileDirectory)net8.0\Microsoft.MSBuildCache.AzureBlobStorage.dll</MSBuildCacheAssembly>
+    <MSBuildCacheAssembly Condition="'$(MSBuildRuntimeType)' == 'Core'">$(MSBuildThisFileDirectory)net9.0\Microsoft.MSBuildCache.AzureBlobStorage.dll</MSBuildCacheAssembly>
 
     <!-- Enable interactive auth by default, unless running in Azure Pipelines or GitHub Actions -->
     <MSBuildCacheAllowInteractiveAuth Condition="'$(MSBuildCacheAllowInteractiveAuth)' == '' and '$(TF_BUILD)' != ''">false</MSBuildCacheAllowInteractiveAuth>

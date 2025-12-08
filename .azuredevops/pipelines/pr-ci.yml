@@ -120,8 +120,8 @@ jobs:
     artifact: '$(System.JobDisplayName) logs'
     condition: always()
 
-- job: E2ETestVSPreview
-  displayName: E2E Tests using VS Preview
+- job: E2ETestVS2026
+  displayName: E2E Tests using VS 2026
   dependsOn: Build
   variables:
     VsInstallDir: $(Build.ArtifactStagingDirectory)\vs
@@ -137,13 +137,13 @@ jobs:
   # - task: Cache@2
   #   displayName: Cache Visual Studio
   #   inputs:
-  #     key: '"vs-pre" | "$(Agent.OS)"'
+  #     key: '"vs-2026" | "$(Agent.OS)"'
   #     path: $(VsInstallDir)
 
   - script: |
       del %TEMP%\vs_buildtools.exe
       
-      curl.exe -L https://aka.ms/vs/17/pre/vs_buildtools.exe -o %TEMP%\vs_buildtools.exe
+      curl.exe -L https://aka.ms/vs/18/stable/vs_buildtools.exe -o %TEMP%\vs_buildtools.exe
       
       %TEMP%\vs_buildtools.exe ^
         --config "$(Build.SourcesDirectory)\.vsconfig" ^
@@ -161,7 +161,7 @@ jobs:
 
       echo Current MSBuild version:
       "$(MSBuildPath)" --version
-    displayName: 'Install VS Preview'
+    displayName: 'Install VS 2026'
 
   - template: templates\e2e-test.yml
     parameters:

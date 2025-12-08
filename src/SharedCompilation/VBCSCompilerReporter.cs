@@ -20,9 +20,15 @@ namespace Microsoft.MSBuildCache.SharedCompilation;
 /// </summary>
 internal static class VBCSCompilerReporter
 {
+    // Allow list of newly added compiler switches that older Roslyn parsing code may flag as unknown (CS2007).
+    // These should not cause shared compilation resolution to fail.
+    private static readonly string[] AllowedUnrecognizedSwitchSubstrings = new[]
+    {
+        "/sdkpath", // /sdkpath:<path>
+    };
+
     /// <summary>
-    /// Resolve and report file accesses given the <paramref name="language"/>, <paramref name="commandLineArguments"/>,
-    /// and <paramref name="projectFile"/> of a project.
+    /// Resolve and report file accesses given the <paramref name="language"/>, <paramref name="commandLineArguments"/>, and <paramref name="projectFile"/> of a project.
     /// </summary>
     /// <param name="language">The language of the project (either <see cref="LanguageNames.CSharp"/> or <see cref="LanguageNames.VisualBasic"/>).</param>
     /// <param name="commandLineArguments">The command line arguments.</param>
@@ -52,6 +58,17 @@ internal static class VBCSCompilerReporter
         var badSwitchErrors = new HashSet<Diagnostic>();
         foreach (Diagnostic badSwitch in parsedBadSwitchErrors)
         {
+            // Skip diagnostics for allowed unrecognized switches.
+            string message = badSwitch.GetMessage();
+#if NET472
+            if (AllowedUnrecognizedSwitchSubstrings.Any(s => message.IndexOf(s, StringComparison.OrdinalIgnoreCase) >= 0))
+#else
+            if (AllowedUnrecognizedSwitchSubstrings.Any(s => message.Contains(s, StringComparison.OrdinalIgnoreCase)))
+#endif
+            {
+                continue;
+            }
+
             badSwitchErrors.Add(badSwitch);
         }
 
