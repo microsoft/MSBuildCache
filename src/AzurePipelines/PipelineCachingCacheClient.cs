@@ -185,7 +185,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         _startupTask = Task.Run(() => QueryPipelineCaching(rootContext, new VisualStudio.Services.PipelineCache.WebApi.Fingerprint("init"), CancellationToken.None));
     }
 
-    protected override async Task AddNodeAsync(
+    protected override async Task<AddNodeResult> AddNodeAsync(
         Context context,
         StrongFingerprint fingerprint,
         IReadOnlyDictionary<string, ContentHash> outputs,
@@ -195,10 +195,11 @@ internal sealed class PipelineCachingCacheClient : CacheClient
     {
         if (_remoteCacheIsReadOnly)
         {
-            return;
+            return AddNodeResult.Skipped;
         }
 
         // write the SFP -> manifest
+        bool sfpAddded;
         List<string> tempFilePaths = new();
         try
         {
@@ -268,7 +269,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                 infos = outputs.Keys.Select(f => new FileInfo(f)).ToArray();
             }
 
-            var result = await WithHttpRetries(
+            PublishResult result = await WithHttpRetries(
                 () => _manifestClient.PublishAsync(RepoRoot, infos, extras, new ArtifactPublishOptions(), manifestFileOutputPath: null, cancellationToken),
                 cacheContext: context,
                 message: $"Publishing content for {fingerprint}",
@@ -292,12 +293,24 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                 result.ProofNodes,
                 ContentFormatConstants.Files);
 
-            CreateResult createResult = await WithHttpRetries(
-                () => _cacheClient.CreatePipelineCacheArtifactAsync(entry, null, cancellationToken),
+            sfpAddded = await WithHttpRetries(
+                async () =>
+                {
+                    try
+                    {
+                        CreateResult createResult = await _cacheClient.CreatePipelineCacheArtifactAsync(entry, null, cancellationToken);
+                        Tracer.Debug(context, $"Cache entry for {fingerprint} stored in scope `{createResult.ScopeUsed}`");
+                        return true;
+                    }
+                    catch (PipelineCacheItemAlreadyExistsException)
+                    {
+                        Tracer.Debug(context, $"Cache entry for {fingerprint} already exists.");
+                        return false;
+                    }
+                },
                 cacheContext: context,
                 message: $"Storing cache key for {fingerprint}",
                 cancellationToken);
-            Tracer.Debug(context, $"Cache entry stored in scope `{createResult.ScopeUsed}`");
         }
         finally
         {
@@ -310,6 +323,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         }
 
         // add the WFP -> Selector mapping
+        bool wfpAddded;
         List<TempFile> pathSetTempFiles = new();
         try
         {
@@ -363,13 +377,13 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                 }
             }
 
-            var result = await WithHttpRetries(
+            PublishResult result = await WithHttpRetries(
                 () => _manifestClient.PublishAsync(TempFolder, infos, extras, new ArtifactPublishOptions(), manifestFileOutputPath: null, cancellationToken),
                 cacheContext: context,
                 message: $"Publishing content for {fingerprint}",
                 cancellationToken);
 
-            var entry = new CreatePipelineCacheArtifactContract(
+            CreatePipelineCacheArtifactContract entry = new(
                 DomainId,
                 new VisualStudio.Services.PipelineCache.WebApi.Fingerprint(key.Split(KeySegmentSeperator)),
                 result.ManifestId,
@@ -377,13 +391,27 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                 result.ProofNodes,
                 ContentFormatConstants.Files);
 
-            CreateResult createResult = await WithHttpRetries(
-                () => _cacheClient.CreatePipelineCacheArtifactAsync(entry, null, cancellationToken),
+            wfpAddded = await WithHttpRetries(
+                async () =>
+                {
+                    try
+                    {
+                        CreateResult createResult = await _cacheClient.CreatePipelineCacheArtifactAsync(entry, null, cancellationToken);
+                        Tracer.Debug(context, $"SFP `{fingerprint}` stored in scope `{createResult.ScopeUsed}`");
+                        return true;
+                    }
+                    catch (PipelineCacheItemAlreadyExistsException)
+                    {
+                        return false;
+                    }
+                },
                 cacheContext: context,
                 message: $"Storing cache key for {fingerprint}",
                 cancellationToken);
 
-            Tracer.Debug(context, $"SFP `{fingerprint}` stored in scope `{createResult.ScopeUsed}`");
+            return wfpAddded || sfpAddded
+                ? AddNodeResult.Added
+                : AddNodeResult.AlreadyExists;
         }
         finally
         {
@@ -733,13 +761,13 @@ internal sealed class PipelineCachingCacheClient : CacheClient
     private Task<T> WithHttpRetries<T>(Func<Task<T>> taskFactory, Context cacheContext, string message, CancellationToken token)
     {
         return AsyncHttpRetryHelper<T>.InvokeAsync(
-                taskFactory,
-                maxRetries: 10,
-                tracer: _azureDevopsTracer,
-                canRetryDelegate: _ => true, // retry on any exception
-                cancellationToken: token,
-                continueOnCapturedContext: false,
-                context: EmbedCacheContext(cacheContext, message));
+            taskFactory,
+            maxRetries: 10,
+            tracer: _azureDevopsTracer,
+            canRetryDelegate: _ => true, // retry on any exception
+            cancellationToken: token,
+            continueOnCapturedContext: false,
+            context: EmbedCacheContext(cacheContext, message));
     }
 
     public override async ValueTask DisposeAsync()

@@ -111,7 +111,7 @@ public sealed class CasCacheClient : CacheClient
     protected override Task<OpenStreamResult> OpenStreamAsync(Context context, ContentHash contentHash, CancellationToken cancellationToken)
         => _twoLevelCacheSession.OpenStreamAsync(context, contentHash, cancellationToken);
 
-    protected override async Task AddNodeAsync(
+    protected override async Task<AddNodeResult> AddNodeAsync(
         Context context,
         StrongFingerprint fingerprint,
         IReadOnlyDictionary<string, ContentHash> outputs,
@@ -252,6 +252,10 @@ public sealed class CasCacheClient : CacheClient
         {
             throw new CacheException($"{nameof(_twoLevelCacheSession.AddOrGetContentHashListAsync)} failed for {fingerprint}.");
         }
+
+        return contentHashList.Equals(addResult?.ContentHashListWithDeterminism.ContentHashList)
+            ? AddNodeResult.Added
+            : AddNodeResult.AlreadyExists;
 
         // TODO dfederm: Handle CHL races
     }
