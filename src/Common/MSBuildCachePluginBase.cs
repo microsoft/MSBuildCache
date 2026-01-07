@@ -1347,6 +1347,27 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
 public static class ProjectGraphNodeExtensions
 {
-    public static bool IsDependentOn(this NodeContext possibleDependent, NodeContext possibleDependency) =>
-        possibleDependent.Dependencies.Any(n => n == possibleDependency || n.IsDependentOn(possibleDependency));
+    public static bool IsDependentOn(this NodeContext possibleDependent, NodeContext possibleDependency)
+    {
+        HashSet<NodeContext> visited = new();
+        Queue<NodeContext> toCheck = new();
+        toCheck.Enqueue(possibleDependent);
+        while (toCheck.Count > 0)
+        {
+            NodeContext current = toCheck.Dequeue();
+            if (current == possibleDependency)
+            {
+                return true;
+            }
+            foreach (NodeContext dependency in current.Dependencies)
+            {
+                if (visited.Add(dependency))
+                {
+                    toCheck.Enqueue(dependency);
+                }
+            }
+        }
+
+        return false;
+    }
 }
