@@ -8,7 +8,7 @@ This project provides plugin implementations for the experimental [MSBuild Proje
 
 ## Usage
 
-This feature requires Visual Studio 17.9 or later.
+This feature requires Visual Studio 17.9 or later and assumes the repo uses Git or Unity Version Control.
 
 To enable caching, simply add a `<PackageReference>` for the desired cache implementation and set various properties to configure it.
 
@@ -32,7 +32,7 @@ Here is an example if you're using NuGet's [Central Package Management](https://
   </ItemGroup>
 ```
 
-For repos using C++, you will need to add the projects to a packages.config and import the props/targets files directly.
+For repos using C++, you will need to add the projects to a packages.config and import the props/targets files directly. For caching to work, the target solution needs to be above its projects. 
 
 `Directory.Build.props`:
 ```xml
