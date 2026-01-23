@@ -167,7 +167,15 @@ internal sealed class FileAccessRepository : IDisposable
                 // Augmented file accesses may not be in a canonical form (may have "..\..\")
                 if (isAnAugmentedFileAccess)
                 {
-                    path = Path.GetFullPath(path);
+                    try
+                    {
+                        path = Path.GetFullPath(path);
+                    }
+                    catch (NotSupportedException ex)
+                    {
+                        throw new NotSupportedException(
+                            $"Path.GetFullPath failed for path: `{path}`. Node Id: {_nodeContext.Id}, Process Id: {fileAccessData.ProcessId}", ex);
+                    }
                 }
 
                 if (operation == ReportedFileOperation.Process)
