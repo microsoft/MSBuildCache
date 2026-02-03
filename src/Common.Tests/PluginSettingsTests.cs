@@ -25,7 +25,7 @@ public sealed class PluginSettingsTests
         MockPluginLogger logger = new();
         _ = PluginSettings.Create<PluginSettings>(settings, logger, RepoRoot);
 
-        Assert.AreEqual(1, logger.LogEntries.Count);
+        Assert.HasCount(1, logger.LogEntries);
 
         PluginLogEntry effectiveSettingsLogEntry = logger.LogEntries[0];
         Assert.AreEqual(PluginLogLevel.Message, effectiveSettingsLogEntry.LogLevel);

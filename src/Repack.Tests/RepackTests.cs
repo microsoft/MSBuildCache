@@ -38,7 +38,7 @@ public class RepackTests
         foreach (string expectedRefFileName in PluginInterfaceTypeCheckTests.PluginInterfaceNuGetAssemblies)
         {
             string expectedRef = Path.GetFileNameWithoutExtension(expectedRefFileName);
-            Assert.IsTrue(references.Contains(expectedRef));
+            Assert.Contains(expectedRef, references);
         }
     }
 }

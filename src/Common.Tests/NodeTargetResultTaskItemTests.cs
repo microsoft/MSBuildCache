@@ -34,7 +34,7 @@ public class NodeTargetResultTaskItemTests
 
         Assert.IsNotNull(nodeTargetResultTaskItem);
         Assert.AreEqual(@"{RepoRoot}src\HelloWorld\bin\x64\Release\HelloWorld.dll", nodeTargetResultTaskItem.ItemSpec);
-        Assert.AreEqual(taskItem.CloneCustomMetadata().Count, nodeTargetResultTaskItem.Metadata.Count);
+        Assert.HasCount(taskItem.CloneCustomMetadata().Count, nodeTargetResultTaskItem.Metadata);
         Assert.AreEqual(".NETStandard", nodeTargetResultTaskItem.Metadata["TargetFrameworkIdentifier"]);
         Assert.AreEqual("Windows,Version=7.0", nodeTargetResultTaskItem.Metadata["TargetPlatformMoniker"]);
         Assert.AreEqual(@"{RepoRoot}src\HelloWorld\bin\x64\Release\HelloWorld.csproj.CopyComplete", nodeTargetResultTaskItem.Metadata["CopyUpToDateMarker"]);
@@ -62,7 +62,7 @@ public class NodeTargetResultTaskItemTests
 
         Assert.IsNotNull(taskItem);
         Assert.AreEqual(RepoRoot + @"\src\HelloWorld\bin\x64\Release\HelloWorld.dll", taskItem.ItemSpec);
-        Assert.AreEqual(nodeTargetResultTaskItem.Metadata.Count, taskItem.CloneCustomMetadata().Count);
+        Assert.HasCount(nodeTargetResultTaskItem.Metadata.Count, taskItem.CloneCustomMetadata());
         Assert.AreEqual(".NETStandard", taskItem.GetMetadata("TargetFrameworkIdentifier"));
         Assert.AreEqual("Windows,Version=7.0", taskItem.GetMetadata("TargetPlatformMoniker"));
         Assert.AreEqual(RepoRoot + @"\src\HelloWorld\bin\x64\Release\HelloWorld.csproj.CopyComplete", taskItem.GetMetadata("CopyUpToDateMarker"));

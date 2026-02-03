@@ -25,7 +25,7 @@ public class PluginSettingsExtensibilityTests
         MockPluginLogger logger = new();
         _ = PluginSettings.Create<MockPluginSettings>(settings, logger, RepoRoot);
 
-        Assert.AreEqual(1, logger.LogEntries.Count);
+        Assert.HasCount(1, logger.LogEntries);
 
         // Ensure effective value of all properties are logged and that all properties are correctly defined.
         foreach (PropertyInfo property in typeof(MockPluginSettings).GetProperties())
@@ -202,7 +202,7 @@ public class PluginSettingsExtensibilityTests
 
         Assert.AreEqual(MockEnum.C, pluginSettings.EnumSetting);
 
-        Assert.AreEqual(false, pluginSettings.BoolSetting);
+        Assert.IsFalse(pluginSettings.BoolSetting);
         Assert.AreEqual((byte)2, pluginSettings.ByteSetting);
         Assert.AreEqual((sbyte)2, pluginSettings.SbyteSetting);
         Assert.AreEqual('B', pluginSettings.CharSetting);

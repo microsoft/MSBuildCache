@@ -66,7 +66,7 @@ public class PluginInterfaceTypeCheckTests
     {
         var alreadyChecked = new HashSet<Type>();
         CheckAssemblies(t, alreadyChecked, 5);
-        Assert.IsTrue(alreadyChecked.Count > 10, "Failed to find types.");
+        Assert.IsGreaterThan(10, alreadyChecked.Count, "Failed to find types.");
     }
 
     private static void CheckAssemblies(Type t, HashSet<Type> alreadyChecked, int depth)

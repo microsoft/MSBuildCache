@@ -26,7 +26,7 @@ public class HexUtilitiesTests
 
         expectedBytes ??= Array.Empty<byte>();
 
-        Assert.AreEqual(expectedBytes.Length, bytes.Length);
+        Assert.HasCount(expectedBytes.Length, bytes);
         for (int i = 0; i < expectedBytes.Length; i++)
         {
             Assert.AreEqual(expectedBytes[i], bytes[i], $"Index {i}");
@@ -64,6 +64,6 @@ public class HexUtilitiesTests
             }
         }
 
-        Assert.AreEqual(0, badCharactersMistakenlyAllowed.Count, "Bad characters were allowed that should not have been: " + string.Concat(badCharactersMistakenlyAllowed));
+        Assert.IsEmpty(badCharactersMistakenlyAllowed, "Bad characters were allowed that should not have been: " + string.Concat(badCharactersMistakenlyAllowed));
     }
 }
