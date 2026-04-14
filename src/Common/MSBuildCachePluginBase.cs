@@ -561,7 +561,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             IReadOnlyList<string> requestedTargets;
             if (nodeContext.ProjectInstance.InitialTargets.Count > 0)
             {
-                List<string> requestedTargetsList = new(fileAccessContext.Targets.Count - nodeContext.ProjectInstance.InitialTargets.Count);
+                List<string> requestedTargetsList = new(Math.Max(0, fileAccessContext.Targets.Count - nodeContext.ProjectInstance.InitialTargets.Count));
                 foreach (string reportedTarget in fileAccessContext.Targets)
                 {
                     if (!nodeContext.ProjectInstance.InitialTargets.Contains(reportedTarget, StringComparer.OrdinalIgnoreCase))
