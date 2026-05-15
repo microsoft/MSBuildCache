@@ -3,9 +3,6 @@
 
 This project provides plugin implementations for the experimental [MSBuild Project Cache](https://github.com/dotnet/msbuild/blob/main/documentation/specs/project-cache.md), which enables project-level caching within MSBuild.
 
-> [!IMPORTANT]
-> Currently MSBuildCache assumes that the build is running in a clean repo. Incremental builds, e.g. local developer builds, are not supported. Target scenarios include PR builds and CI builds.
-
 ## Usage
 
 This feature requires Visual Studio 17.9 or later.
@@ -76,6 +73,7 @@ These settings are common across all plugins, although different implementations
 | `$(MSBuildCacheSkipUnchangedOutputFiles)` | `bool` | false | Whether to avoid writing output files on cache hit if the file is unchanged, which can improve performance for incremental builds. A file is considered unchanged if it exists, the previously placed file and file to be placed have the same hash, and the the previously placed file and current file on disk have the same timestamp and file size. |
 | `$(MSBuildCacheTouchOutputFiles)` | `bool` | false | Whether to update the last write time for output files on cache hit. All files for a given cache entry will have the same timestamp. Note that outputs which skip materialization via `MSBuildCacheSkipUnchangedOutputFiles` are still touched. |
 | `$(MSBuildCacheIgnoreDotNetSdkPatchVersion)` | `bool` | false | Whether to ignore the patch version when doing cache lookups. This trades off some correctness for the sake of getting cache hits when the SDK version isn't exactly the same. The default behavior is to consider the exact SDK version, eg. "8.0.404". With this setting set to true, it will instead use something like "8.0.4XX". Note that the major version, minor version, and feature bands are still considered. |
+| `$(MSBuildCacheEnableProbeAndEnumerationFingerprinting)` | `bool` | true | Whether file probes (existence checks) and directory enumerations contribute to the strong fingerprint, enabling correct caching for incremental builds — including cases where MSBuild source globs match different files. Toggling this setting segregates cache entries via the weak fingerprint. |
 
 When configuring settings which are list types, you should always append to the existing value to avoid overriding the defaults:
 

@@ -9,6 +9,7 @@ using System.Linq;
 using DotNet.Globbing;
 using Microsoft.Build.Experimental.FileAccess;
 using Microsoft.Build.Experimental.ProjectCache;
+using Microsoft.MSBuildCache.Fingerprinting;
 
 namespace Microsoft.MSBuildCache.FileAccess;
 
@@ -64,6 +65,79 @@ internal sealed class FileAccessRepository : IDisposable
     private FileAccessesState GetFileAccessesState(NodeContext nodeContext)
         => _fileAccessStates.GetOrAdd(nodeContext, nodeContext => new FileAccessesState(nodeContext, _logger, _pluginSettings, _processTable));
 
+    /// <summary>
+    /// Builds the "ever-written or ancestor-of-written" set used to filter post-write probe/enumeration
+    /// observations. For every path in <paramref name="writtenPaths"/>, the result includes the path itself
+    /// plus every ancestor directory back to the root. This extends the self-output probe filter with
+    /// ancestor-dir handling — MSBuild commonly probes output directories (e.g., <c>bin\Debug\net9.0\</c>)
+    /// before creating them, and we need to suppress those probes so re-observation at cache lookup doesn't
+    /// flip them to <c>ExistingProbe</c> after the build creates the directory.
+    /// </summary>
+    internal static HashSet<string> BuildEverWrittenOrAncestorSet(IEnumerable<string> writtenPaths)
+    {
+        HashSet<string> result = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string path in writtenPaths)
+        {
+            result.Add(path);
+
+            string? ancestor = TryGetParentDirectory(path);
+            while (!string.IsNullOrEmpty(ancestor))
+            {
+                if (!result.Add(ancestor!))
+                {
+                    // Already in the set — every shallower ancestor is too. Stop the walk.
+                    break;
+                }
+
+                ancestor = TryGetParentDirectory(ancestor!);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Returns the parent directory of the given path, or <c>null</c> if the path has no parent (drive
+    /// root, UNC share root, or an empty/invalid path). Trailing separators on the input are tolerated by
+    /// trimming them before delegating to <see cref="Path.GetDirectoryName(string)"/>; this prevents the
+    /// off-by-one where <c>C:\foo\</c> would otherwise be treated as having parent <c>C:\foo</c>.
+    /// </summary>
+    internal static string? TryGetParentDirectory(string path)
+    {
+        string trimmed = TrimTrailingSeparator(path);
+        try
+        {
+            string? parent = Path.GetDirectoryName(trimmed);
+            if (string.IsNullOrEmpty(parent) || string.Equals(parent, trimmed, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+            return parent;
+        }
+        catch (ArgumentException)
+        {
+            // Path with invalid characters — give up on the ancestor walk; the observation will not be filtered.
+            return null;
+        }
+        catch (PathTooLongException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Trims a single trailing directory separator (forward or back slash) from the given path. No-op when
+    /// the path doesn't end with a separator.
+    /// </summary>
+    internal static string TrimTrailingSeparator(string path)
+    {
+        if (path.Length > 0 && (path[path.Length - 1] == Path.DirectorySeparatorChar || path[path.Length - 1] == Path.AltDirectorySeparatorChar))
+        {
+            return path.Substring(0, path.Length - 1);
+        }
+        return path;
+    }
+
     private sealed class FileAccessesState : IDisposable
     {
         private readonly object _stateLock = new();
@@ -82,6 +156,10 @@ internal sealed class FileAccessRepository : IDisposable
 
         private List<RemoveDirectoryOperation>? _deletedDirectories = new();
 
+        // Captured probe and enumeration observations, in arrival order. Null when
+        // EnableProbeAndEnumerationFingerprinting is off — AddFileAccess uses null as the signal to short-circuit.
+        private List<ObservedAccess>? _observations;
+
         private long _fileAccessCounter;
 
         private bool _isFinished;
@@ -96,6 +174,13 @@ internal sealed class FileAccessRepository : IDisposable
             _logger = logger;
             _pluginSettings = pluginSettings;
             _processTable = processTable;
+
+            // Only allocate the observations list when the feature flag is on. AddFileAccess uses _observations
+            // being null vs non-null as the capture-or-skip signal so flag-off doesn't pay any per-probe cost.
+            if (_pluginSettings.EnableProbeAndEnumerationFingerprinting)
+            {
+                _observations = new List<ObservedAccess>();
+            }
 
             string logFilePath = Path.Combine(nodeContext.LogDirectory, "fileAccesses.log");
             _logFileStream = File.CreateText(logFilePath);
@@ -148,15 +233,6 @@ internal sealed class FileAccessRepository : IDisposable
                 DesiredAccess desiredAccess = fileAccessData.DesiredAccess;
                 ReportedFileOperation operation = fileAccessData.Operation;
 
-                // TODO: Remove or uncomment once we figure out whether we want this.
-                // Ignore these operations as they're a bit too spammy for what we need
-                //if (operation == ReportedFileOperation.FindFirstFileEx
-                //    || operation == ReportedFileOperation.GetFileAttributes
-                //    || operation == ReportedFileOperation.GetFileAttributesEx)
-                //{
-                //    return;
-                //}
-
                 uint processId = fileAccessData.ProcessId;
                 RequestedAccess requestedAccess = fileAccessData.RequestedAccess;
                 uint error = fileAccessData.Error;
@@ -197,6 +273,45 @@ internal sealed class FileAccessRepository : IDisposable
 
                 _logFileStream.WriteLine();
 
+                // Classify probes/enumerations BEFORE the generic `error != 0` short-circuit below — probes
+                // can have not-found errors (ERROR_FILE_NOT_FOUND for AbsentPathProbe) that must not be dropped.
+                // RemoveDirectory is handled by _deletedDirectories and is not an observation.
+                bool isProbe = requestedAccess == RequestedAccess.Probe;
+                bool isEnumeration = requestedAccess == RequestedAccess.Enumerate
+                                  || requestedAccess == RequestedAccess.EnumerationProbe;
+
+                if (isProbe || isEnumeration)
+                {
+                    // Skip capture entirely when the feature flag is off (probes are the majority of events).
+                    if (_observations != null && operation != ReportedFileOperation.RemoveDirectory)
+                    {
+                        ObservationType obsType;
+                        if (isProbe)
+                        {
+                            // error == 0 means the probe succeeded (file/directory exists).
+                            // Non-zero error means the probe failed; the typical not-found codes
+                            // (ERROR_FILE_NOT_FOUND=2, ERROR_PATH_NOT_FOUND=3) are AbsentPathProbe.
+                            // Other error codes (ACCESS_DENIED, etc.) are ambiguous — record as Absent
+                            // for now, which is the conservative choice.
+                            obsType = error == 0 ? ObservationType.ExistingProbe : ObservationType.AbsentPathProbe;
+                        }
+                        else
+                        {
+                            // EnumerationPattern is not surfaced by MSBuild's FileAccessData currently;
+                            // unfiltered enumeration is the conservative interpretation (any directory
+                            // member change invalidates).
+                            obsType = ObservationType.DirectoryEnumeration;
+                        }
+
+                        _observations.Add(new ObservedAccess(path, obsType, EnumerationPattern: null));
+                    }
+
+                    // Bump the counter so probes participate in event ordering. Unused gaps are benign —
+                    // only relative order matters (the counter governs RemoveDirectory↔write ordering).
+                    _fileAccessCounter++;
+                    return;
+                }
+
                 if (error != 0)
                 {
                     // we don't want to process failing file accesses- logging them with the error code
@@ -211,13 +326,6 @@ internal sealed class FileAccessRepository : IDisposable
                     {
                         _deletedDirectories.Add(new RemoveDirectoryOperation(_fileAccessCounter, path));
                     }
-                }
-                else if (requestedAccess == RequestedAccess.Enumerate
-                        || requestedAccess == RequestedAccess.EnumerationProbe
-                        || requestedAccess == RequestedAccess.Probe)
-                {
-                    // Don't add enumerations and probes to fileAccessInfo as they are not needed.
-                    // We still want to log them for debugging though which is why they're not filtered earlier.
                 }
                 else if (_fileTable != null)
                 {
@@ -278,6 +386,7 @@ internal sealed class FileAccessRepository : IDisposable
         {
             Dictionary<string, FileAccessInfo> fileTable;
             List<RemoveDirectoryOperation> deletedDirectories;
+            List<ObservedAccess>? observations;
             lock (_stateLock)
             {
                 _isFinished = true;
@@ -285,10 +394,12 @@ internal sealed class FileAccessRepository : IDisposable
 
                 fileTable = _fileTable!;
                 deletedDirectories = _deletedDirectories!;
+                observations = _observations;
 
                 // Allow memory to be reclaimed
                 _fileTable = null;
                 _deletedDirectories = null;
+                _observations = null;
 
                 if (_pluginSettings.AllowFileAccessAfterProjectFinishFilePatterns.Count == 0 &&
                     _pluginSettings.AllowFileAccessAfterProjectFinishProcessPatterns.Count == 0 &&
@@ -298,7 +409,7 @@ internal sealed class FileAccessRepository : IDisposable
                 }
             }
 
-            return ProcessFileAccesses(fileTable, deletedDirectories);
+            return ProcessFileAccesses(fileTable, deletedDirectories, observations);
         }
 
         private Glob? IsAllowFileAccessAfterProjectFinishFilePatterns(string fileName) =>
@@ -312,10 +423,11 @@ internal sealed class FileAccessRepository : IDisposable
 
         private static FileAccesses ProcessFileAccesses(
             Dictionary<string, FileAccessInfo> fileTable,
-            List<RemoveDirectoryOperation> deletedDirectories)
+            List<RemoveDirectoryOperation> deletedDirectories,
+            List<ObservedAccess>? observations)
         {
             var outputs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var inputs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            List<ObservedAccess> allObservations = new();
 
             IEnumerable<FileAccessInfo> outputFileInfos = fileTable
                 .Select(fileInfoKvp => fileInfoKvp.Value)
@@ -346,10 +458,140 @@ internal sealed class FileAccessRepository : IDisposable
                     continue;
                 }
 
-                inputs.Add(filePath);
+                allObservations.Add(new ObservedAccess(filePath, ObservationType.FileContentRead));
             }
 
-            return new FileAccesses(inputs, outputs);
+            // Drop probe/enumeration observations for paths written by this project — post-write
+            // probes/enumerations reflect intra-build state, not the pre-build state that drives cache
+            // lookup. Keeping them would cause false misses for probe-then-write patterns (e.g. a target
+            // that probes `obj/A.GeneratedCode.cs`, generates it if missing, then re-probes).
+            //
+            // We use a broader "ever-written" set than `outputs`: outputs filters to existing-file outputs
+            // only, which would leak transient temp files, build-created directories, and orphan-parent
+            // files. Cross-project probes still survive — this is project-local, not graph-wide.
+            //
+            // Ancestor directories of every written file are also filtered: MSBuild commonly probes an
+            // output directory (e.g., `bin\Debug\net9.0\`) before creating it; without this filter,
+            // re-observation would promote the cached AbsentPathProbe to ExistingProbe and miss.
+            //
+            // For DirectoryEnumeration observations that survive the filter, PartitionDirectoryMembers
+            // splits the directory's contents into Members (external) and WrittenMembers (self-outputs).
+            // At lookup, the WrittenMembers list cancels whatever the previous build wrote, so cache hits
+            // remain correct whether outputs are still on disk or not.
+            if (observations != null && observations.Count > 0)
+            {
+                List<string> writtenPaths = new();
+                foreach (KeyValuePair<string, FileAccessInfo> kvp in fileTable)
+                {
+                    if (EverWritten(kvp.Value))
+                    {
+                        writtenPaths.Add(kvp.Key);
+                    }
+                }
+
+                HashSet<string> everWrittenOrAncestor = BuildEverWrittenOrAncestorSet(writtenPaths);
+
+                // Build a per-directory leaf-name index of self-writes so we can partition each
+                // surviving DirectoryEnumeration's members in O(membersInDir) time.
+                Dictionary<string, HashSet<string>> writtenLeafNamesByDir = new(StringComparer.OrdinalIgnoreCase);
+                foreach (string writtenPath in writtenPaths)
+                {
+                    string parent = TrimTrailingSeparator(Path.GetDirectoryName(writtenPath) ?? string.Empty);
+                    string leaf = Path.GetFileName(writtenPath);
+                    if (string.IsNullOrEmpty(parent) || string.IsNullOrEmpty(leaf))
+                    {
+                        continue;
+                    }
+
+                    if (!writtenLeafNamesByDir.TryGetValue(parent, out HashSet<string>? leafSet))
+                    {
+                        leafSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        writtenLeafNamesByDir[parent] = leafSet;
+                    }
+
+                    leafSet.Add(leaf);
+                }
+
+                foreach (ObservedAccess obs in observations)
+                {
+                    if (everWrittenOrAncestor.Contains(obs.Path) || everWrittenOrAncestor.Contains(TrimTrailingSeparator(obs.Path)))
+                    {
+                        continue;
+                    }
+
+                    if (obs.Type != ObservationType.DirectoryEnumeration)
+                    {
+                        allObservations.Add(obs);
+                        continue;
+                    }
+
+                    // Enrich the DirectoryEnumeration observation with the partitioned member lists.
+                    string dirAbsolute = TrimTrailingSeparator(obs.Path);
+                    HashSet<string> selfOutputLeafNames = writtenLeafNamesByDir.TryGetValue(dirAbsolute, out HashSet<string>? leaves)
+                        ? leaves
+                        : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                    (IReadOnlyList<string>? members, IReadOnlyList<string>? writtenMembers) = PartitionDirectoryMembers(dirAbsolute, obs.EnumerationPattern, selfOutputLeafNames);
+                    allObservations.Add(obs with { Members = members, WrittenMembers = writtenMembers });
+                }
+            }
+
+            return new FileAccesses(allObservations, outputs);
+        }
+
+        /// <summary>
+        /// Enumerates the directory and partitions members into <c>Members</c> (external dependencies) and
+        /// <c>WrittenMembers</c> (this build's outputs). Both lists are leaf names, sorted
+        /// <c>OrdinalIgnoreCase</c>. Returns <c>(null, null)</c> if the directory is missing or inaccessible.
+        /// </summary>
+        private static (IReadOnlyList<string>? Members, IReadOnlyList<string>? WrittenMembers) PartitionDirectoryMembers(
+            string absoluteDirectoryPath,
+            string? enumerationPattern,
+            HashSet<string> selfOutputLeafNames)
+        {
+            if (!Directory.Exists(absoluteDirectoryPath))
+            {
+                return (null, null);
+            }
+
+            DotNet.Globbing.Glob? patternGlob = string.IsNullOrEmpty(enumerationPattern)
+                ? null
+                : DotNet.Globbing.Glob.Parse(enumerationPattern);
+
+            List<string> members = new();
+            List<string> writtenMembers = new();
+            try
+            {
+                foreach (string entry in Directory.EnumerateFileSystemEntries(absoluteDirectoryPath, "*", SearchOption.TopDirectoryOnly))
+                {
+                    string leaf = Path.GetFileName(entry);
+                    if (patternGlob != null && !patternGlob.IsMatch(leaf))
+                    {
+                        continue;
+                    }
+
+                    if (selfOutputLeafNames.Contains(leaf))
+                    {
+                        writtenMembers.Add(leaf);
+                    }
+                    else
+                    {
+                        members.Add(leaf);
+                    }
+                }
+            }
+            catch (IOException)
+            {
+                return (null, null);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return (null, null);
+            }
+
+            members.Sort(StringComparer.OrdinalIgnoreCase);
+            writtenMembers.Sort(StringComparer.OrdinalIgnoreCase);
+            return (members, writtenMembers);
         }
 
         private static bool IsOutput(FileAccessInfo fileInfo)

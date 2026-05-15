@@ -39,4 +39,12 @@ public sealed class PathNormalizer
         => normalized
             .Replace(RepoRootPlaceholder, _repoRoot, StringComparison.Ordinal)
             .Replace(NugetPackageRootPlaceholder, _nugetPackageRoot, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Returns true if the given normalized path starts with one of the placeholders inserted by
+    /// <see cref="Normalize"/> — i.e., it was rooted under the repo or NuGet package root.
+    /// </summary>
+    public static bool IsNormalized(string normalizedPath)
+        => normalizedPath.StartsWith(RepoRootPlaceholder, StringComparison.Ordinal)
+        || normalizedPath.StartsWith(NugetPackageRootPlaceholder, StringComparison.Ordinal);
 }

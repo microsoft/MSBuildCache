@@ -575,7 +575,15 @@ public abstract class CacheClient : ICacheClient
                 continue;
             }
 
-            // Create a strong fingerprint from the PathSet and see if it matches the selector's strong fingerprint.
+            // The re-observed variant short-circuits when probes/enumerations no longer match current state —
+            // we can skip the strong-FP computation (and any FCR content hashing) in that case. When they do
+            // match, we still need the FP comparison to detect FCR content changes.
+            if (!_fingerprintFactory.MatchesCurrentState(pathSet))
+            {
+                Tracer.Debug(context, $"Skipping selector with PathSet hash {pathSetHash}. Probes/enumerations no longer match current filesystem state.");
+                continue;
+            }
+
             Fingerprint? possibleStrongFingerprint = await _fingerprintFactory.GetStrongFingerprintAsync(pathSet);
             if (possibleStrongFingerprint != null && ByteArrayComparer.ArraysEqual(possibleStrongFingerprint.Hash, selectorStrongFingerprint))
             {

@@ -5,15 +5,6 @@ using System.Collections.Generic;
 
 namespace Microsoft.MSBuildCache.FileAccess;
 
-internal sealed class FileAccesses
-{
-    public FileAccesses(IReadOnlyCollection<string> inputs, IReadOnlyCollection<string> outputs)
-    {
-        Inputs = inputs;
-        Outputs = outputs;
-    }
-
-    public IReadOnlyCollection<string> Inputs { get; }
-
-    public IReadOnlyCollection<string> Outputs { get; }
-}
+internal sealed record FileAccesses(
+    IReadOnlyCollection<ObservedAccess> Observations,
+    IReadOnlyCollection<string> Outputs);

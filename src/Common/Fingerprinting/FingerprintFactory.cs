@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
+// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using BuildXL.Cache.ContentStore.Hashing;
 using BuildXL.Cache.ContentStore.Interfaces.Extensions;
 using DotNet.Globbing;
+using Microsoft.MSBuildCache.FileAccess;
 using Microsoft.MSBuildCache.Hashing;
 using NuGet.Versioning;
 
@@ -35,6 +36,11 @@ public sealed class FingerprintFactory : IFingerprintFactory
     private readonly PluginSettings _pluginSettings;
     private readonly PathNormalizer _pathNormalizer;
 
+    // Sentinels computed once per factory instance from the configured content hasher; constant across
+    // instances using the same HashType.
+    internal byte[] AbsentFileSentinel { get; }
+    internal byte[] ZeroHash { get; }
+
     public FingerprintFactory(
         IContentHasher contentHasher,
         IInputHasher inputHasher,
@@ -45,6 +51,9 @@ public sealed class FingerprintFactory : IFingerprintFactory
         _inputHasher = inputHasher;
         _pluginSettings = pluginSettings;
         _pathNormalizer = pathNormalizer;
+
+        AbsentFileSentinel = WellKnownHashes.AbsentFileSentinel(contentHasher);
+        ZeroHash = WellKnownHashes.ZeroHash(contentHasher);
 
         _pluginSettingsFingerprintEntries = new List<FingerprintEntry>()
         {
@@ -70,6 +79,9 @@ public sealed class FingerprintFactory : IFingerprintFactory
         AddSettingToFingerprint(pluginSettings.AllowFileAccessAfterProjectFinishFilePatterns, nameof(pluginSettings.AllowFileAccessAfterProjectFinishFilePatterns));
         AddSettingToFingerprint(pluginSettings.AllowFileAccessAfterProjectFinishProcessPatterns, nameof(pluginSettings.AllowFileAccessAfterProjectFinishProcessPatterns));
         AddSettingToFingerprint(pluginSettings.AllowProcessCloseAfterProjectFinishProcessPatterns, nameof(pluginSettings.AllowProcessCloseAfterProjectFinishProcessPatterns));
+
+        _pluginSettingsFingerprintEntries.Add(
+            CreateFingerprintEntry($"{nameof(pluginSettings.EnableProbeAndEnumerationFingerprinting)}: {pluginSettings.EnableProbeAndEnumerationFingerprinting}"));
     }
 
     public async Task<Fingerprint?> GetWeakFingerprintAsync(NodeContext nodeContext)
@@ -159,52 +171,191 @@ public sealed class FingerprintFactory : IFingerprintFactory
                 return CreateFingerprint(entries);
             });
 
-    public PathSet? GetPathSet(NodeContext nodeContext, IEnumerable<string> observedInputs)
+    public PathSet? GetPathSet(NodeContext nodeContext, IReadOnlyCollection<ObservedAccess> observations)
     {
-        List<string> pathSetIncludedNormalizedInputs = new();
-        List<string> pathSetExcludedNormalizedInputs = new();
-
         HashSet<string> predictedInputsSet = new(StringComparer.OrdinalIgnoreCase);
         foreach (string input in nodeContext.Inputs)
         {
             predictedInputsSet.Add(input);
         }
 
-        // As an optimization, only include non-predicted inputs. If a predicted input changes, the weak fingerprint
-        // will not match and so the associated PathSets will never be used.
-        foreach (string observedInput in observedInputs)
-        {
-            if (predictedInputsSet.Contains(observedInput))
-            {
-                continue;
-            }
+        (List<ObservedPathEntry> included, List<string> excluded) = FilterObservations(
+            observations,
+            predictedInputsSet,
+            _inputHasher,
+            _pathNormalizer,
+            _pluginSettings.IgnoredInputPatterns);
 
-            string normalizedInputPath = _pathNormalizer.Normalize(observedInput);
-            if (_inputHasher.ContainsPath(observedInput))
-            {
-                pathSetIncludedNormalizedInputs.Add(normalizedInputPath);
-            }
-            else
-            {
-                pathSetExcludedNormalizedInputs.Add(normalizedInputPath);
-            }
-        }
-
-        // Sort the collections for consistent ordering
-        pathSetIncludedNormalizedInputs.Sort(StringComparer.OrdinalIgnoreCase);
-        pathSetExcludedNormalizedInputs.Sort(StringComparer.OrdinalIgnoreCase);
+        // Build the typed entry list. Extracted to a testable static helper.
+        List<ObservedPathEntry> sortedEntries = FoldPathSetEntries(
+            included,
+            enableProbeAndEnumeration: _pluginSettings.EnableProbeAndEnumerationFingerprinting);
 
         // To help with debugging, dump the files which were included and excluded from the PathSet.
-        File.WriteAllLines(Path.Combine(nodeContext.LogDirectory, "pathSetIncluded.txt"), pathSetIncludedNormalizedInputs);
-        File.WriteAllLines(Path.Combine(nodeContext.LogDirectory, "pathSetExcluded.txt"), pathSetExcludedNormalizedInputs);
+        // When probe/enumeration fingerprinting is active, include the type column so the log is diagnosable.
+        File.WriteAllLines(
+            Path.Combine(nodeContext.LogDirectory, "pathSetIncluded.txt"),
+            sortedEntries.Select(e => e.Type == ObservationType.FileContentRead
+                ? e.Path
+                : (e.EnumerationPattern is null
+                    ? $"[{e.Type}] {e.Path}"
+                    : $"[{e.Type} {e.EnumerationPattern}] {e.Path}")));
+        excluded.Sort(StringComparer.OrdinalIgnoreCase);
+        File.WriteAllLines(Path.Combine(nodeContext.LogDirectory, "pathSetExcluded.txt"), excluded);
 
         // If the PathSet is effectively empty, return null instead.
-        if (pathSetIncludedNormalizedInputs.Count == 0)
+        if (sortedEntries.Count == 0)
         {
             return null;
         }
 
-        return new PathSet(pathSetIncludedNormalizedInputs);
+        return new PathSet(sortedEntries);
+    }
+
+    /// <summary>
+    /// Filters and normalizes sandbox observations into <see cref="ObservedPathEntry"/> records suitable for
+    /// inclusion in a <see cref="PathSet"/>. Drops:
+    /// <list type="bullet">
+    ///   <item><description>Predicted inputs (already covered by the weak fingerprint).</description></item>
+    ///   <item><description>Observations whose absolute path matches one of <paramref name="ignoredInputPatterns"/>.</description></item>
+    ///   <item><description>Probe/enumeration observations outside any known root (see <see cref="PathNormalizer.IsNormalized"/>).</description></item>
+    /// </list>
+    /// For <c>FileContentRead</c> observations, paths the input hasher cannot hash are returned in the
+    /// <c>Excluded</c> list (for debug logging) rather than the included list.
+    /// </summary>
+    internal static (List<ObservedPathEntry> Included, List<string> Excluded) FilterObservations(
+        IReadOnlyCollection<ObservedAccess> observations,
+        HashSet<string> predictedInputs,
+        IInputHasher inputHasher,
+        PathNormalizer pathNormalizer,
+        IReadOnlyCollection<Glob> ignoredInputPatterns)
+    {
+        List<ObservedPathEntry> included = new();
+        List<string> excluded = new();
+
+        foreach (ObservedAccess observation in observations)
+        {
+            // Predicted inputs are already covered by the weak fingerprint; skip.
+            if (predictedInputs.Contains(observation.Path))
+            {
+                continue;
+            }
+
+            // Drop observations whose path matches a configured ignore pattern. Applied before normalization
+            // so the pattern matches against the absolute path (the form users author).
+            if (MatchesAny(observation.Path, ignoredInputPatterns))
+            {
+                continue;
+            }
+
+            string normalizedPath = pathNormalizer.Normalize(observation.Path);
+
+            if (observation.Type == ObservationType.FileContentRead)
+            {
+                // FCR contributes only if the hasher can hash this path; otherwise it just goes to a debug log.
+                if (inputHasher.ContainsPath(observation.Path))
+                {
+                    included.Add(new ObservedPathEntry(normalizedPath, ObservationType.FileContentRead));
+                }
+                else
+                {
+                    excluded.Add(normalizedPath);
+                }
+            }
+            else if (PathNormalizer.IsNormalized(normalizedPath))
+            {
+                // Probe/enum contributes only if it's under a known root.
+                included.Add(new ObservedPathEntry(normalizedPath, observation.Type, observation.EnumerationPattern, observation.Members, observation.WrittenMembers));
+            }
+        }
+
+        return (included, excluded);
+    }
+
+    private static bool MatchesAny(string path, IReadOnlyCollection<Glob> patterns)
+    {
+        if (patterns.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (Glob pattern in patterns)
+        {
+            if (pattern.IsMatch(path))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Folds observations into a canonical, sorted list of <see cref="ObservedPathEntry"/>. For multiple
+    /// observations of the same path:
+    /// <list type="bullet">
+    ///   <item><description>The highest-precedence type wins (per <see cref="ObservationTypePrecedence"/>).</description></item>
+    ///   <item><description><c>DirectoryEnumeration</c> entries with distinct <c>EnumerationPattern</c>s are kept as separate entries.</description></item>
+    /// </list>
+    /// When <paramref name="enableProbeAndEnumeration"/> is <c>false</c>, only <c>FileContentRead</c>
+    /// observations contribute. Returns entries sorted by
+    /// <c>(Path OrdinalIgnoreCase, Type ascending, Pattern Ordinal)</c>.
+    /// </summary>
+    internal static List<ObservedPathEntry> FoldPathSetEntries(
+        IReadOnlyCollection<ObservedPathEntry> observations,
+        bool enableProbeAndEnumeration)
+    {
+        Dictionary<string, List<ObservedPathEntry>> normalizedPathToEntries = new(StringComparer.OrdinalIgnoreCase);
+
+        foreach (ObservedPathEntry observation in observations)
+        {
+            if (!enableProbeAndEnumeration && observation.Type != ObservationType.FileContentRead)
+            {
+                continue;
+            }
+
+            if (!normalizedPathToEntries.TryGetValue(observation.Path, out List<ObservedPathEntry>? existingEntries))
+            {
+                normalizedPathToEntries[observation.Path] = new List<ObservedPathEntry> { observation };
+                continue;
+            }
+
+            // All entries for a given path share the same highest-precedence Type by construction.
+            ObservationType currentType = existingEntries[0].Type;
+            ObservationType winning = ObservationTypePrecedence.Max(currentType, observation.Type);
+
+            if (winning != currentType)
+            {
+                existingEntries.Clear();
+                existingEntries.Add(observation);
+            }
+            else if (currentType == ObservationType.DirectoryEnumeration
+                  && observation.Type == ObservationType.DirectoryEnumeration)
+            {
+                bool patternAlreadyPresent = false;
+                foreach (ObservedPathEntry e in existingEntries)
+                {
+                    if (string.Equals(e.EnumerationPattern, observation.EnumerationPattern, StringComparison.Ordinal))
+                    {
+                        patternAlreadyPresent = true;
+                        break;
+                    }
+                }
+
+                if (!patternAlreadyPresent)
+                {
+                    existingEntries.Add(observation);
+                }
+            }
+            // else: new observation has same-or-lower precedence and is not a new DirEnum pattern — drop.
+        }
+
+        return normalizedPathToEntries.Values
+            .SelectMany(list => list)
+            .OrderBy(e => e.Path, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(e => (byte)e.Type)
+            .ThenBy(e => e.EnumerationPattern, StringComparer.Ordinal)
+            .ToList();
     }
 
     public async Task<Fingerprint?> GetStrongFingerprintAsync(PathSet? pathSet)
@@ -214,13 +365,13 @@ public sealed class FingerprintFactory : IFingerprintFactory
                 pathSet,
                 async pathSet =>
                 {
-                    if (pathSet?.FilesRead == null || pathSet.FilesRead.Count == 0)
+                    if (pathSet?.Entries == null || pathSet.Entries.Count == 0)
                     {
                         return null;
                     }
 
                     List<FingerprintEntry> entries = new();
-                    await SortAndAddInputFileHashesAsync(entries, pathSet.FilesRead, pathsAreNormalized: true);
+                    await SortAndAddPathSetEntriesAsync(entries, pathSet.Entries, pathsAreNormalized: true);
 
                     if (entries.Count == 0)
                     {
@@ -229,6 +380,292 @@ public sealed class FingerprintFactory : IFingerprintFactory
 
                     return CreateFingerprint(entries);
                 });
+
+    /// <summary>
+    /// Returns true if every non-FCR observation in <paramref name="cachedPathSet"/> still matches the
+    /// current filesystem state. Probes verify presence/absence; directory enumerations verify the effective
+    /// member list (after subtracting <c>WrittenMembers</c>) still matches <c>Members</c>. <c>FileContentRead</c>
+    /// entries are not checked here — their content is validated implicitly by
+    /// <see cref="GetStrongFingerprintAsync"/>, which hashes the current file contents.
+    /// </summary>
+    /// <remarks>
+    /// This is a necessary-but-not-sufficient precondition for a cache hit: if it returns false, the strong
+    /// fingerprint is guaranteed to differ and the caller can skip the FP computation. If it returns true,
+    /// the caller must still compute the strong fingerprint and compare against the cached selector's FP
+    /// to detect FCR content changes.
+    /// </remarks>
+    public bool MatchesCurrentState(PathSet? cachedPathSet)
+    {
+        if (cachedPathSet?.Entries == null)
+        {
+            return true;
+        }
+
+        foreach (ObservedPathEntry cached in cachedPathSet.Entries)
+        {
+            if (cached.Type == ObservationType.FileContentRead)
+            {
+                continue;
+            }
+
+            string absolutePath = _pathNormalizer.Unnormalize(cached.Path);
+            bool fileExists = File.Exists(absolutePath);
+            bool dirExists = !fileExists && Directory.Exists(absolutePath);
+
+            switch (cached.Type)
+            {
+                case ObservationType.ExistingProbe:
+                    if (!fileExists && !dirExists)
+                    {
+                        return false;
+                    }
+                    break;
+
+                case ObservationType.AbsentPathProbe:
+                    if (fileExists || dirExists)
+                    {
+                        return false;
+                    }
+                    break;
+
+                case ObservationType.DirectoryEnumeration:
+                    if (!dirExists)
+                    {
+                        return false;
+                    }
+
+                    // Re-enumerate, subtract cached.WrittenMembers, and compare against cached.Members.
+                    // Subtracting self-outputs makes the comparison robust to whether the previous build's
+                    // outputs are still on disk — the load-bearing trick for hitting on incremental rebuilds.
+                    IReadOnlyList<string>? effective = EnumerateAndSubtract(absolutePath, cached.EnumerationPattern, cached.WrittenMembers);
+                    if (effective is null)
+                    {
+                        // IO failure mid-enumeration — couldn't observe; force MISS to avoid a false hit
+                        // against a populate-time empty observation.
+                        return false;
+                    }
+
+                    if (!SequenceEqualsOIC(effective, cached.Members))
+                    {
+                        return false;
+                    }
+                    break;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Enumerates the directory, applies the optional <paramref name="enumerationPattern"/> filter, subtracts
+    /// <paramref name="writtenMembersToSubtract"/> (case-insensitive leaf names), and returns the result
+    /// sorted <c>OrdinalIgnoreCase</c>. Returns <c>null</c> on <see cref="IOException"/> /
+    /// <see cref="UnauthorizedAccessException"/> — distinct from an empty list, which means the directory
+    /// was observed and found empty. The caller uses null to force a cache MISS.
+    /// </summary>
+    internal static IReadOnlyList<string>? EnumerateAndSubtract(string absoluteDirectoryPath, string? enumerationPattern, IReadOnlyList<string>? writtenMembersToSubtract)
+    {
+        Glob? patternGlob = string.IsNullOrEmpty(enumerationPattern)
+            ? null
+            : Glob.Parse(enumerationPattern);
+
+        HashSet<string> subtract = writtenMembersToSubtract is null
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>(writtenMembersToSubtract, StringComparer.OrdinalIgnoreCase);
+
+        List<string> effective = new();
+        try
+        {
+            foreach (string entry in Directory.EnumerateFileSystemEntries(absoluteDirectoryPath, "*", SearchOption.TopDirectoryOnly))
+            {
+                string leaf = Path.GetFileName(entry);
+                if (patternGlob != null && !patternGlob.IsMatch(leaf))
+                {
+                    continue;
+                }
+                if (subtract.Contains(leaf))
+                {
+                    continue;
+                }
+                effective.Add(leaf);
+            }
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+
+        effective.Sort(StringComparer.OrdinalIgnoreCase);
+        return effective;
+    }
+
+    private static bool SequenceEqualsOIC(IReadOnlyList<string>? a, IReadOnlyList<string>? b)
+    {
+        if (ReferenceEquals(a, b))
+        {
+            return true;
+        }
+        if (a is null || b is null)
+        {
+            // Treat null and empty as equal for re-observation purposes — both mean "no external members".
+            return (a is null ? 0 : a.Count) == (b is null ? 0 : b.Count);
+        }
+        if (a.Count != b.Count)
+        {
+            return false;
+        }
+        for (int i = 0; i < a.Count; i++)
+        {
+            if (!string.Equals(a[i], b[i], StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private async Task SortAndAddPathSetEntriesAsync(List<FingerprintEntry> entries, IReadOnlyList<ObservedPathEntry> pathSetEntries, bool pathsAreNormalized)
+    {
+        // PathSet.Entries are sorted by (Path OrdinalIgnoreCase, Type ascending, Pattern Ordinal) per the
+        // PathSet contract — GetPathSet sorts at populate, deserialization preserves order at lookup.
+
+        // Pre-compute file content hashes in parallel for FileContentRead entries — they're typically the
+        // most expensive payloads.
+        Dictionary<string, byte[]?> fileContentHashes = new(StringComparer.OrdinalIgnoreCase);
+        List<Task<(string Path, byte[]? Hash)>> pendingHashes = new();
+        foreach (ObservedPathEntry entry in pathSetEntries)
+        {
+            if (entry.Type != ObservationType.FileContentRead)
+            {
+                continue;
+            }
+
+            string absoluteFilePath = pathsAreNormalized ? _pathNormalizer.Unnormalize(entry.Path) : entry.Path;
+            if (_pluginSettings.IgnoredInputPatterns.Count > 0
+                && _pluginSettings.IgnoredInputPatterns.Any(pattern => pattern.IsMatch(absoluteFilePath)))
+            {
+                continue;
+            }
+
+            ValueTask<byte[]?> hashTask = _inputHasher.GetHashAsync(absoluteFilePath);
+            if (hashTask.IsCompletedSuccessfully)
+            {
+                fileContentHashes[entry.Path] = hashTask.Result;
+            }
+            else
+            {
+                pendingHashes.Add(WrapAsync(entry.Path, hashTask.AsTask()));
+            }
+
+            static async Task<(string Path, byte[]? Hash)> WrapAsync(string path, Task<byte[]?> task) => (path, await task);
+        }
+
+        if (pendingHashes.Count > 0)
+        {
+            foreach ((string path, byte[]? hash) in await Task.WhenAll(pendingHashes))
+            {
+                fileContentHashes[path] = hash;
+            }
+        }
+
+        // Emit entries — exactly one FingerprintEntry per ObservedPathEntry, with the
+        // description encoding the observation's identity (type + path + any pattern) and the payload
+        // encoding its value (content hash for FCR, member hash for DirEnum; probes have no value beyond
+        // their identity, so the description hash alone is the entry hash).
+        foreach (ObservedPathEntry entry in pathSetEntries)
+        {
+            string normalizedPath = pathsAreNormalized ? entry.Path : _pathNormalizer.Normalize(entry.Path);
+
+            switch (entry.Type)
+            {
+                case ObservationType.FileContentRead:
+                {
+                    byte[]? contentHash = fileContentHashes.TryGetValue(entry.Path, out byte[]? h) ? h : null;
+                    if (contentHash is null)
+                    {
+                        // The configured IInputHasher returned no hash for this path (e.g., out-of-scope or
+                        // excluded). The path is intentionally not part of the fingerprint — skip emitting
+                        // any entry so neither its content nor its identity contributes to the strong FP.
+                        break;
+                    }
+
+                    entries.Add(CreateFingerprintEntry($"FileContentRead: {normalizedPath}", contentHash));
+                    break;
+                }
+
+                case ObservationType.DirectoryEnumeration:
+                {
+                    string description = string.IsNullOrEmpty(entry.EnumerationPattern)
+                        ? $"DirectoryEnumeration: {normalizedPath}"
+                        : $"DirectoryEnumeration: {normalizedPath} ({entry.EnumerationPattern})";
+                    byte[] memberHash = ComputeDirectoryMemberHash(entry);
+
+                    // Header entry: payload encodes the entry's state (absent / empty / member-hash for
+                    // non-empty), so the strong FP differentiates all three.
+                    entries.Add(CreateFingerprintEntry(description, memberHash));
+
+                    // Per-member entries: redundant for correctness (the header already encodes membership
+                    // via ComputeDirectoryMemberHash), but they make fingerprint dumps diff-friendly — a
+                    // reviewer can see exactly which member was added or removed between builds. The payload
+                    // reuses the precomputed member hash so the call shape stays uniform with the header.
+                    if (entry.Members is not null)
+                    {
+                        foreach (string member in entry.Members)
+                        {
+                            entries.Add(CreateFingerprintEntry($"{description} - {member}", memberHash));
+                        }
+                    }
+                    break;
+                }
+
+                case ObservationType.ExistingProbe:
+                {
+                    entries.Add(CreateFingerprintEntry($"ExistingProbe: {normalizedPath}"));
+                    break;
+                }
+
+                case ObservationType.AbsentPathProbe:
+                {
+                    entries.Add(CreateFingerprintEntry($"AbsentPathProbe: {normalizedPath}"));
+                    break;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Computes the strong-fingerprint payload for a DirectoryEnumeration entry — a deterministic hash of
+    /// <see cref="ObservedPathEntry.Members"/> (no filesystem access). Returns
+    /// <see cref="AbsentFileSentinel"/> when Members is null (directory absent/inaccessible at populate)
+    /// and <see cref="ZeroHash"/> when Members is empty.
+    /// </summary>
+    private byte[] ComputeDirectoryMemberHash(ObservedPathEntry entry)
+    {
+        if (entry.Members is null)
+        {
+            return AbsentFileSentinel;
+        }
+
+        if (entry.Members.Count == 0)
+        {
+            return ZeroHash;
+        }
+
+        var sb = new StringBuilder();
+        foreach (string name in entry.Members)
+        {
+            // Uppercase to mirror CreateFingerprintEntry's case-insensitive normalization; null separator
+            // disambiguates entries (so "ab" + "c" can't collide with "a" + "bc").
+            sb.Append(name.ToUpperInvariant()).Append('\0');
+        }
+
+        byte[] bytes = Encoding.UTF8.GetBytes(sb.ToString());
+        return _contentHasher.GetContentHash(bytes).ToHashByteArray();
+    }
 
     private async Task SortAndAddInputFileHashesAsync(List<FingerprintEntry> entries, IReadOnlyList<string> files, bool pathsAreNormalized)
     {
@@ -307,5 +744,18 @@ public sealed class FingerprintFactory : IFingerprintFactory
                     return hash.ToHashByteArray();
                 }),
             info);
+    }
+
+    /// <summary>
+    /// Like <see cref="CreateFingerprintEntry(string)"/> but combines an additional payload (e.g., a file
+    /// content hash) into the entry's hash. The description-derived hash carries the entry's identity (path,
+    /// type); the payload carries its value (content / membership). The resulting entry's hash depends on
+    /// both — change either and the fingerprint differs.
+    /// </summary>
+    private FingerprintEntry CreateFingerprintEntry(string info, byte[] payload)
+    {
+        FingerprintEntry descriptionEntry = CreateFingerprintEntry(info);
+        byte[] combined = _contentHasher.CombineHashes(new[] { descriptionEntry.Hash, payload })!;
+        return new FingerprintEntry(combined, info);
     }
 }

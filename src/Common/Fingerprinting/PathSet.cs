@@ -8,15 +8,19 @@ namespace Microsoft.MSBuildCache.Fingerprinting;
 
 public sealed class PathSet : IEquatable<PathSet>
 {
-    public PathSet(IReadOnlyList<string> filesRead)
+    public PathSet(IReadOnlyList<ObservedPathEntry> entries)
     {
-        FilesRead = filesRead;
+        Entries = entries;
     }
 
     /// <summary>
-    /// Gets the set of files read which were not predicted. These paths are normalized.
+    /// Gets the set of observations made during the build that were not predicted at planning time.
     /// </summary>
-    public IReadOnlyList<string> FilesRead { get; }
+    /// <remarks>
+    /// Entries are expected to be sorted by (Path OrdinalIgnoreCase, Type ascending, EnumerationPattern Ordinal)
+    /// so that semantically equivalent PathSets serialize and compare identically.
+    /// </remarks>
+    public IReadOnlyList<ObservedPathEntry> Entries { get; }
 
     public bool Equals(PathSet? other)
     {
@@ -30,14 +34,14 @@ public sealed class PathSet : IEquatable<PathSet>
             return false;
         }
 
-        if (FilesRead.Count != other.FilesRead.Count)
+        if (Entries.Count != other.Entries.Count)
         {
             return false;
         }
 
-        for (int i = 0; i < FilesRead.Count; i++)
+        for (int i = 0; i < Entries.Count; i++)
         {
-            if (!FilesRead[i].Equals(other.FilesRead[i], StringComparison.OrdinalIgnoreCase))
+            if (!Entries[i].Equals(other.Entries[i]))
             {
                 return false;
             }
@@ -51,9 +55,9 @@ public sealed class PathSet : IEquatable<PathSet>
     public override int GetHashCode()
     {
         var hashCode = default(HashCode);
-        foreach (string file in FilesRead)
+        foreach (ObservedPathEntry entry in Entries)
         {
-            hashCode.Add(file, StringComparer.OrdinalIgnoreCase);
+            hashCode.Add(entry);
         }
 
         return hashCode.ToHashCode();

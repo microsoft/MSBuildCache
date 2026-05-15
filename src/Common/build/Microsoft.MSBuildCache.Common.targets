@@ -25,6 +25,7 @@
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheIgnoreDotNetSdkPatchVersion</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheSkipUnchangedOutputFiles</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheTouchOutputFiles</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheEnableProbeAndEnumerationFingerprinting</MSBuildCacheGlobalPropertiesToIgnore>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(MSBuildCacheEnabled)' != 'false'">
@@ -49,6 +50,7 @@
       <IgnoreDotNetSdkPatchVersion>$(MSBuildCacheIgnoreDotNetSdkPatchVersion)</IgnoreDotNetSdkPatchVersion>
       <SkipUnchangedOutputFiles>$(MSBuildCacheSkipUnchangedOutputFiles)</SkipUnchangedOutputFiles>
       <TouchOutputFiles>$(MSBuildCacheTouchOutputFiles)</TouchOutputFiles>
+      <EnableProbeAndEnumerationFingerprinting>$(MSBuildCacheEnableProbeAndEnumerationFingerprinting)</EnableProbeAndEnumerationFingerprinting>
     </ProjectCachePlugin>
   </ItemGroup>
 
