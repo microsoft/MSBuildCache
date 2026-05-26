@@ -37,36 +37,9 @@ public class ObservationFilterTests
     }
 
     [TestMethod]
-    public void TryGetParentDirectoryReturnsParent()
-    {
-        Assert.AreEqual(@"X:\foo", FileAccessRepository.TryGetParentDirectory(@"X:\foo\bar"));
-    }
-
-    [TestMethod]
-    public void TryGetParentDirectoryHandlesTrailingSeparator()
-    {
-        // C:\foo\ should walk to C:\, not C:\foo.
-        Assert.AreEqual(@"X:\", FileAccessRepository.TryGetParentDirectory(@"X:\foo\"));
-    }
-
-    [TestMethod]
-    public void TryGetParentDirectoryReturnsNullAtDriveRoot()
-    {
-        // Walking up from a drive root should terminate the ancestor walk.
-        string? parent = FileAccessRepository.TryGetParentDirectory(@"X:\");
-        Assert.IsNull(parent, $"Expected drive root to have no parent; got '{parent}'.");
-    }
-
-    [TestMethod]
-    public void TryGetParentDirectoryHandlesEmpty()
-    {
-        Assert.IsNull(FileAccessRepository.TryGetParentDirectory(string.Empty));
-    }
-
-    [TestMethod]
     public void BuildEverWrittenOrAncestorSetIncludesAllAncestors()
     {
-        HashSet<string> result = FileAccessRepository.BuildEverWrittenOrAncestorSet(new[]
+        HashSet<string> result = FileAccessRepository.BuildEverWrittenOrAncestorSet(new List<string>
         {
             @"X:\Repo\bin\Debug\net9.0\TestProject.dll",
         });
@@ -83,7 +56,7 @@ public class ObservationFilterTests
     [TestMethod]
     public void BuildEverWrittenOrAncestorSetDeduplicatesSharedAncestors()
     {
-        HashSet<string> result = FileAccessRepository.BuildEverWrittenOrAncestorSet(new[]
+        HashSet<string> result = FileAccessRepository.BuildEverWrittenOrAncestorSet(new List<string>
         {
             @"X:\Repo\bin\Debug\net9.0\TestProject.dll",
             @"X:\Repo\bin\Debug\net9.0\TestProject.pdb",
@@ -99,7 +72,7 @@ public class ObservationFilterTests
     [TestMethod]
     public void BuildEverWrittenOrAncestorSetCaseInsensitive()
     {
-        HashSet<string> result = FileAccessRepository.BuildEverWrittenOrAncestorSet(new[]
+        HashSet<string> result = FileAccessRepository.BuildEverWrittenOrAncestorSet(new List<string>
         {
             @"X:\Repo\BIN\Debug\TestProject.dll",
             @"X:\repo\bin\debug\Other.dll",
@@ -114,9 +87,27 @@ public class ObservationFilterTests
     }
 
     [TestMethod]
+    public void BuildEverWrittenOrAncestorSetTrimsTrailingSeparator()
+    {
+        // Caller-supplied paths may have a trailing separator (e.g., directory writes recorded as
+        // "X:\Repo\bin\Debug\net9.0\"). BuildEverWrittenOrAncestorSet must trim once on entry so the
+        // ancestor walk does not produce an off-by-one parent of the same logical directory.
+        HashSet<string> result = FileAccessRepository.BuildEverWrittenOrAncestorSet(new List<string>
+        {
+            @"X:\Repo\bin\Debug\net9.0\",
+        });
+
+        Assert.IsFalse(result.Contains(@"X:\Repo\bin\Debug\net9.0"), "Ancestor walk should skip the off-by-one parent of the trimmed input.");
+        Assert.IsTrue(result.Contains(@"X:\Repo\bin\Debug"));
+        Assert.IsTrue(result.Contains(@"X:\Repo\bin"));
+        Assert.IsTrue(result.Contains(@"X:\Repo"));
+        Assert.IsTrue(result.Contains(@"X:\"));
+    }
+
+    [TestMethod]
     public void BuildEverWrittenOrAncestorSetEmptyInput()
     {
-        HashSet<string> result = FileAccessRepository.BuildEverWrittenOrAncestorSet(Array.Empty<string>());
+        HashSet<string> result = FileAccessRepository.BuildEverWrittenOrAncestorSet(new List<string>());
         Assert.AreEqual(0, result.Count);
     }
 }

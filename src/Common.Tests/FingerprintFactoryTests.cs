@@ -688,6 +688,27 @@ public class FingerprintFactoryTests
         Assert.IsNull(result, "EnumerateAndSubtract must return null (not an empty list) when the underlying FS call throws IOException.");
     }
 
+    /// <summary>
+    /// Windows filesystem matching is case-insensitive (NtQueryDirectoryFile / FindFirstFileEx), so
+    /// pattern matching in <see cref="FingerprintFactory.EnumerateAndSubtract"/> must be too. A
+    /// pattern of <c>*.cs</c> recorded at populate time must match a file named <c>Foo.CS</c> on
+    /// disk at lookup time — otherwise re-enumeration silently filters away files that would have
+    /// matched the original syscall, producing false cache misses.
+    /// </summary>
+    [TestMethod]
+    public void EnumerateAndSubtractIsCaseInsensitive()
+    {
+        using TempDirectory tempDir = TempDirectory.Create("MSBuildCacheTest-EnumerateAndSubtractCase");
+        File.WriteAllText(Path.Combine(tempDir.Path, "Foo.CS"), string.Empty);
+        File.WriteAllText(Path.Combine(tempDir.Path, "bar.cs"), string.Empty);
+        File.WriteAllText(Path.Combine(tempDir.Path, "skip.txt"), string.Empty);
+
+        IReadOnlyList<string>? result = FingerprintFactory.EnumerateAndSubtract(tempDir.Path, enumerationPattern: "*.cs", writtenMembersToSubtract: null);
+
+        Assert.IsNotNull(result);
+        CollectionAssert.AreEquivalent(new[] { "Foo.CS", "bar.cs" }, result.ToArray());
+    }
+
     // =========================================================================================
     // Same-path same-type pattern-fold (multi-pattern handling).
     //

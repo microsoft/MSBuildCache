@@ -15,6 +15,11 @@ namespace Microsoft.MSBuildCache.FileAccess;
 
 internal sealed class FileAccessRepository : IDisposable
 {
+    // Case-insensitive to match Windows filesystem semantics. NtQueryDirectoryFile / FindFirstFileEx
+    // match patterns case-insensitively, so re-enumeration at FinishProject must too — otherwise a
+    // pattern like "*.cs" stored at observation time would fail to match "Foo.CS" on disk.
+    private static readonly GlobOptions CaseInsensitiveGlobOptions = new() { Evaluation = { CaseInsensitive = true } };
+
     // Perf optimization over Enum.ToString()
     private static readonly string[] ReportedFileOperationNames =
 #if NET9_0_OR_GREATER
@@ -73,14 +78,17 @@ internal sealed class FileAccessRepository : IDisposable
     /// before creating them, and we need to suppress those probes so re-observation at cache lookup doesn't
     /// flip them to <c>ExistingProbe</c> after the build creates the directory.
     /// </summary>
-    internal static HashSet<string> BuildEverWrittenOrAncestorSet(IEnumerable<string> writtenPaths)
+    internal static HashSet<string> BuildEverWrittenOrAncestorSet(List<string> writtenPaths)
     {
         HashSet<string> result = new(StringComparer.OrdinalIgnoreCase);
         foreach (string path in writtenPaths)
         {
             result.Add(path);
 
-            string? ancestor = TryGetParentDirectory(path);
+            // Path.GetDirectoryName output is already trim-normalized (no trailing separator except at drive
+            // roots like "C:\", which then yields null on the next call and terminates the walk). So we only
+            // need to trim caller-supplied input once, not at every level.
+            string? ancestor = Path.GetDirectoryName(TrimTrailingSeparator(path));
             while (!string.IsNullOrEmpty(ancestor))
             {
                 if (!result.Add(ancestor!))
@@ -89,7 +97,7 @@ internal sealed class FileAccessRepository : IDisposable
                     break;
                 }
 
-                ancestor = TryGetParentDirectory(ancestor!);
+                ancestor = Path.GetDirectoryName(ancestor);
             }
         }
 
@@ -97,46 +105,13 @@ internal sealed class FileAccessRepository : IDisposable
     }
 
     /// <summary>
-    /// Returns the parent directory of the given path, or <c>null</c> if the path has no parent (drive
-    /// root, UNC share root, or an empty/invalid path). Trailing separators on the input are tolerated by
-    /// trimming them before delegating to <see cref="Path.GetDirectoryName(string)"/>; this prevents the
-    /// off-by-one where <c>C:\foo\</c> would otherwise be treated as having parent <c>C:\foo</c>.
-    /// </summary>
-    internal static string? TryGetParentDirectory(string path)
-    {
-        string trimmed = TrimTrailingSeparator(path);
-        try
-        {
-            string? parent = Path.GetDirectoryName(trimmed);
-            if (string.IsNullOrEmpty(parent) || string.Equals(parent, trimmed, StringComparison.OrdinalIgnoreCase))
-            {
-                return null;
-            }
-            return parent;
-        }
-        catch (ArgumentException)
-        {
-            // Path with invalid characters — give up on the ancestor walk; the observation will not be filtered.
-            return null;
-        }
-        catch (PathTooLongException)
-        {
-            return null;
-        }
-    }
-
-    /// <summary>
     /// Trims a single trailing directory separator (forward or back slash) from the given path. No-op when
     /// the path doesn't end with a separator.
     /// </summary>
     internal static string TrimTrailingSeparator(string path)
-    {
-        if (path.Length > 0 && (path[path.Length - 1] == Path.DirectorySeparatorChar || path[path.Length - 1] == Path.AltDirectorySeparatorChar))
-        {
-            return path.Substring(0, path.Length - 1);
-        }
-        return path;
-    }
+        => path.Length > 0 && (path[path.Length - 1] == Path.DirectorySeparatorChar || path[path.Length - 1] == Path.AltDirectorySeparatorChar)
+            ? path.Substring(0, path.Length - 1)
+            : path;
 
     private sealed class FileAccessesState : IDisposable
     {
@@ -255,6 +230,10 @@ internal sealed class FileAccessRepository : IDisposable
                 // Note: This is a hot path, so writing fields one at a time to avoid the overhead of a string.Format with many arguments.
                 _logFileStream.Write(processId);
                 _logFileStream.Write(", ");
+                _logFileStream.Write(fileAccessData.Id);
+                _logFileStream.Write(", ");
+                _logFileStream.Write(fileAccessData.CorrelationId);
+                _logFileStream.Write(", ");
                 UInt32FlagsFormatter<DesiredAccess>.Write(_logFileStream, (uint)desiredAccess);
                 _logFileStream.Write(", ");
                 UInt32FlagsFormatter<FlagsAndAttributes>.Write(_logFileStream, (uint)flagsAndAttributes);
@@ -297,12 +276,18 @@ internal sealed class FileAccessRepository : IDisposable
                         }
                         else
                         {
-                            // EnumerationPattern is not surfaced by MSBuild's FileAccessData currently;
-                            // unfiltered enumeration is the conservative interpretation (any directory
-                            // member change invalidates).
                             obsType = ObservationType.DirectoryEnumeration;
                         }
 
+                        // TODO (cross-repo: incremental-build-fingerprinting): EnumerationPattern is
+                        // unavailable today. BXL's IDetoursEventListener.FileAccessData is missing the
+                        // EnumeratePattern field (dropped in SandboxedProcessReports when materializing
+                        // the listener struct); MSBuild's FileAccessData is missing it too. Both layers
+                        // need additive API changes before this can be populated. Until then, observations
+                        // capture the directory as unfiltered, which conservatively invalidates on ANY
+                        // child change — making filtered enumerations (the common case) unable to hit.
+                        // The feature flag (_observations != null) gates this whole branch and should
+                        // stay opt-out OFF until upstream lands.
                         _observations.Add(new ObservedAccess(path, obsType, EnumerationPattern: null));
                     }
 
@@ -480,22 +465,21 @@ internal sealed class FileAccessRepository : IDisposable
             // remain correct whether outputs are still on disk or not.
             if (observations != null && observations.Count > 0)
             {
+                // Single pass over fileTable: collect writtenPaths and build a per-directory leaf-name
+                // index of self-writes so we can partition each surviving DirectoryEnumeration's members
+                // in O(membersInDir) time.
                 List<string> writtenPaths = new();
+                Dictionary<string, HashSet<string>> writtenLeafNamesByDir = new(StringComparer.OrdinalIgnoreCase);
                 foreach (KeyValuePair<string, FileAccessInfo> kvp in fileTable)
                 {
-                    if (EverWritten(kvp.Value))
+                    if (!EverWritten(kvp.Value))
                     {
-                        writtenPaths.Add(kvp.Key);
+                        continue;
                     }
-                }
 
-                HashSet<string> everWrittenOrAncestor = BuildEverWrittenOrAncestorSet(writtenPaths);
+                    string writtenPath = kvp.Key;
+                    writtenPaths.Add(writtenPath);
 
-                // Build a per-directory leaf-name index of self-writes so we can partition each
-                // surviving DirectoryEnumeration's members in O(membersInDir) time.
-                Dictionary<string, HashSet<string>> writtenLeafNamesByDir = new(StringComparer.OrdinalIgnoreCase);
-                foreach (string writtenPath in writtenPaths)
-                {
                     string parent = TrimTrailingSeparator(Path.GetDirectoryName(writtenPath) ?? string.Empty);
                     string leaf = Path.GetFileName(writtenPath);
                     if (string.IsNullOrEmpty(parent) || string.IsNullOrEmpty(leaf))
@@ -511,6 +495,8 @@ internal sealed class FileAccessRepository : IDisposable
 
                     leafSet.Add(leaf);
                 }
+
+                HashSet<string> everWrittenOrAncestor = BuildEverWrittenOrAncestorSet(writtenPaths);
 
                 foreach (ObservedAccess obs in observations)
                 {
@@ -554,9 +540,9 @@ internal sealed class FileAccessRepository : IDisposable
                 return (null, null);
             }
 
-            DotNet.Globbing.Glob? patternGlob = string.IsNullOrEmpty(enumerationPattern)
+            Glob? patternGlob = string.IsNullOrEmpty(enumerationPattern)
                 ? null
-                : DotNet.Globbing.Glob.Parse(enumerationPattern);
+                : Glob.Parse(enumerationPattern, CaseInsensitiveGlobOptions);
 
             List<string> members = new();
             List<string> writtenMembers = new();

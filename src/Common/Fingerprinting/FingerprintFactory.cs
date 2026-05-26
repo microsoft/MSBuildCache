@@ -23,6 +23,10 @@ public record Fingerprint(byte[] Hash, IReadOnlyList<FingerprintEntry> Entries);
 
 public sealed class FingerprintFactory : IFingerprintFactory
 {
+    // Case-insensitive to match Windows filesystem semantics (NtQueryDirectoryFile / FindFirstFileEx).
+    // Used for re-enumeration at lookup time against populate-time captured patterns.
+    private static readonly GlobOptions CaseInsensitiveGlobOptions = new() { Evaluation = { CaseInsensitive = true } };
+
     // Cache computed fingerprints which may be accessed multiple times. Note that this implies that fingerprint calculation
     // is based on data which is unchanging after it's computed. The weak fingerprints are based on dependencies' results, but
     // it's assumed that dependencies will always finish first.
@@ -52,8 +56,10 @@ public sealed class FingerprintFactory : IFingerprintFactory
         _pluginSettings = pluginSettings;
         _pathNormalizer = pathNormalizer;
 
-        AbsentFileSentinel = WellKnownHashes.AbsentFileSentinel(contentHasher);
-        ZeroHash = WellKnownHashes.ZeroHash(contentHasher);
+        byte[] ComputeWellKnownHash(string value) => contentHasher.GetContentHash(Encoding.UTF8.GetBytes(value)).ToHashByteArray();
+
+        AbsentFileSentinel = ComputeWellKnownHash("Microsoft.MSBuildCache.Fingerprinting.AbsentFile");
+        ZeroHash = ComputeWellKnownHash("Microsoft.MSBuildCache.Fingerprinting.Zero");
 
         _pluginSettingsFingerprintEntries = new List<FingerprintEntry>()
         {
@@ -467,7 +473,7 @@ public sealed class FingerprintFactory : IFingerprintFactory
     {
         Glob? patternGlob = string.IsNullOrEmpty(enumerationPattern)
             ? null
-            : Glob.Parse(enumerationPattern);
+            : Glob.Parse(enumerationPattern, CaseInsensitiveGlobOptions);
 
         HashSet<string> subtract = writtenMembersToSubtract is null
             ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
