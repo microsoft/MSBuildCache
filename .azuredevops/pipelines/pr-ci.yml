@@ -88,13 +88,13 @@ jobs:
   # - task: Cache@2
   #   displayName: Cache Visual Studio
   #   inputs:
-  #     key: '"vs-release" | "$(Agent.OS)"'
+  #     key: '"vs" | "$(Agent.OS)"'
   #     path: $(VsInstallDir)
 
   - script: |
       del %TEMP%\vs_buildtools.exe
       
-      curl.exe -L https://aka.ms/vs/17/release/vs_buildtools.exe -o %TEMP%\vs_buildtools.exe
+      curl.exe -L https://aka.ms/vs/18/stable/vs_buildtools.exe -o %TEMP%\vs_buildtools.exe
       
       %TEMP%\vs_buildtools.exe ^
         --config "$(Build.SourcesDirectory)\.vsconfig" ^
@@ -124,12 +124,12 @@ jobs:
     artifact: '$(System.JobDisplayName) logs'
     condition: always()
 
-- job: E2ETestVS2026
-  displayName: E2E Tests using VS 2026
+- job: E2ETestMSBuildRepo
+  displayName: E2E Tests using tip of MSBuild repo
   dependsOn: Build
   variables:
     VsInstallDir: $(Build.ArtifactStagingDirectory)\vs
-    MSBuildPath: $(VsInstallDir)\MSBuild\Current\Bin\amd64\MSBuild.exe
+    MSBuildPath: $(Build.SourcesDirectory)\msbuild\artifacts\bin\bootstrap\net472\MSBuild\Current\Bin\amd64\MSBuild.exe
   steps:
   - download: current
     displayName: 'Download Build Artifacts'
@@ -137,20 +137,18 @@ jobs:
 
   - checkout: self
 
-  # Avoiding Caching VS for now as the installer command we're using doesn't work for upgrades
-  # - task: Cache@2
-  #   displayName: Cache Visual Studio
-  #   inputs:
-  #     key: '"vs-2026" | "$(Agent.OS)"'
-  #     path: $(VsInstallDir)
+  - checkout: msbuild
 
+  # Building tip-of-main MSBuild requires a full Visual Studio; build.cmd locates it via vswhere,
+  # so installing VS here (regardless of install path) satisfies that lookup and is also available
+  # to the E2E test that runs the bootstrapped MSBuild.
   - script: |
       del %TEMP%\vs_buildtools.exe
-      
+
       curl.exe -L https://aka.ms/vs/18/stable/vs_buildtools.exe -o %TEMP%\vs_buildtools.exe
-      
+
       %TEMP%\vs_buildtools.exe ^
-        --config "$(Build.SourcesDirectory)\.vsconfig" ^
+        --config "$(Build.SourcesDirectory)\MSBuildCache\.vsconfig" ^
         --installPath "$(VsInstallDir)" ^
         --passive ^
         --norestart ^
@@ -163,33 +161,9 @@ jobs:
       mkdir "$(LogDirectory)\VSSetup"
       move "%TEMP%\dd_*" "$(LogDirectory)\VSSetup\"
 
-      echo Current MSBuild version:
-      "$(MSBuildPath)" --version
-    displayName: 'Install VS 2026'
-
-  - template: templates\e2e-test.yml
-    parameters:
-      RepoRoot: $(Build.SourcesDirectory)
-      MSBuildPath: $(MSBuildPath)
-
-  - publish: $(LogDirectory)
-    displayName: Publish Logs
-    artifact: '$(System.JobDisplayName) logs'
-    condition: always()
-
-- job: E2ETestMSBuildRepo
-  displayName: E2E Tests using tip of MSBuild repo
-  dependsOn: Build
-  variables:
-    MSBuildPath: $(Build.SourcesDirectory)\msbuild\artifacts\bin\bootstrap\net472\MSBuild\Current\Bin\amd64\MSBuild.exe
-  steps:
-  - download: current
-    displayName: 'Download Build Artifacts'
-    artifact: artifacts
-
-  - checkout: self
-
-  - checkout: msbuild
+      echo Installed VS MSBuild version:
+      "$(VsInstallDir)\MSBuild\Current\Bin\amd64\MSBuild.exe" --version
+    displayName: 'Install VS'
 
   - task: Cache@2
     displayName: Cache MSBuild
