@@ -106,7 +106,7 @@ public sealed class NodeContext
         }
 
 #pragma warning disable CA5351 // Do Not Use Broken Cryptographic Algorithms. This is not used for crypto.
-        using MD5 hasher = MD5.Create();
+        using MD5 hasher = MD5.Create(); // CodeQL [SM02196] This is not used for crypto, but for just generating a small nickname.
 #pragma warning restore CA5351 // Do Not Use Broken Cryptographic Algorithms
 
         foreach (KeyValuePair<string, string> kvp in sortedProperties)
