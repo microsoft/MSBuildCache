@@ -12,6 +12,8 @@ namespace Microsoft.MSBuildCache;
 [JsonSourceGenerationOptions(WriteIndented = true, Converters = [typeof(ContentHashJsonConverter), typeof(SortedDictionaryConverter)])]
 [JsonSerializable(typeof(NodeBuildResult))]
 [JsonSerializable(typeof(PathSet))]
+[JsonSerializable(typeof(ObservedPathEntry))]
+[JsonSerializable(typeof(ObservationType))]
 [JsonSerializable(typeof(LocalCacheStateFile))]
 [JsonSerializable(typeof(IDictionary<string, ContentHash>))]
 internal partial class SourceGenerationContext : JsonSerializerContext
