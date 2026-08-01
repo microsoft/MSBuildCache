@@ -56,8 +56,6 @@ Finally, add a `PackageReference` to MSBuildCache to your test repo with version
 
 **NOTE!** Because you're using a locally built package, you may need to clear it from your package cache after each iteration via a command like `rmdir /S /Q %NUGET_PACKAGES%\Microsoft.MSBuildCache` (if you set `%NUGET_PACKAGES%`) or `rmdir /S /Q %USERPROFILE%\.nuget\packages\Microsoft.MSBuildCache` if you're using the dfault package cache location. Additionally, to ensure you're not using the head version of the package, you may need to create a branch and dummy commit locally to ensure the version is higher.
 
-**NOTE!** MSBuildCache currently does not handle incremental builds well! The current target scenario is for CI environments, so **it's expected that the repo is always clean before building**. The main reason for this gap is because file probes and directory enumerations are not currently considered.
-
 To enable file reporting via detours in MSBuild, ensure `/graph` and `/reportfileaccesses` are used.
 
 Example of a set of commands to test MSBuildCache e2e in some repo:

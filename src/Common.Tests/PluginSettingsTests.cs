@@ -6,6 +6,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using DotNet.Globbing;
+using Microsoft.Build.Evaluation;
+using Microsoft.MSBuildCache.FileAccess;
 using Microsoft.MSBuildCache.Tests.Mocks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -23,7 +25,10 @@ public sealed class PluginSettingsTests
     {
         Dictionary<string, string> settings = new(StringComparer.OrdinalIgnoreCase);
         MockPluginLogger logger = new();
-        _ = PluginSettings.Create<PluginSettings>(settings, logger, RepoRoot);
+
+        // Pin the capability so this stays a test of settings logging; without it the probe-and-enumeration
+        // clamp would log a second entry whenever the test host's MSBuild predates the required fields.
+        _ = PluginSettings.Create<PluginSettings>(settings, logger, RepoRoot, supportsProbeAndEnumerationCapture: true);
 
         Assert.HasCount(1, logger.LogEntries);
 
@@ -61,7 +66,11 @@ public sealed class PluginSettingsTests
             settings.Add(nameof(PluginSettings.LogDirectory), logDirectorySetting);
         }
 
-        PluginSettings pluginSettings = PluginSettings.Create<PluginSettings>(settings, NullPluginLogger.Instance, RepoRoot);
+        PluginSettings pluginSettings = PluginSettings.Create<PluginSettings>(
+            settings,
+            NullPluginLogger.Instance,
+            RepoRoot,
+            supportsProbeAndEnumerationCapture: true);
 
         Assert.AreEqual(expectedLogDirectory, pluginSettings.LogDirectory);
     }
@@ -93,6 +102,99 @@ public sealed class PluginSettingsTests
             nameof(PluginSettings.LocalCacheSizeInMegabytes),
             pluginSettings => pluginSettings.LocalCacheSizeInMegabytes,
             new[] { 123u, 456u, 789u });
+
+    // =========================================================================================
+    // EnableProbeAndEnumerationFingerprinting capability clamp.
+    //
+    // Probe and enumeration observations are only sound when the running MSBuild reports the
+    // enumeration pattern. On an older MSBuild the setting is forced to false so that the property
+    // itself is always the single source of truth — including for the weak fingerprint, which is what
+    // keeps caches from being shared between hosts that do and don't capture these observations.
+    // =========================================================================================
+
+    [TestMethod]
+    [DataRow(true, DisplayName = "explicitly requested")]
+    [DataRow(false, DisplayName = "left at default")]
+    public void ProbeAndEnumerationFingerprintingForcedOffWithoutCapability(bool requestExplicitly)
+    {
+        Dictionary<string, string> settings = new(StringComparer.OrdinalIgnoreCase);
+        if (requestExplicitly)
+        {
+            settings[nameof(PluginSettings.EnableProbeAndEnumerationFingerprinting)] = "true";
+        }
+
+        MockPluginLogger logger = new();
+        PluginSettings pluginSettings = PluginSettings.Create<PluginSettings>(
+            settings,
+            logger,
+            RepoRoot,
+            supportsProbeAndEnumerationCapture: false);
+
+        Assert.IsFalse(
+            pluginSettings.EnableProbeAndEnumerationFingerprinting,
+            "The setting must be forced off when the host MSBuild cannot report the required file access fields, "
+            + "even when the user explicitly asked for it.");
+
+        Assert.IsTrue(
+            logger.LogEntries.Any(entry => entry.Message.Contains(
+                nameof(PluginSettings.EnableProbeAndEnumerationFingerprinting), StringComparison.Ordinal)
+                && entry.Message.Contains("forced to false", StringComparison.Ordinal)),
+            "Forcing the setting off must be logged so the cache-behavior change is diagnosable.");
+
+        // Naming the running version is what makes the message actionable — otherwise a user is told the
+        // feature is off but not what they are on or that upgrading would fix it.
+        if (FileAccessDataCapabilities.MSBuildVersion is string msbuildVersion)
+        {
+            Assert.IsTrue(
+                logger.LogEntries.Any(entry => entry.Message.Contains(msbuildVersion, StringComparison.Ordinal)),
+                $"The message must name the running MSBuild version ('{msbuildVersion}').");
+        }
+    }
+
+    [TestMethod]
+    public void MSBuildVersionUsesAssemblyInformationalVersion()
+    {
+        string? expected = typeof(ProjectCollection).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion;
+
+        Assert.AreEqual(expected, FileAccessDataCapabilities.MSBuildVersion);
+    }
+
+    [TestMethod]
+    public void ProbeAndEnumerationFingerprintingHonoredWithCapability()
+    {
+        Dictionary<string, string> settings = new(StringComparer.OrdinalIgnoreCase);
+        MockPluginLogger logger = new();
+        PluginSettings pluginSettings = PluginSettings.Create<PluginSettings>(
+            settings,
+            logger,
+            RepoRoot,
+            supportsProbeAndEnumerationCapture: true);
+
+        Assert.IsTrue(pluginSettings.EnableProbeAndEnumerationFingerprinting);
+    }
+
+    /// <summary>
+    /// The clamp must not resurrect the feature for a user who explicitly turned it off on a capable host.
+    /// </summary>
+    [TestMethod]
+    public void ProbeAndEnumerationFingerprintingRespectsExplicitOptOutWithCapability()
+    {
+        Dictionary<string, string> settings = new(StringComparer.OrdinalIgnoreCase)
+        {
+            [nameof(PluginSettings.EnableProbeAndEnumerationFingerprinting)] = "false",
+        };
+
+        MockPluginLogger logger = new();
+        PluginSettings pluginSettings = PluginSettings.Create<PluginSettings>(
+            settings,
+            logger,
+            RepoRoot,
+            supportsProbeAndEnumerationCapture: true);
+
+        Assert.IsFalse(pluginSettings.EnableProbeAndEnumerationFingerprinting);
+    }
 
     [TestMethod]
     [DynamicData(nameof(GlobTestCases), DynamicDataDisplayName = nameof(GetTestCaseDisplayName))]
@@ -202,7 +304,11 @@ public sealed class PluginSettingsTests
                 settings.Add(settingName, settingValue);
             }
 
-            PluginSettings pluginSettings = PluginSettings.Create<PluginSettings>(settings, NullPluginLogger.Instance, RepoRoot);
+            PluginSettings pluginSettings = PluginSettings.Create<PluginSettings>(
+                settings,
+                NullPluginLogger.Instance,
+                RepoRoot,
+                supportsProbeAndEnumerationCapture: true);
 
             Assert.AreEqual(expectedValue, valueAccessor(pluginSettings));
         }
@@ -218,7 +324,11 @@ public sealed class PluginSettingsTests
             { settingName, testCase.Glob },
         };
 
-        PluginSettings pluginSettings = PluginSettings.Create<PluginSettings>(settings, NullPluginLogger.Instance, RepoRoot);
+        PluginSettings pluginSettings = PluginSettings.Create<PluginSettings>(
+            settings,
+            NullPluginLogger.Instance,
+            RepoRoot,
+            supportsProbeAndEnumerationCapture: true);
 
         foreach (string path in testCase.ExpectedMatching)
         {
@@ -255,7 +365,11 @@ public sealed class PluginSettingsTests
             settings.Add(settingName, testCase.SettingValue);
         }
 
-        PluginSettings pluginSettings = PluginSettings.Create<PluginSettings>(settings, NullPluginLogger.Instance, RepoRoot);
+        PluginSettings pluginSettings = PluginSettings.Create<PluginSettings>(
+            settings,
+            NullPluginLogger.Instance,
+            RepoRoot,
+            supportsProbeAndEnumerationCapture: true);
 
         CollectionAssert.AreEqual(testCase.ExpectedValues.ToList(), valueAccessor(pluginSettings).ToList());
     }

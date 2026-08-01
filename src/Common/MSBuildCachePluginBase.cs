@@ -223,7 +223,11 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
         _buildId = GetBuildId();
 
-        Settings = PluginSettings.Create<TPluginSettings>(context.PluginSettings, logger, _repoRoot);
+        Settings = PluginSettings.Create<TPluginSettings>(
+            context.PluginSettings,
+            logger,
+            _repoRoot,
+            FileAccessDataCapabilities.IsSupported);
 
         // The local cache does not allow multiple processes to access it at the same time and will block indefinitely while waiting for a lock on the directory.
         // In certain scenarios where MSBuild is invoked recursively, such as is done for Fakes projects, this can lead to a hang as the child MSBuild waits for the
