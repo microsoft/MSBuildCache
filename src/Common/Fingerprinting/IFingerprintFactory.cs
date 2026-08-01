@@ -14,4 +14,6 @@ public interface IFingerprintFactory
     PathSet? GetPathSet(NodeContext nodeContext, IReadOnlyCollection<ObservedAccess> observations);
 
     Task<Fingerprint?> GetStrongFingerprintAsync(PathSet? pathSet);
+
+    bool MatchesCurrentState(PathSet? cachedPathSet);
 }

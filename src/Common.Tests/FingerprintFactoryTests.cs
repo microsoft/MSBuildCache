@@ -205,7 +205,9 @@ public class FingerprintFactoryTests
     /// <summary>
     /// Adding a member to an enumerated directory must change the strong fingerprint. Under the
     /// schema-driven model the strong-FP comes from the entry's <c>Members</c> field directly,
-    /// so two PathSets that differ only in their Members lists produce different fingerprints.
+    /// so two PathSets that differ only in their Members lists produce different fingerprints. (Detection
+    /// of filesystem changes between populate and lookup happens via <c>MatchesCurrentState</c> — see
+    /// <c>MatchesCurrentStateDirectoryEnumerationDetectsExternalMemberAdded</c>.)
     /// </summary>
     [TestMethod]
     public async Task StrongFingerprintDirectoryMemberHashDetectsAddition()
@@ -370,6 +372,462 @@ public class FingerprintFactoryTests
         Assert.IsNotNull(fp2);
         CollectionAssert.AreEqual(fp1.Hash, fp2.Hash,
             "Strong fingerprint must be deterministic across factory instances.");
+    }
+
+    // =========================================================================================
+    // MatchesCurrentState: cheap probe/enumeration verification at cache lookup time.
+    //
+    // Returns true if every non-FCR observation in the cached PathSet still matches current filesystem
+    // state. The caller (CacheClient) combines this with a standard strong-FP comparison: if
+    // MatchesCurrentState is false, skip the selector entirely; if true, compute the strong FP from the
+    // cached PathSet (which hashes current FCR content) and compare to the cached selector's FP.
+    // =========================================================================================
+
+    /// <summary>
+    /// Cached AbsentPathProbe with current path now present → MatchesCurrentState returns false (cache MISS
+    /// without strong-FP computation). This is the clean→dirty→miss fix.
+    /// </summary>
+    [TestMethod]
+    public void MatchesCurrentStateAbsentBecomesPresentReturnsFalse()
+    {
+        using TempDirectory tempRepo = TempDirectory.Create("MSBuildCacheTest-MatchAbsentBecomesPresent");
+        using IContentHasher hasher = HashInfoLookup.Find(HashType.Murmur).CreateContentHasher();
+        var pathNormalizer = new PathNormalizer(tempRepo.Path, @"X:\Nuget");
+
+        PathSet cachedPathSet = new(new List<ObservedPathEntry>
+        {
+            new(@"{RepoRoot}\generated.txt", ObservationType.AbsentPathProbe),
+        });
+
+        // The path now exists on disk; the cached AbsentPathProbe no longer reflects reality.
+        WriteTextSync(Path.Combine(tempRepo.Path, "generated.txt"), "now exists");
+
+        Assert.IsFalse(CreateFactory(hasher, pathNormalizer: pathNormalizer).MatchesCurrentState(cachedPathSet));
+    }
+
+    /// <summary>
+    /// Cached ExistingProbe with current path now absent → MatchesCurrentState returns false.
+    /// </summary>
+    [TestMethod]
+    public void MatchesCurrentStateExistingBecomesAbsentReturnsFalse()
+    {
+        using TempDirectory tempRepo = TempDirectory.Create("MSBuildCacheTest-MatchExistingBecomesAbsent");
+        using IContentHasher hasher = HashInfoLookup.Find(HashType.Murmur).CreateContentHasher();
+        var pathNormalizer = new PathNormalizer(tempRepo.Path, @"X:\Nuget");
+
+        string filePath = Path.Combine(tempRepo.Path, "tooling.dll");
+        WriteTextSync(filePath, "");
+
+        PathSet cachedPathSet = new(new List<ObservedPathEntry>
+        {
+            new(@"{RepoRoot}\tooling.dll", ObservationType.ExistingProbe),
+        });
+
+        File.Delete(filePath);
+
+        Assert.IsFalse(CreateFactory(hasher, pathNormalizer: pathNormalizer).MatchesCurrentState(cachedPathSet));
+    }
+
+    /// <summary>
+    /// State unchanged → MatchesCurrentState returns true, AND the strong fingerprint of the cached PathSet
+    /// equals the populate-time fingerprint. This is the cache-hit case.
+    /// </summary>
+    [TestMethod]
+    public async Task MatchesCurrentStateUnchangedHitsAndFingerprintMatches()
+    {
+        using TempDirectory tempRepo = TempDirectory.Create("MSBuildCacheTest-MatchUnchanged");
+        using IContentHasher hasher = HashInfoLookup.Find(HashType.Murmur).CreateContentHasher();
+        var pathNormalizer = new PathNormalizer(tempRepo.Path, @"X:\Nuget");
+
+        WriteTextSync(Path.Combine(tempRepo.Path, "stable.dll"), "");
+
+        PathSet cachedPathSet = new(new List<ObservedPathEntry>
+        {
+            new(@"{RepoRoot}\stable.dll", ObservationType.ExistingProbe),
+            new(@"{RepoRoot}\never-existed.dll", ObservationType.AbsentPathProbe),
+        });
+
+        FingerprintFactory factoryAtPopulate = CreateFactory(hasher, pathNormalizer: pathNormalizer);
+        Fingerprint? populateFp = await factoryAtPopulate.GetStrongFingerprintAsync(cachedPathSet);
+
+        FingerprintFactory factoryAtLookup = CreateFactory(hasher, pathNormalizer: pathNormalizer);
+        Assert.IsTrue(factoryAtLookup.MatchesCurrentState(cachedPathSet),
+            "MatchesCurrentState must return true when probes still match reality.");
+
+        Fingerprint? lookupFp = await factoryAtLookup.GetStrongFingerprintAsync(cachedPathSet);
+        Assert.IsNotNull(populateFp);
+        Assert.IsNotNull(lookupFp);
+        CollectionAssert.AreEqual(populateFp.Hash, lookupFp.Hash,
+            "Cached strong FP must match recomputed FP when state is unchanged.");
+    }
+
+    /// <summary>
+    /// Three-build clean → dirty → clean cycle. MatchesCurrentState must return true → false → true across
+    /// the cycle, and the Build 3 fingerprint matches the Build 1 fingerprint (cache hit recovered).
+    /// </summary>
+    [TestMethod]
+    public async Task MatchesCurrentStateCleanDirtyCleanCycleRecoversHit()
+    {
+        using TempDirectory tempRepo = TempDirectory.Create("MSBuildCacheTest-MatchCleanDirtyClean");
+        using IContentHasher hasher = HashInfoLookup.Find(HashType.Murmur).CreateContentHasher();
+        var pathNormalizer = new PathNormalizer(tempRepo.Path, @"X:\Nuget");
+
+        string fsPath = Path.Combine(tempRepo.Path, "ephemeral.dat");
+        PathSet cachedPathSet = new(new List<ObservedPathEntry>
+        {
+            new(@"{RepoRoot}\ephemeral.dat", ObservationType.AbsentPathProbe),
+        });
+
+        // Build 1: clean, file absent → matches → cache the strong FP.
+        FingerprintFactory build1 = CreateFactory(hasher, pathNormalizer: pathNormalizer);
+        Assert.IsTrue(build1.MatchesCurrentState(cachedPathSet));
+        Fingerprint? build1Fp = await build1.GetStrongFingerprintAsync(cachedPathSet);
+
+        // Build 2: dirty, file appears → MatchesCurrentState false; skip selector.
+        WriteTextSync(fsPath, "");
+        FingerprintFactory build2 = CreateFactory(hasher, pathNormalizer: pathNormalizer);
+        Assert.IsFalse(build2.MatchesCurrentState(cachedPathSet));
+
+        // Build 3: clean again, file removed → MatchesCurrentState true again; FP recomputes to build1's.
+        File.Delete(fsPath);
+        FingerprintFactory build3 = CreateFactory(hasher, pathNormalizer: pathNormalizer);
+        Assert.IsTrue(build3.MatchesCurrentState(cachedPathSet));
+        Fingerprint? build3Fp = await build3.GetStrongFingerprintAsync(cachedPathSet);
+
+        Assert.IsNotNull(build1Fp);
+        Assert.IsNotNull(build3Fp);
+        CollectionAssert.AreEqual(build1Fp.Hash, build3Fp.Hash,
+            "Build 3 (clean again) must produce the Build 1 fingerprint so the cache hit is recovered.");
+    }
+
+    /// <summary>
+    /// All-FCR PathSet → MatchesCurrentState returns true vacuously (no probes/enums to check); FCR
+    /// validation happens implicitly via the strong-FP computation's content hashing.
+    /// </summary>
+    [TestMethod]
+    public void MatchesCurrentStateAllFileContentReadReturnsTrue()
+    {
+        using IContentHasher hasher = HashInfoLookup.Find(HashType.Murmur).CreateContentHasher();
+
+        PathSet cachedPathSet = new(new List<ObservedPathEntry>
+        {
+            new(@"{RepoRoot}\a.cs", ObservationType.FileContentRead),
+            new(@"{RepoRoot}\b.cs", ObservationType.FileContentRead),
+        });
+
+        Assert.IsTrue(CreateFactory(hasher).MatchesCurrentState(cachedPathSet));
+    }
+
+    /// <summary>
+    /// Null or empty cached PathSet → MatchesCurrentState returns true vacuously.
+    /// </summary>
+    [TestMethod]
+    public void MatchesCurrentStateNullOrEmptyReturnsTrue()
+    {
+        using IContentHasher hasher = HashInfoLookup.Find(HashType.Murmur).CreateContentHasher();
+        FingerprintFactory factory = CreateFactory(hasher);
+
+        Assert.IsTrue(factory.MatchesCurrentState(null));
+        Assert.IsTrue(factory.MatchesCurrentState(new PathSet(new List<ObservedPathEntry>())));
+    }
+
+    [TestMethod]
+    public void MatchesCurrentStateUnknownObservationTypeReturnsFalse()
+    {
+        using IContentHasher hasher = HashInfoLookup.Find(HashType.Murmur).CreateContentHasher();
+        PathSet cachedPathSet = new(new List<ObservedPathEntry>
+        {
+            new(@"{RepoRoot}\future-observation", (ObservationType)byte.MaxValue),
+        });
+
+        Assert.IsFalse(
+            CreateFactory(hasher).MatchesCurrentState(cachedPathSet),
+            "Observation types unknown to this client must force a miss rather than silently losing a dependency.");
+    }
+
+    // =========================================================================================
+    // Self-output enumeration cycle — the schema-driven fix.
+    //
+    // These tests pin the load-bearing property: when a project enumerates a directory it also
+    // writes into, populate-time captures the partition into Members (external dependency) and
+    // WrittenMembers (project's own outputs). Lookup-time MatchesCurrentState subtracts cached.WrittenMembers
+    // from the current contents and compares against cached.Members — which makes cache hits
+    // robust to the previous build's outputs being either present (incremental) or absent (clean).
+    // =========================================================================================
+
+    /// <summary>
+    /// The headline cycle case: cached PathSet has DirectoryEnumeration with WrittenMembers=[Foo.dll, Foo.pdb]
+    /// (the project's self-outputs) and Members=[] (no external dependency members). MatchesCurrentState
+    /// against an empty directory (clean state) subtracts cached.WrittenMembers from {} → effective is []
+    /// → matches cached.Members → returns true.
+    /// </summary>
+    [TestMethod]
+    public void MatchesCurrentStateDirectoryEnumerationCleanStateMatchesCachedSelfOutputs()
+    {
+        using TempDirectory tempRepo = TempDirectory.Create("MSBuildCacheTest-MatchDirEnumCleanCycle");
+        using IContentHasher hasher = HashInfoLookup.Find(HashType.Murmur).CreateContentHasher();
+        var pathNormalizer = new PathNormalizer(tempRepo.Path, @"X:\Nuget");
+
+        string normalizedDir = pathNormalizer.Normalize(tempRepo.Path);
+        PathSet cachedPathSet = new(new List<ObservedPathEntry>
+        {
+            new(normalizedDir, ObservationType.DirectoryEnumeration, enumerationPattern: null,
+                members: Array.Empty<string>(),
+                writtenMembers: new[] { "Foo.dll", "Foo.pdb" }),
+        });
+
+        // Lookup with empty directory (clean rebuild): subtract WrittenMembers from {} → [] → matches.
+        Assert.IsTrue(CreateFactory(hasher, pathNormalizer: pathNormalizer).MatchesCurrentState(cachedPathSet),
+            "MatchesCurrentState must return true for an empty directory when cached.WrittenMembers cancels out the previous build's contribution.");
+
+        // Lookup with leftover outputs from the previous build (incremental scenario): subtract
+        // {Foo.dll, Foo.pdb} → [] → matches.
+        WriteTextSync(Path.Combine(tempRepo.Path, "Foo.dll"), "");
+        WriteTextSync(Path.Combine(tempRepo.Path, "Foo.pdb"), "");
+
+        Assert.IsTrue(CreateFactory(hasher, pathNormalizer: pathNormalizer).MatchesCurrentState(cachedPathSet),
+            "MatchesCurrentState must return true for an incremental rebuild where leftover self-outputs are still on disk.");
+    }
+
+    /// <summary>
+    /// External-member regression: if a NEW non-self-output file appears in the enumerated directory
+    /// between populate and lookup, MatchesCurrentState must return false.
+    /// </summary>
+    [TestMethod]
+    public void MatchesCurrentStateDirectoryEnumerationDetectsExternalMemberAdded()
+    {
+        using TempDirectory tempRepo = TempDirectory.Create("MSBuildCacheTest-MatchDirEnumExternalAdded");
+        using IContentHasher hasher = HashInfoLookup.Find(HashType.Murmur).CreateContentHasher();
+        var pathNormalizer = new PathNormalizer(tempRepo.Path, @"X:\Nuget");
+
+        string normalizedDir = pathNormalizer.Normalize(tempRepo.Path);
+        PathSet cachedPathSet = new(new List<ObservedPathEntry>
+        {
+            new(normalizedDir, ObservationType.DirectoryEnumeration, enumerationPattern: null,
+                members: Array.Empty<string>(),
+                writtenMembers: new[] { "Foo.dll" }),
+        });
+
+        // A sibling project's output now sits in the directory.
+        WriteTextSync(Path.Combine(tempRepo.Path, "Sibling.dll"), "");
+
+        Assert.IsFalse(CreateFactory(hasher, pathNormalizer: pathNormalizer).MatchesCurrentState(cachedPathSet));
+    }
+
+    /// <summary>
+    /// Stable external membership: cached Members=[Manifest.json], WrittenMembers=[Foo.dll]. Both clean
+    /// (only Manifest.json) and incremental (Manifest.json + Foo.dll) states match.
+    /// </summary>
+    [TestMethod]
+    public void MatchesCurrentStateDirectoryEnumerationStableExternalMembers()
+    {
+        using TempDirectory tempRepo = TempDirectory.Create("MSBuildCacheTest-MatchDirEnumStableExternal");
+        using IContentHasher hasher = HashInfoLookup.Find(HashType.Murmur).CreateContentHasher();
+        var pathNormalizer = new PathNormalizer(tempRepo.Path, @"X:\Nuget");
+
+        string normalizedDir = pathNormalizer.Normalize(tempRepo.Path);
+        PathSet cachedPathSet = new(new List<ObservedPathEntry>
+        {
+            new(normalizedDir, ObservationType.DirectoryEnumeration, enumerationPattern: null,
+                members: new[] { "Manifest.json" },
+                writtenMembers: new[] { "Foo.dll" }),
+        });
+
+        WriteTextSync(Path.Combine(tempRepo.Path, "Manifest.json"), "{}");
+        Assert.IsTrue(CreateFactory(hasher, pathNormalizer: pathNormalizer).MatchesCurrentState(cachedPathSet),
+            "Clean lookup with stable external member must match.");
+
+        WriteTextSync(Path.Combine(tempRepo.Path, "Foo.dll"), "");
+        Assert.IsTrue(CreateFactory(hasher, pathNormalizer: pathNormalizer).MatchesCurrentState(cachedPathSet),
+            "Incremental lookup with stable external member must match.");
+    }
+
+    /// <summary>
+    /// External-member removed: cached Members=[Manifest.json], WrittenMembers=[Foo.dll]. If the external
+    /// file disappears between populate and lookup, MatchesCurrentState must return false.
+    /// </summary>
+    [TestMethod]
+    public void MatchesCurrentStateDirectoryEnumerationDetectsExternalMemberRemoved()
+    {
+        using TempDirectory tempRepo = TempDirectory.Create("MSBuildCacheTest-MatchDirEnumExternalRemoved");
+        using IContentHasher hasher = HashInfoLookup.Find(HashType.Murmur).CreateContentHasher();
+        var pathNormalizer = new PathNormalizer(tempRepo.Path, @"X:\Nuget");
+
+        string normalizedDir = pathNormalizer.Normalize(tempRepo.Path);
+        PathSet cachedPathSet = new(new List<ObservedPathEntry>
+        {
+            new(normalizedDir, ObservationType.DirectoryEnumeration, enumerationPattern: null,
+                members: new[] { "Manifest.json" },
+                writtenMembers: new[] { "Foo.dll" }),
+        });
+
+        // Lookup with NEITHER file present — the external dependency Manifest.json is gone.
+        Assert.IsFalse(CreateFactory(hasher, pathNormalizer: pathNormalizer).MatchesCurrentState(cachedPathSet));
+    }
+
+    /// <summary>
+    /// Cached DirectoryEnumeration of a path that is no longer a directory at lookup time → returns false.
+    /// </summary>
+    [TestMethod]
+    public void MatchesCurrentStateDirectoryEnumerationOfAbsentDirReturnsFalse()
+    {
+        using IContentHasher hasher = HashInfoLookup.Find(HashType.Murmur).CreateContentHasher();
+        var pathNormalizer = new PathNormalizer(@"X:\NonExistentRepo", @"X:\Nuget");
+
+        PathSet cachedPathSet = new(new List<ObservedPathEntry>
+        {
+            new(@"{RepoRoot}\definitely-not-here", ObservationType.DirectoryEnumeration,
+                enumerationPattern: null,
+                members: Array.Empty<string>(),
+                writtenMembers: null),
+        });
+
+        Assert.IsFalse(CreateFactory(hasher, pathNormalizer: pathNormalizer).MatchesCurrentState(cachedPathSet));
+    }
+
+    /// <summary>
+    /// A directory that was absent when the entry was produced, and is still absent, must re-validate.
+    /// <c>PartitionDirectoryMembers</c> records a null member list for a directory it could not enumerate,
+    /// and <c>ComputeDirectoryMemberHash</c> encodes that as distinct from an empty one, so the null case
+    /// has to be validated as absence. Validating it by re-enumeration reports a miss precisely because
+    /// nothing changed, which would make any project enumerating a missing directory — an ordinary
+    /// consequence of a wildcard over a directory that does not exist — permanently uncacheable.
+    /// </summary>
+    [TestMethod]
+    public void MatchesCurrentStateDirectoryEnumerationAbsentAtPopulateAndStillAbsentReturnsTrue()
+    {
+        using IContentHasher hasher = HashInfoLookup.Find(HashType.Murmur).CreateContentHasher();
+        using TempDirectory tempRepo = TempDirectory.Create("MSBuildCacheTest-DirEnumStillAbsent");
+        var pathNormalizer = new PathNormalizer(tempRepo.Path, @"X:\Nuget");
+
+        // members: null is the "could not enumerate" state, as opposed to an empty list, which means the
+        // directory existed and had no members.
+        PathSet cachedPathSet = new(new List<ObservedPathEntry>
+        {
+            new(@"{RepoRoot}\never-created", ObservationType.DirectoryEnumeration,
+                enumerationPattern: null,
+                members: null,
+                writtenMembers: null),
+        });
+
+        Assert.IsTrue(CreateFactory(hasher, pathNormalizer: pathNormalizer).MatchesCurrentState(cachedPathSet));
+    }
+
+    /// <summary>
+    /// The other direction: a directory that was absent when the entry was produced but exists now has
+    /// changed, so the entry must not re-validate.
+    /// </summary>
+    [TestMethod]
+    public void MatchesCurrentStateDirectoryEnumerationAbsentAtPopulateNowExistsReturnsFalse()
+    {
+        using IContentHasher hasher = HashInfoLookup.Find(HashType.Murmur).CreateContentHasher();
+        using TempDirectory tempRepo = TempDirectory.Create("MSBuildCacheTest-DirEnumNowExists");
+        var pathNormalizer = new PathNormalizer(tempRepo.Path, @"X:\Nuget");
+
+        PathSet cachedPathSet = new(new List<ObservedPathEntry>
+        {
+            new(@"{RepoRoot}\appears-later", ObservationType.DirectoryEnumeration,
+                enumerationPattern: null,
+                members: null,
+                writtenMembers: null),
+        });
+
+        Directory.CreateDirectory(Path.Combine(tempRepo.Path, "appears-later"));
+
+        Assert.IsFalse(CreateFactory(hasher, pathNormalizer: pathNormalizer).MatchesCurrentState(cachedPathSet));
+    }
+
+    /// <summary>
+    /// Patterns reported by the sandbox may contain the native DOS wildcard tokens. Re-enumeration must
+    /// pass them through to the native filesystem layer rather than rejecting them as invalid managed
+    /// glob syntax.
+    /// </summary>
+    [TestMethod]
+    [DataRow("<", DisplayName = "DOS_STAR")]
+    [DataRow(">", DisplayName = "DOS_QM")]
+    [DataRow("\"", DisplayName = "DOS_DOT")]
+    [DataRow("*.\"", DisplayName = "extension-less files")]
+    [DataRow("{", DisplayName = "open brace")]
+    [DataRow("]", DisplayName = "close bracket")]
+    public void EnumerateAndSubtractAcceptsNativePattern(string pattern)
+    {
+        using TempDirectory tempDir = TempDirectory.Create("MSBuildCacheTest-BadPattern");
+        WriteTextSync(Path.Combine(tempDir.Path, "a.cs"), "");
+        WriteTextSync(Path.Combine(tempDir.Path, "b.txt"), "");
+
+        IReadOnlyList<string>? result = FingerprintFactory.EnumerateAndSubtract(tempDir.Path, pattern, writtenMembersToSubtract: null);
+
+        Assert.IsNotNull(result, "A pattern accepted and reported by the sandbox must remain enumerable at lookup.");
+    }
+
+    [TestMethod]
+    public void EnumerateAndSubtractUsesWin32StarDotStarSemantics()
+    {
+        using TempDirectory tempDir = TempDirectory.Create("MSBuildCacheTest-StarDotStar");
+        WriteTextSync(Path.Combine(tempDir.Path, "README"), "");
+        WriteTextSync(Path.Combine(tempDir.Path, "a.cs"), "");
+
+        IReadOnlyList<string>? result =
+            FingerprintFactory.EnumerateAndSubtract(tempDir.Path, "*.*", writtenMembersToSubtract: null);
+
+        Assert.IsNotNull(result);
+        CollectionAssert.AreEquivalent(new[] { "README", "a.cs" }, result.ToArray());
+    }
+
+    [TestMethod]
+    public void EnumerateAndSubtractExcludesIgnoredMembers()
+    {
+        using TempDirectory tempDir = TempDirectory.Create("MSBuildCacheTest-IgnoredEnumerationMember");
+        string ignoredPath = Path.Combine(tempDir.Path, "noisy.marker");
+        WriteTextSync(ignoredPath, "");
+        WriteTextSync(Path.Combine(tempDir.Path, "stable.input"), "");
+
+        IReadOnlyList<string>? result = FingerprintFactory.EnumerateAndSubtract(
+            tempDir.Path,
+            enumerationPattern: null,
+            writtenMembersToSubtract: null,
+            ignoredInputPatterns: new[] { Glob.Parse(ignoredPath) });
+
+        Assert.IsNotNull(result);
+        CollectionAssert.AreEqual(new[] { "stable.input" }, result.ToArray());
+    }
+
+    /// <summary>
+    /// <see cref="FingerprintFactory.EnumerateAndSubtract"/> must return <c>null</c> (not an empty list)
+    /// on IO failure, so the caller can distinguish "couldn't observe" from "observed an empty directory".
+    /// Passing a file path (rather than a directory) reliably triggers <see cref="IOException"/>.
+    /// </summary>
+    [TestMethod]
+    public void EnumerateAndSubtractReturnsNullOnIOFailure()
+    {
+        using TempDirectory tempDir = TempDirectory.Create("MSBuildCacheTest-EnumerateAndSubtractIOFailure");
+        string filePath = Path.Combine(tempDir.Path, "this-is-a-file-not-a-directory.txt");
+        File.WriteAllText(filePath, string.Empty);
+
+        IReadOnlyList<string>? result = FingerprintFactory.EnumerateAndSubtract(filePath, enumerationPattern: null, writtenMembersToSubtract: null);
+
+        Assert.IsNull(result, "EnumerateAndSubtract must return null (not an empty list) when the underlying FS call throws IOException.");
+    }
+
+    /// <summary>
+    /// Windows filesystem matching is case-insensitive (NtQueryDirectoryFile / FindFirstFileEx), so
+    /// pattern matching in <see cref="FingerprintFactory.EnumerateAndSubtract"/> must be too. A
+    /// pattern of <c>*.cs</c> recorded at populate time must match a file named <c>Foo.CS</c> on
+    /// disk at lookup time — otherwise re-enumeration silently filters away files that would have
+    /// matched the original syscall, producing false cache misses.
+    /// </summary>
+    [TestMethod]
+    public void EnumerateAndSubtractIsCaseInsensitive()
+    {
+        using TempDirectory tempDir = TempDirectory.Create("MSBuildCacheTest-EnumerateAndSubtractCase");
+        File.WriteAllText(Path.Combine(tempDir.Path, "Foo.CS"), string.Empty);
+        File.WriteAllText(Path.Combine(tempDir.Path, "bar.cs"), string.Empty);
+        File.WriteAllText(Path.Combine(tempDir.Path, "skip.txt"), string.Empty);
+
+        IReadOnlyList<string>? result = FingerprintFactory.EnumerateAndSubtract(tempDir.Path, enumerationPattern: "*.cs", writtenMembersToSubtract: null);
+
+        Assert.IsNotNull(result);
+        CollectionAssert.AreEquivalent(new[] { "Foo.CS", "bar.cs" }, result.ToArray());
     }
 
     // =========================================================================================

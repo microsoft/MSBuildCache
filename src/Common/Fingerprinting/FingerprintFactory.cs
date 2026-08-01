@@ -383,6 +383,180 @@ public sealed class FingerprintFactory : IFingerprintFactory
                     return CreateFingerprint(entries);
                 });
 
+    /// <summary>
+    /// Returns true if every non-FCR observation in <paramref name="cachedPathSet"/> still matches the
+    /// current filesystem state. Probes verify presence/absence; directory enumerations verify the effective
+    /// member list (after subtracting <c>WrittenMembers</c>) still matches <c>Members</c>. <c>FileContentRead</c>
+    /// entries are not checked here — their content is validated implicitly by
+    /// <see cref="GetStrongFingerprintAsync"/>, which hashes the current file contents.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// For <c>FileContentRead</c> entries this is an optimization: their content is hashed by
+    /// <see cref="GetStrongFingerprintAsync"/>, so a change is caught by the fingerprint comparison whether
+    /// or not this method runs.
+    /// </para>
+    /// <para>
+    /// For probe and directory-enumeration entries it is <b>not</b> an optimization — it is the only thing
+    /// enforcing them. Those entries contribute their recorded state to the strong fingerprint rather than
+    /// anything read from disk, so the fingerprint recomputed at lookup always equals the one stored in the
+    /// selector no matter what the filesystem now looks like. Removing or short-circuiting this check would
+    /// therefore not cost cache hits; it would silently start producing incorrect ones.
+    /// </para>
+    /// </remarks>
+    public bool MatchesCurrentState(PathSet? cachedPathSet)
+    {
+        if (cachedPathSet?.Entries == null)
+        {
+            return true;
+        }
+
+        foreach (ObservedPathEntry cached in cachedPathSet.Entries)
+        {
+            if (cached.Type == ObservationType.FileContentRead)
+            {
+                continue;
+            }
+
+            string absolutePath = _pathNormalizer.Unnormalize(cached.Path);
+            bool fileExists = File.Exists(absolutePath);
+            bool dirExists = !fileExists && Directory.Exists(absolutePath);
+
+            switch (cached.Type)
+            {
+                case ObservationType.ExistingProbe:
+                    if (!fileExists && !dirExists)
+                    {
+                        return false;
+                    }
+                    break;
+
+                case ObservationType.AbsentPathProbe:
+                    if (fileExists || dirExists)
+                    {
+                        return false;
+                    }
+                    break;
+
+                case ObservationType.DirectoryEnumeration:
+                    // A null member list is the populate-time "directory was not enumerable" state, which
+                    // ComputeDirectoryMemberHash deliberately encodes as distinct from an empty one. It has
+                    // to be validated as absence rather than falling through to re-enumeration, otherwise a
+                    // directory that was missing when the entry was produced could never re-validate: the
+                    // check below would report a miss precisely because nothing had changed.
+                    if (cached.Members is null)
+                    {
+                        if (dirExists)
+                        {
+                            return false;
+                        }
+
+                        break;
+                    }
+
+                    if (!dirExists)
+                    {
+                        return false;
+                    }
+
+                    // Re-enumerate, subtract cached.WrittenMembers, and compare against cached.Members.
+                    // Subtracting self-outputs makes the comparison robust to whether the previous build's
+                    // outputs are still on disk — the load-bearing trick for hitting on incremental rebuilds.
+                    IReadOnlyList<string>? effective = EnumerateAndSubtract(
+                        absolutePath,
+                        cached.EnumerationPattern,
+                        cached.WrittenMembers,
+                        _pluginSettings.IgnoredInputPatterns);
+                    if (effective is null)
+                    {
+                        // IO failure mid-enumeration — couldn't observe; force MISS to avoid a false hit
+                        // against a populate-time empty observation.
+                        return false;
+                    }
+
+                    if (!SequenceEqualsOIC(effective, cached.Members))
+                    {
+                        return false;
+                    }
+                    break;
+
+                default:
+                    // A newer client may add observation types that this version cannot validate.
+                    // Treat them as mismatches so forward-incompatible cache data degrades to a miss.
+                    return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Enumerates the directory, applies the optional <paramref name="enumerationPattern"/> filter, subtracts
+    /// <paramref name="writtenMembersToSubtract"/> (case-insensitive leaf names), and returns the result
+    /// sorted <c>OrdinalIgnoreCase</c>. Returns <c>null</c> when the directory cannot be enumerated,
+    /// distinct from an empty list, which means the directory was observed and found empty. The caller
+    /// uses null to force a cache MISS.
+    /// </summary>
+    internal static IReadOnlyList<string>? EnumerateAndSubtract(
+        string absoluteDirectoryPath,
+        string? enumerationPattern,
+        IReadOnlyList<string>? writtenMembersToSubtract,
+        IReadOnlyCollection<Glob>? ignoredInputPatterns = null)
+    {
+        HashSet<string> subtract = writtenMembersToSubtract is null
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>(writtenMembersToSubtract, StringComparer.OrdinalIgnoreCase);
+
+        IReadOnlyList<string>? enumeratedMembers =
+            DirectoryEnumerationReader.EnumerateLeafNames(
+                absoluteDirectoryPath,
+                enumerationPattern,
+                ignoredInputPatterns);
+        if (enumeratedMembers is null)
+        {
+            return null;
+        }
+
+        List<string> effective = new();
+        foreach (string leaf in enumeratedMembers)
+        {
+            if (subtract.Contains(leaf))
+            {
+                continue;
+            }
+
+            effective.Add(leaf);
+        }
+
+        effective.Sort(StringComparer.OrdinalIgnoreCase);
+        return effective;
+    }
+
+    private static bool SequenceEqualsOIC(IReadOnlyList<string>? a, IReadOnlyList<string>? b)
+    {
+        if (ReferenceEquals(a, b))
+        {
+            return true;
+        }
+        if (a is null || b is null)
+        {
+            // Treat null and empty as equal for re-observation purposes — both mean "no external members".
+            return (a is null ? 0 : a.Count) == (b is null ? 0 : b.Count);
+        }
+        if (a.Count != b.Count)
+        {
+            return false;
+        }
+        for (int i = 0; i < a.Count; i++)
+        {
+            if (!string.Equals(a[i], b[i], StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private async Task SortAndAddPathSetEntriesAsync(List<FingerprintEntry> entries, IReadOnlyList<ObservedPathEntry> pathSetEntries, bool pathsAreNormalized)
     {
         // PathSet.Entries are sorted by (Path OrdinalIgnoreCase, Type ascending, Pattern Ordinal) per the
