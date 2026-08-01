@@ -9,6 +9,7 @@ using System.Linq;
 using DotNet.Globbing;
 using Microsoft.Build.Experimental.FileAccess;
 using Microsoft.Build.Experimental.ProjectCache;
+using Microsoft.MSBuildCache.Fingerprinting;
 
 namespace Microsoft.MSBuildCache.FileAccess;
 
@@ -315,7 +316,7 @@ internal sealed class FileAccessRepository : IDisposable
             List<RemoveDirectoryOperation> deletedDirectories)
         {
             var outputs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var inputs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            List<ObservedAccess> allObservations = new();
 
             IEnumerable<FileAccessInfo> outputFileInfos = fileTable
                 .Select(fileInfoKvp => fileInfoKvp.Value)
@@ -346,10 +347,10 @@ internal sealed class FileAccessRepository : IDisposable
                     continue;
                 }
 
-                inputs.Add(filePath);
+                allObservations.Add(new ObservedAccess(filePath, ObservationType.FileContentRead));
             }
 
-            return new FileAccesses(inputs, outputs);
+            return new FileAccesses(allObservations, outputs);
         }
 
         private static bool IsOutput(FileAccessInfo fileInfo)

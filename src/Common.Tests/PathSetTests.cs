@@ -2,6 +2,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System.Collections.Generic;
+using System.Text.Json;
 using Microsoft.MSBuildCache.Fingerprinting;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -10,6 +11,156 @@ namespace Microsoft.MSBuildCache.Tests;
 [TestClass]
 public class PathSetTests
 {
+    /// <summary>
+    /// A payload without an <c>Entries</c> property — written by a version predating this schema, or
+    /// truncated — must degrade to a cache miss rather than throwing. <see cref="PathSet"/> is used as a
+    /// dictionary key during cache lookup, so it is hashed before any caller can inspect it; a null
+    /// <c>Entries</c> would throw from <see cref="PathSet.GetHashCode"/> and take down the build,
+    /// bypassing the null handling in the fingerprint factory entirely.
+    /// </summary>
+    [TestMethod]
+    public void DeserializingPayloadWithoutEntriesDoesNotThrow()
+    {
+        const string NoEntriesPayload = @"{""FilesRead"":[""dir/a.cs"",""dir/b.cs""]}";
+
+        PathSet? deserialized = JsonSerializer.Deserialize(NoEntriesPayload, SourceGenerationContext.Default.PathSet);
+
+        Assert.IsNotNull(deserialized);
+        Assert.IsNotNull(deserialized!.Entries, "Entries must never be null; it is hashed before it can be checked.");
+        Assert.AreEqual(0, deserialized.Entries.Count);
+
+        // Both must be callable, since the type is used as a cache key.
+        _ = deserialized.GetHashCode();
+        Assert.IsTrue(deserialized.Equals(new PathSet(new List<ObservedPathEntry>())));
+    }
+
+    [TestMethod]
+    public void EqualsIdenticalEntriesWithNullPattern()
+    {
+        // Regression: pre-Phase-1 the path was stored as a raw string; the new schema permits a null EnumerationPattern.
+        // Equality and hashing must tolerate null on both sides without throwing.
+        var a = new PathSet(new List<ObservedPathEntry>
+        {
+            new("dir/file.cs", ObservationType.FileContentRead),
+        });
+        var b = new PathSet(new List<ObservedPathEntry>
+        {
+            new("dir/file.cs", ObservationType.FileContentRead),
+        });
+
+        Assert.IsTrue(a.Equals(b));
+        Assert.AreEqual(a.GetHashCode(), b.GetHashCode());
+    }
+
+    [TestMethod]
+    public void EqualsIdenticalEntries()
+    {
+        var a = new PathSet(new List<ObservedPathEntry>
+        {
+            new("dir/file.cs", ObservationType.FileContentRead),
+            new("dir2/", ObservationType.DirectoryEnumeration, "*.cs"),
+        });
+        var b = new PathSet(new List<ObservedPathEntry>
+        {
+            new("DIR/FILE.CS", ObservationType.FileContentRead), // case-insensitive path
+            new("dir2/", ObservationType.DirectoryEnumeration, "*.cs"),
+        });
+
+        Assert.IsTrue(a.Equals(b));
+        Assert.AreEqual(a.GetHashCode(), b.GetHashCode());
+    }
+
+    [TestMethod]
+    public void EqualsDifferingType()
+    {
+        var a = new PathSet(new List<ObservedPathEntry>
+        {
+            new("file", ObservationType.FileContentRead),
+        });
+        var b = new PathSet(new List<ObservedPathEntry>
+        {
+            new("file", ObservationType.ExistingProbe),
+        });
+
+        Assert.IsFalse(a.Equals(b));
+    }
+
+    [TestMethod]
+    public void EqualsDifferingPattern()
+    {
+        var a = new PathSet(new List<ObservedPathEntry>
+        {
+            new("dir", ObservationType.DirectoryEnumeration, "*.cs"),
+        });
+        var b = new PathSet(new List<ObservedPathEntry>
+        {
+            new("dir", ObservationType.DirectoryEnumeration, "*.fs"),
+        });
+
+        Assert.IsFalse(a.Equals(b));
+    }
+
+    [TestMethod]
+    public void EqualsDifferingPatternCase()
+    {
+        // Pattern equality is ordinal — a build that enumerated for "*.CS" is semantically distinct from one that
+        // enumerated for "*.cs" (the underlying enumeration API may or may not be case-insensitive at the filesystem
+        // layer, but the strong fingerprint must be deterministic in the pattern string itself).
+        var a = new PathSet(new List<ObservedPathEntry>
+        {
+            new("dir", ObservationType.DirectoryEnumeration, "*.cs"),
+        });
+        var b = new PathSet(new List<ObservedPathEntry>
+        {
+            new("dir", ObservationType.DirectoryEnumeration, "*.CS"),
+        });
+
+        Assert.IsFalse(a.Equals(b));
+    }
+
+    [TestMethod]
+    public void EqualsOrderMatters()
+    {
+        // PathSet equality is positional. Callers are responsible for canonical sort before construction.
+        var a = new PathSet(new List<ObservedPathEntry>
+        {
+            new("a", ObservationType.FileContentRead),
+            new("b", ObservationType.FileContentRead),
+        });
+        var b = new PathSet(new List<ObservedPathEntry>
+        {
+            new("b", ObservationType.FileContentRead),
+            new("a", ObservationType.FileContentRead),
+        });
+
+        Assert.IsFalse(a.Equals(b));
+    }
+
+    [TestMethod]
+    public void JsonRoundTripAllObservationTypes()
+    {
+        var original = new PathSet(new List<ObservedPathEntry>
+        {
+            new("repo/src/foo.cs", ObservationType.FileContentRead),
+            new("repo/src/", ObservationType.DirectoryEnumeration, "*.cs"),
+            new("repo/bin/probed.dll", ObservationType.ExistingProbe),
+            new("repo/obj/missing.gen.cs", ObservationType.AbsentPathProbe),
+        });
+
+        string serialized = JsonSerializer.Serialize(original, SourceGenerationContext.Default.PathSet);
+        PathSet? deserialized = JsonSerializer.Deserialize(serialized, SourceGenerationContext.Default.PathSet);
+
+        Assert.IsNotNull(deserialized);
+        Assert.AreEqual(original, deserialized);
+        // Sanity-check that every type round-tripped: equality covers it, but be explicit about the schema field.
+        Assert.AreEqual(4, deserialized!.Entries.Count);
+        Assert.AreEqual(ObservationType.FileContentRead, deserialized.Entries[0].Type);
+        Assert.AreEqual(ObservationType.DirectoryEnumeration, deserialized.Entries[1].Type);
+        Assert.AreEqual("*.cs", deserialized.Entries[1].EnumerationPattern);
+        Assert.AreEqual(ObservationType.ExistingProbe, deserialized.Entries[2].Type);
+        Assert.AreEqual(ObservationType.AbsentPathProbe, deserialized.Entries[3].Type);
+    }
+
     [TestMethod]
     public void ObservationTypeByteValuesAreStable()
     {
@@ -130,5 +281,22 @@ public class PathSetTests
         Assert.IsNull(fcr.Members);
         Assert.IsNull(fcr.WrittenMembers);
         Assert.IsNull(fcr.EnumerationPattern);
+    }
+
+    [TestMethod]
+    public void JsonRoundTripPreservesMembersAndWrittenMembers()
+    {
+        var original = new PathSet(new List<ObservedPathEntry>
+        {
+            new("dir/", ObservationType.DirectoryEnumeration, enumerationPattern: "*.cs",
+                members: new[] { "a.cs", "b.cs" },
+                writtenMembers: new[] { "Foo.dll", "Foo.pdb" }),
+        });
+
+        string json = JsonSerializer.Serialize(original, SourceGenerationContext.Default.PathSet);
+        PathSet roundTripped = JsonSerializer.Deserialize(json, SourceGenerationContext.Default.PathSet)!;
+
+        Assert.IsTrue(original.Equals(roundTripped),
+            $"PathSet should round-trip through JSON serialization. Original entries: {original.Entries.Count}, deserialized entries: {roundTripped.Entries.Count}.");
     }
 }

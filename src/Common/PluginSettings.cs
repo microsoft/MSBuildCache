@@ -111,6 +111,17 @@ public class PluginSettings
 
     public bool TouchOutputFiles { get; init; }
 
+    /// <summary>
+    /// Enables probe and directory-enumeration tracking in fingerprints. When false, only file content
+    /// reads contribute to the fingerprint, matching pre-feature behavior.
+    /// </summary>
+    /// <remarks>
+    /// This contributes to the weak fingerprint, which keeps caches produced with and without the feature
+    /// from being shared — important because an entry produced without it records no probe or enumeration
+    /// dependencies at all, and reusing that entry on a host that does track them would be an incorrect hit.
+    /// </remarks>
+    public bool EnableProbeAndEnumerationFingerprinting { get; init; }
+
     public static T Create<T>(
         IReadOnlyDictionary<string, string> settings,
         PluginLoggerBase logger,
