@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft. All rights reserved.
+﻿// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
@@ -64,6 +64,67 @@ internal sealed class FileAccessRepository : IDisposable
 
     private FileAccessesState GetFileAccessesState(NodeContext nodeContext)
         => _fileAccessStates.GetOrAdd(nodeContext, nodeContext => new FileAccessesState(nodeContext, _logger, _pluginSettings, _processTable));
+
+    /// <summary>
+    /// Builds the "ever-written or ancestor-of-written" set used to filter self-output probe
+    /// observations. For every path in <paramref name="writtenPaths"/>, the result includes the path itself
+    /// plus every ancestor directory back to the root. This extends the self-output probe filter with
+    /// ancestor-dir handling — MSBuild commonly probes output directories (e.g., <c>bin\Debug\net9.0\</c>)
+    /// before creating them, and we need to suppress those probes so re-observation at cache lookup doesn't
+    /// flip them to <c>ExistingProbe</c> after the build creates the directory.
+    /// </summary>
+    internal static HashSet<string> BuildEverWrittenOrAncestorSet(List<string> writtenPaths)
+    {
+        HashSet<string> result = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string path in writtenPaths)
+        {
+            string normalizedPath = TrimTrailingSeparator(path);
+            result.Add(normalizedPath);
+
+            // Path.GetDirectoryName output is already trim-normalized (no trailing separator except at drive
+            // roots like "C:\", which then yields null on the next call and terminates the walk). So we only
+            // need to trim caller-supplied input once, not at every level.
+            string? ancestor = Path.GetDirectoryName(normalizedPath);
+            while (!string.IsNullOrEmpty(ancestor))
+            {
+                if (!result.Add(ancestor!))
+                {
+                    // Already in the set — every shallower ancestor is too. Stop the walk.
+                    break;
+                }
+
+                ancestor = Path.GetDirectoryName(ancestor);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Returns whether an observation should be removed because it targets a path written by this project
+    /// or an ancestor of one. Directory enumerations are retained when the project only wrote members
+    /// beneath them, so external members can be separated from self-outputs, but are removed when the
+    /// project created the directory itself.
+    /// </summary>
+    internal static bool ShouldExcludeSelfOutputObservation(
+        ObservedAccess observation,
+        HashSet<string> everWritten,
+        HashSet<string> everWrittenOrAncestor)
+    {
+        string normalizedPath = TrimTrailingSeparator(observation.Path);
+        return observation.Type == ObservationType.DirectoryEnumeration
+            ? everWritten.Contains(normalizedPath)
+            : everWrittenOrAncestor.Contains(normalizedPath);
+    }
+
+    /// <summary>
+    /// Trims a single trailing directory separator (forward or back slash) from the given path. No-op when
+    /// the path doesn't end with a separator.
+    /// </summary>
+    internal static string TrimTrailingSeparator(string path)
+        => path.Length > 0 && (path[path.Length - 1] == Path.DirectorySeparatorChar || path[path.Length - 1] == Path.AltDirectorySeparatorChar)
+            ? path.Substring(0, path.Length - 1)
+            : path;
 
     // Win32 error codes that mean the probed path definitively did not exist.
     private const uint ErrorFileNotFound = 2;
@@ -399,7 +460,11 @@ internal sealed class FileAccessRepository : IDisposable
                 }
             }
 
-            return ProcessFileAccesses(fileTable, deletedDirectories, observations);
+            return ProcessFileAccesses(
+                fileTable,
+                deletedDirectories,
+                observations,
+                _pluginSettings.IgnoredInputPatterns);
         }
 
         private Glob? IsAllowFileAccessAfterProjectFinishFilePatterns(string fileName) =>
@@ -414,7 +479,8 @@ internal sealed class FileAccessRepository : IDisposable
         private static FileAccesses ProcessFileAccesses(
             Dictionary<string, FileAccessInfo> fileTable,
             List<RemoveDirectoryOperation> deletedDirectories,
-            List<ObservedAccess>? observations)
+            List<ObservedAccess>? observations,
+            IReadOnlyCollection<Glob> ignoredInputPatterns)
         {
             var outputs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             List<ObservedAccess> allObservations = new();
@@ -451,12 +517,130 @@ internal sealed class FileAccessRepository : IDisposable
                 allObservations.Add(new ObservedAccess(filePath, ObservationType.FileContentRead));
             }
 
-            if (observations != null)
+            // Drop probe observations for paths written by this project — post-write probes reflect
+            // intra-build state, not the pre-build state that drives cache lookup. Keeping them would
+            // cause false misses for probe-then-write patterns (e.g. a target
+            // that probes `obj/A.GeneratedCode.cs`, generates it if missing, then re-probes).
+            //
+            // We use a broader "ever-written" set than `outputs`: outputs filters to existing-file outputs
+            // only, which would leak transient temp files, build-created directories, and orphan-parent
+            // files. Cross-project probes still survive — this is project-local, not graph-wide.
+            //
+            // Ancestor directories of every written file are also filtered: MSBuild commonly probes an
+            // output directory (e.g., `bin\Debug\net9.0\`) before creating it; without this filter,
+            // re-observation would promote the cached AbsentPathProbe to ExistingProbe and miss.
+            //
+            // For DirectoryEnumeration observations that survive the filter, PartitionDirectoryMembers
+            // splits the directory's contents into Members (external) and WrittenMembers (self-outputs).
+            // At lookup, the WrittenMembers list cancels whatever the previous build wrote, so cache hits
+            // remain correct whether outputs are still on disk or not.
+            if (observations != null && observations.Count > 0)
             {
-                allObservations.AddRange(observations);
+                // Single pass over fileTable: collect writtenPaths and build a per-directory leaf-name
+                // index of self-writes so we can partition each surviving DirectoryEnumeration's members
+                // in O(membersInDir) time.
+                List<string> writtenPaths = new();
+                Dictionary<string, HashSet<string>> writtenLeafNamesByDir = new(StringComparer.OrdinalIgnoreCase);
+                foreach (KeyValuePair<string, FileAccessInfo> kvp in fileTable)
+                {
+                    if (!EverWritten(kvp.Value))
+                    {
+                        continue;
+                    }
+
+                    string writtenPath = kvp.Key;
+                    writtenPaths.Add(writtenPath);
+
+                    string parent = TrimTrailingSeparator(Path.GetDirectoryName(writtenPath) ?? string.Empty);
+                    string leaf = Path.GetFileName(writtenPath);
+                    if (string.IsNullOrEmpty(parent) || string.IsNullOrEmpty(leaf))
+                    {
+                        continue;
+                    }
+
+                    if (!writtenLeafNamesByDir.TryGetValue(parent, out HashSet<string>? leafSet))
+                    {
+                        leafSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        writtenLeafNamesByDir[parent] = leafSet;
+                    }
+
+                    leafSet.Add(leaf);
+                }
+
+                HashSet<string> everWritten = new(
+                    writtenPaths.Select(TrimTrailingSeparator),
+                    StringComparer.OrdinalIgnoreCase);
+                HashSet<string> everWrittenOrAncestor = BuildEverWrittenOrAncestorSet(writtenPaths);
+
+                foreach (ObservedAccess obs in observations)
+                {
+                    if (ShouldExcludeSelfOutputObservation(obs, everWritten, everWrittenOrAncestor))
+                    {
+                        continue;
+                    }
+
+                    if (obs.Type != ObservationType.DirectoryEnumeration)
+                    {
+                        allObservations.Add(obs);
+                        continue;
+                    }
+
+                    // Enrich the DirectoryEnumeration observation with the partitioned member lists.
+                    string dirAbsolute = TrimTrailingSeparator(obs.Path);
+                    HashSet<string> selfOutputLeafNames = writtenLeafNamesByDir.TryGetValue(dirAbsolute, out HashSet<string>? leaves)
+                        ? leaves
+                        : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                    (IReadOnlyList<string>? members, IReadOnlyList<string>? writtenMembers) = PartitionDirectoryMembers(
+                        dirAbsolute,
+                        obs.EnumerationPattern,
+                        selfOutputLeafNames,
+                        ignoredInputPatterns);
+                    allObservations.Add(obs with { Members = members, WrittenMembers = writtenMembers });
+                }
             }
 
             return new FileAccesses(allObservations, outputs);
+        }
+
+        /// <summary>
+        /// Enumerates the directory and partitions members into <c>Members</c> (external dependencies) and
+        /// <c>WrittenMembers</c> (this build's outputs). Both lists are leaf names, sorted
+        /// <c>OrdinalIgnoreCase</c>. Returns <c>(null, null)</c> if the directory is missing or inaccessible.
+        /// </summary>
+        private static (IReadOnlyList<string>? Members, IReadOnlyList<string>? WrittenMembers) PartitionDirectoryMembers(
+            string absoluteDirectoryPath,
+            string? enumerationPattern,
+            HashSet<string> selfOutputLeafNames,
+            IReadOnlyCollection<Glob> ignoredInputPatterns)
+        {
+            IReadOnlyList<string>? enumeratedMembers =
+                DirectoryEnumerationReader.EnumerateLeafNames(
+                    absoluteDirectoryPath,
+                    enumerationPattern,
+                    ignoredInputPatterns);
+            if (enumeratedMembers is null)
+            {
+                return (null, null);
+            }
+
+            List<string> members = new();
+            List<string> writtenMembers = new();
+            foreach (string leaf in enumeratedMembers)
+            {
+                if (selfOutputLeafNames.Contains(leaf))
+                {
+                    writtenMembers.Add(leaf);
+                }
+                else
+                {
+                    members.Add(leaf);
+                }
+            }
+
+            members.Sort(StringComparer.OrdinalIgnoreCase);
+            writtenMembers.Sort(StringComparer.OrdinalIgnoreCase);
+            return (members, writtenMembers);
         }
 
         private static bool IsOutput(FileAccessInfo fileInfo)
