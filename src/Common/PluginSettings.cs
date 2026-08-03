@@ -98,6 +98,8 @@ public class PluginSettings
 
     public IReadOnlyCollection<Glob> AllowFileAccessAfterProjectFinishFilePatterns { get; init; } = Array.Empty<Glob>();
 
+    public bool LogAllowFileAccessAfterProjectFinishMatchesAsMessages { get; init; }
+
     public IReadOnlyCollection<Glob> AllowProcessCloseAfterProjectFinishProcessPatterns { get; init; } = Array.Empty<Glob>();
 
     public IReadOnlyList<string> GlobalPropertiesToIgnore { get; init; } = Array.Empty<string>();

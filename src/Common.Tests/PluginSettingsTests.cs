@@ -275,6 +275,12 @@ public sealed class PluginSettingsTests
     }
 
     [TestMethod]
+    public void LogAllowFileAccessAfterProjectFinishMatchesAsMessagesSetting()
+        => TestBoolSetting(
+            nameof(PluginSettings.LogAllowFileAccessAfterProjectFinishMatchesAsMessages),
+            pluginSettings => pluginSettings.LogAllowFileAccessAfterProjectFinishMatchesAsMessages);
+
+    [TestMethod]
     [DynamicData(nameof(GlobTestCases), DynamicDataDisplayName = nameof(GetTestCaseDisplayName))]
     public void AllowProcessCloseAfterProjectFinishProcessPatternsSetting(GlobTestCase testCase)
         => TestGlobListSetting(
