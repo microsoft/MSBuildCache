@@ -12,6 +12,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -144,21 +145,58 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     {
         GC.SuppressFinalize(this);
 
-        if (_cacheClient != null)
+        List<Exception> exceptions = new();
+
+        ICacheClient? cacheClient = _cacheClient;
+        _cacheClient = null;
+        if (cacheClient != null)
         {
-            await _cacheClient.DisposeAsync();
+            await CaptureExceptionAsync(cacheClient.DisposeAsync, exceptions);
         }
 
-        ContentHasher?.Dispose();
-
-        if (_fileAccessRepository is IDisposable fileAccessRepositoryDisposable)
+        IContentHasher? contentHasher = ContentHasher;
+        ContentHasher = null;
+        if (contentHasher != null)
         {
-            fileAccessRepositoryDisposable.Dispose();
+            CaptureException(contentHasher.Dispose, exceptions);
         }
 
+        if (_fileAccessRepository != null)
+        {
+            try
+            {
+                _fileAccessRepository.Dispose();
+            }
+            catch (Exception ex)
+            {
+                exceptions.Add(ex);
+            }
+        }
+
+        _fileAccessRepository = null;
         _outputProducer.Clear();
-        _localCacheDirectoryLock?.Dispose();
-        _singlePluginInstanceMutex?.Release();
+
+        if (_localCacheDirectoryLock != null)
+        {
+            try
+            {
+                _localCacheDirectoryLock.Dispose();
+            }
+            catch (Exception ex)
+            {
+                exceptions.Add(ex);
+            }
+        }
+
+        _localCacheDirectoryLock = null;
+        SemaphoreSlim? singlePluginInstanceMutex = _singlePluginInstanceMutex;
+        _singlePluginInstanceMutex = null;
+        if (singlePluginInstanceMutex != null)
+        {
+            CaptureException(() => singlePluginInstanceMutex.Release(), exceptions);
+        }
+
+        ThrowIfAny(exceptions);
     }
 
     protected virtual string? GetBuildId()
@@ -357,16 +395,20 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
     private async Task EndBuildInnerAsync(PluginLoggerBase logger, CancellationToken cancellationToken)
     {
-        if (_cacheClient is not null)
+        List<Exception> exceptions = new();
+
+        ICacheClient? cacheClient = _cacheClient;
+        if (cacheClient is not null)
         {
-            await _cacheClient.ShutdownAsync(cancellationToken);
+            await CaptureExceptionAsync(() => new ValueTask(cacheClient.ShutdownAsync(cancellationToken)), exceptions);
         }
 
-        await DisposeAsync();
+        await CaptureExceptionAsync(DisposeAsync, exceptions);
+        _pluginLogger = null;
+
+        ThrowIfAny(exceptions);
 
         LogCacheStats(logger);
-
-        _pluginLogger = null;
     }
 
     public override Task<CacheResult> GetCacheResultAsync(BuildRequestData buildRequest, PluginLoggerBase logger, CancellationToken cancellationToken)
@@ -1367,6 +1409,43 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         {
             logger.LogWarning($"{memberName} failed after {timer.ElapsedMilliseconds} ms: {e}");
             throw;
+        }
+    }
+
+    private static void CaptureException(Action action, List<Exception> exceptions)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception ex)
+        {
+            exceptions.Add(ex);
+        }
+    }
+
+    private static async ValueTask CaptureExceptionAsync(Func<ValueTask> action, List<Exception> exceptions)
+    {
+        try
+        {
+            await action();
+        }
+        catch (Exception ex)
+        {
+            exceptions.Add(ex);
+        }
+    }
+
+    private static void ThrowIfAny(List<Exception> exceptions)
+    {
+        if (exceptions.Count == 1)
+        {
+            ExceptionDispatchInfo.Capture(exceptions[0]).Throw();
+        }
+
+        if (exceptions.Count > 1)
+        {
+            throw new AggregateException(exceptions);
         }
     }
 
