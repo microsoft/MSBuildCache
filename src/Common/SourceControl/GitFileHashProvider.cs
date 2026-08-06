@@ -2,7 +2,6 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -125,7 +124,7 @@ internal sealed class GitFileHashProvider : ISourceControlFileHashProvider
         // file paths are relative and have / instead of \ but otherwise unmodified (-z is important here)
         // and delimited by a tab from other staging info (if there is any)
         // staging info which includes the hash are space delimited. See UT's for more examples
-        using var reader = new GitLsFileOutputReader(gitOutput);
+        var reader = new GitLsFileOutputReader(gitOutput);
         var fileHashes = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
         var filesToRehash = new List<string>();
         StringBuilder? line;
@@ -315,72 +314,57 @@ internal sealed class GitFileHashProvider : ISourceControlFileHashProvider
         return submodules;
     }
 
-    private sealed class GitLsFileOutputReader : IDisposable
+    private sealed class GitLsFileOutputReader
     {
-        readonly BlockingCollection<StringBuilder> _lines = new BlockingCollection<StringBuilder>();
+        private const int BufferSize = 4096;
+
+        private readonly TextReader _reader;
+        private readonly char[] _buffer = new char[BufferSize];
+        private int _bufferPosition;
+        private int _bufferLength;
+        private bool _endOfStream;
 
         public GitLsFileOutputReader(TextReader reader)
         {
-            Task.Run(() => PopulateAsync(reader));
-        }
-
-        private void PopulateAsync(TextReader reader)
-        {
-            int overflowLength = 0;
-            var buffer = new char[4096]; // must be large enough to hold at least one line of output
-            while (true)
-            {
-                int readCnt = reader.Read(buffer, overflowLength, buffer.Length - overflowLength);
-                if (readCnt == 0) // end of stream
-                {
-                    if (overflowLength > 0)
-                    {
-                        _lines.Add(new StringBuilder(overflowLength).Append(buffer, 0, overflowLength));
-                    }
-                    _lines.CompleteAdding();
-                    return;
-                }
-
-                readCnt += overflowLength;
-                int startIdx = 0, eolIdx;
-                while (startIdx < readCnt && (eolIdx = Array.IndexOf(buffer, '\0', startIdx)) != -1)
-                {
-                    int lineLength = eolIdx - startIdx;
-                    if (overflowLength > 0)
-                    {
-                        overflowLength = 0;
-                        startIdx = 0;
-                    }
-                    _lines.Add(new StringBuilder(lineLength).Append(buffer, startIdx, lineLength));
-                    startIdx = eolIdx + 1;
-                }
-                if (startIdx < readCnt)
-                {
-                    if (overflowLength > 0) // we already have some overflow left, but the line could not fit the buffer
-                    {
-                        throw new InvalidDataException($"Internal: git ls-files output line length {readCnt - startIdx} exceeds {nameof(buffer)} size {buffer.Length}. Increase the latter.");
-                    }
-                    overflowLength = readCnt - startIdx;
-                    Array.Copy(buffer, startIdx, buffer, 0, overflowLength);
-                }
-            }
+            _reader = reader;
         }
 
         public StringBuilder? ReadLine()
         {
-            while (!_lines.IsCompleted)
+            if (_endOfStream)
             {
-                if (_lines.TryTake(out StringBuilder? result, -1))
-                {
-                    return result;
-                }
+                return null;
             }
-            return null;
-        }
 
-        public void Dispose()
-        {
-            _lines.Dispose();
+            StringBuilder? line = null;
+            while (true)
+            {
+                if (_bufferPosition == _bufferLength)
+                {
+                    _bufferLength = _reader.Read(_buffer, 0, _buffer.Length);
+                    _bufferPosition = 0;
+                    if (_bufferLength == 0)
+                    {
+                        _endOfStream = true;
+                        return line;
+                    }
+                }
+
+                int eolIdx = Array.IndexOf(_buffer, '\0', _bufferPosition, _bufferLength - _bufferPosition);
+                if (eolIdx >= 0)
+                {
+                    int segmentLength = eolIdx - _bufferPosition;
+                    line ??= new StringBuilder(segmentLength);
+                    line.Append(_buffer, _bufferPosition, segmentLength);
+                    _bufferPosition = eolIdx + 1;
+                    return line;
+                }
+
+                int remainingLength = _bufferLength - _bufferPosition;
+                line ??= new StringBuilder(remainingLength);
+                line.Append(_buffer, _bufferPosition, remainingLength);
+                _bufferPosition = _bufferLength;
+            }
         }
     }
 }
