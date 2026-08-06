@@ -28,6 +28,19 @@ function New-MSBuildCacheTestProject
     }
 }
 
+function ConvertTo-MSBuildCommandLinePropertyValue
+{
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string] $Value
+    )
+
+    # MSBuild uses semicolons to separate assignments within a /p switch. Escape both the
+    # separator and the escape marker so the property receives the original value.
+    return $Value.Replace("%", "%25").Replace(";", "%3B")
+}
+
 function Invoke-MSBuildCacheBuild
 {
     param(
@@ -70,7 +83,8 @@ function Invoke-MSBuildCacheBuild
 
     foreach ($key in $ExtraProperties.Keys)
     {
-        $arguments += "-p:$key=$($ExtraProperties[$key])"
+        $value = ConvertTo-MSBuildCommandLinePropertyValue ([string] $ExtraProperties[$key])
+        $arguments += "-p:$key=$value"
     }
 
     $stdout = Join-Path $LogDirectory "stdout.txt"
