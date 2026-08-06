@@ -28,6 +28,13 @@ using WeakFingerprint = BuildXL.Cache.MemoizationStore.Interfaces.Sessions.Finge
 
 namespace Microsoft.MSBuildCache.Caching;
 
+public enum AddNodeResult
+{
+    Added,
+    AlreadyExists,
+    Skipped
+}
+
 public abstract class CacheClient : ICacheClient
 {
     private static readonly byte[] EmptySelectorOutput = new byte[1];
@@ -122,7 +129,8 @@ public abstract class CacheClient : ICacheClient
     /* abstract methods for subclasses to implement */
     protected abstract Task<OpenStreamResult> OpenStreamAsync(Context context, ContentHash contentHash, CancellationToken cancellationToken);
 
-    protected abstract Task AddNodeAsync(
+    /// <returns>True if added, false if already exists. Otherwise throws.</returns>
+    protected abstract Task<AddNodeResult> AddNodeAsync(
         Context context,
         StrongFingerprint fingerprint,
         IReadOnlyDictionary<string, ContentHash> outputs,
@@ -342,15 +350,15 @@ public abstract class CacheClient : ICacheClient
 
         StrongFingerprint cacheStrongFingerprint = new(cacheWeakFingerprint, selector);
 
-        Tracer.Debug(context, $"StrongFingerprint is {cacheStrongFingerprint} for {nodeContext.Id}");
-
-        await AddNodeAsync(
+        AddNodeResult addresult = await AddNodeAsync(
             context,
             cacheStrongFingerprint,
             outputsToCache,
             (nodeBuildResultHash, nodeBuildResultBytes),
             pathSetBytes,
             cancellationToken);
+
+        Tracer.Debug(context, $"Adding StrongFingerprint {cacheStrongFingerprint} for {nodeContext.Id} resulted in {addresult}.");
 
         if (_localCacheStateManager is not null)
         {
