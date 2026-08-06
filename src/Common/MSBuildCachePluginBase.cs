@@ -1209,10 +1209,16 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     }
 
     private bool IsDuplicateIdenticalOutputPath(PluginLoggerBase logger, string absolutePath)
+        => IsDuplicateIdenticalOutputPath(logger, absolutePath, _identicalDuplicateOutputPatterns);
+
+    private static bool IsDuplicateIdenticalOutputPath(
+        PluginLoggerBase logger,
+        string absolutePath,
+        IReadOnlyCollection<Glob>? identicalDuplicateOutputPatterns)
     {
-        if (_identicalDuplicateOutputPatterns != null && _identicalDuplicateOutputPatterns.Count > 0)
+        if (identicalDuplicateOutputPatterns != null && identicalDuplicateOutputPatterns.Count > 0)
         {
-            foreach (Glob pattern in _identicalDuplicateOutputPatterns)
+            foreach (Glob pattern in identicalDuplicateOutputPatterns)
             {
                 if (pattern.IsMatch(absolutePath))
                 {
@@ -1226,32 +1232,47 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     }
 
     private void CheckForDuplicateOutputs(PluginLoggerBase logger, IReadOnlyDictionary<string, ContentHash> relativeFilePathToHash, NodeContext nodeContext)
+        => CheckForDuplicateOutputs(
+            logger,
+            relativeFilePathToHash,
+            nodeContext,
+            _outputProducer,
+            _repoRoot!,
+            _identicalDuplicateOutputPatterns);
+
+    internal static void CheckForDuplicateOutputs(
+        PluginLoggerBase logger,
+        IReadOnlyDictionary<string, ContentHash> relativeFilePathToHash,
+        NodeContext nodeContext,
+        ConcurrentDictionary<string, NodeContext> outputProducer,
+        string repoRoot,
+        IReadOnlyCollection<Glob>? identicalDuplicateOutputPatterns)
     {
         foreach (KeyValuePair<string, ContentHash> kvp in relativeFilePathToHash)
         {
             string relativeFilePath = kvp.Key;
             ContentHash newHash = kvp.Value;
 
-            // If this is the first writer to this path, then we are done.
-            NodeContext previousNode = _outputProducer.GetOrAdd(relativeFilePath, nodeContext);
+            // If this is the first writer to this path, then we are done with this output.
+            NodeContext previousNode = outputProducer.GetOrAdd(relativeFilePath, nodeContext);
             if (previousNode == nodeContext)
             {
-                return;
+                continue;
             }
 
             // This is only allowed if marked as a duplicate-identical output
-            string absoluteFilePath = Path.Combine(_repoRoot!, relativeFilePath);
-            if (!IsDuplicateIdenticalOutputPath(logger, absoluteFilePath))
+            string absoluteFilePath = Path.Combine(repoRoot, relativeFilePath);
+            if (!IsDuplicateIdenticalOutputPath(logger, absoluteFilePath, identicalDuplicateOutputPatterns))
             {
-                logger.LogError($"Node {nodeContext.Id} produced output {relativeFilePath} which was already produced by another node {_outputProducer[relativeFilePath].Id}.");
-                return;
+                logger.LogError($"Node {nodeContext.Id} produced output {relativeFilePath} which was already produced by another node {outputProducer[relativeFilePath].Id}.");
+                continue;
             }
 
             // This should never happen as the previous node is a dependent of this node...
             if (previousNode.BuildResult == null)
             {
                 logger.LogError($"Node {nodeContext.Id} produced output {relativeFilePath} which was already produced by another node {previousNode.Id}, however the hash of that first output is unknown.");
-                return;
+                continue;
             }
 
             // compare the hash of the original output to this output and log/error accordingly.
@@ -1259,14 +1280,14 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             if (previousHash != newHash)
             {
                 logger.LogError($"Node {nodeContext.Id} produced output {relativeFilePath} with hash {newHash} which was already produced by another node {previousNode.Id} with a different hash {previousHash}.");
-                return;
+                continue;
             }
 
             // Duplicate-identical outputs are only allowed if there is a strict ordering between the multiple writers.
             if (!nodeContext.IsDependentOn(previousNode))
             {
                 logger.LogWarning($"Node {nodeContext.Id} produced output {relativeFilePath} which was already produced by another node {previousNode.Id}, but there is no ordering between the two nodes.");
-                return;
+                continue;
             }
 
             logger.LogMessage($"Node {nodeContext.Id} produced duplicate-identical output {relativeFilePath} which was already produced by another node {previousNode.Id}. Allowing as content is the same.");
