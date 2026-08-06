@@ -172,15 +172,21 @@ function Invoke-ScenarioBuild
     $stepLogDir = Join-Path $Sandbox.LogRoot $Step
     New-Item -ItemType Directory -Path $stepLogDir -Force > $null
 
+    $lateFileAccessPatterns = @(
+        "**\ApplicationInsights.config"
+        "$env:LOCALAPPDATA\Microsoft\VSApplicationInsights\**"
+        "$env:LOCALAPPDATA\Microsoft\Windows\INetCache\**"
+        "$env:SystemRoot\**"
+    ) -join ";"
+
     $properties = @{
         # Skip writing outputs that match the cache — avoids cache-replay overwriting existing
         # outputs from a previous build in the same sandbox.
         MSBuildCacheSkipUnchangedOutputFiles = "true"
-        # Code Integrity and MSBuild telemetry can access machine-local files after the project
-        # completed. These paths are outside the repo and NuGet roots, so they cannot enter the
-        # PathSet; allowing only the known files avoids terminating the BuildXL callback while
-        # retaining the late-access diagnostic.
-        MSBuildCacheAllowFileAccessAfterProjectFinishFilePatterns = "$env:SystemRoot\System32\ci.dll;$env:LOCALAPPDATA\Microsoft\Windows\INetCache\IE\**\dyntelconfig*.cache"
+        # Windows services and Visual Studio telemetry can access machine-local state after the
+        # project completes. These locations cannot enter the PathSet, and matches remain visible
+        # through the late-access diagnostic.
+        MSBuildCacheAllowFileAccessAfterProjectFinishFilePatterns = $lateFileAccessPatterns
     }
 
     foreach ($key in $ExtraProperties.Keys) {
