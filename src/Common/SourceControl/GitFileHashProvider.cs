@@ -343,26 +343,18 @@ internal sealed class GitFileHashProvider : ISourceControlFileHashProvider
 
                 readCnt += overflowLength;
                 int startIdx = 0, eolIdx;
-                while (startIdx < readCnt && (eolIdx = Array.IndexOf(buffer, '\0', startIdx)) != -1)
+                while (startIdx < readCnt && (eolIdx = Array.IndexOf(buffer, '\0', startIdx, readCnt - startIdx)) != -1)
                 {
                     int lineLength = eolIdx - startIdx;
-                    if (overflowLength > 0)
-                    {
-                        overflowLength = 0;
-                        startIdx = 0;
-                    }
                     _lines.Add(new StringBuilder(lineLength).Append(buffer, startIdx, lineLength));
                     startIdx = eolIdx + 1;
                 }
-                if (startIdx < readCnt)
+                overflowLength = readCnt - startIdx;
+                if (overflowLength == buffer.Length)
                 {
-                    if (overflowLength > 0) // we already have some overflow left, but the line could not fit the buffer
-                    {
-                        throw new InvalidDataException($"Internal: git ls-files output line length {readCnt - startIdx} exceeds {nameof(buffer)} size {buffer.Length}. Increase the latter.");
-                    }
-                    overflowLength = readCnt - startIdx;
-                    Array.Copy(buffer, startIdx, buffer, 0, overflowLength);
+                    throw new InvalidDataException($"Internal: git ls-files output line length {overflowLength} exceeds {nameof(buffer)} size {buffer.Length}. Increase the latter.");
                 }
+                Array.Copy(buffer, startIdx, buffer, 0, overflowLength);
             }
         }
 
