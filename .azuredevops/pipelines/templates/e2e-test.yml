@@ -22,7 +22,7 @@ steps:
   displayName: "E2E Scenarios: probe and enumeration fingerprinting"
   inputs:
     filePath: ${{ parameters.RepoRoot }}\tests\scenarios.ps1
-    arguments: -MSBuildPath "${{ parameters.MSBuildPath }}" -Configuration $(BuildConfiguration) -LogDirectory "$(LogDirectory)\Scenarios" -LocalPackageDir "$(Pipeline.Workspace)\artifacts\$(BuildConfiguration)\packages" -CachePackage Microsoft.MSBuildCache.Local -RequireEnumerationCapability ${{ parameters.RequireEnumerationCapability }}
+    arguments: -MSBuildPath "${{ parameters.MSBuildPath }}" -Configuration $(BuildConfiguration) -LogDirectory "$(LogDirectory)\Scenarios" -LocalPackageDir "$(Pipeline.Workspace)\artifacts\$(BuildConfiguration)\packages" -CachePackage Microsoft.MSBuildCache.Local -RequireEnumerationCapability $${{ parameters.RequireEnumerationCapability }}
     pwsh: true
 
 - task: PowerShell@2
