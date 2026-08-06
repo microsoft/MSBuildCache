@@ -176,11 +176,11 @@ function Invoke-ScenarioBuild
         # Skip writing outputs that match the cache — avoids cache-replay overwriting existing
         # outputs from a previous build in the same sandbox.
         MSBuildCacheSkipUnchangedOutputFiles = "true"
-        # OS components (Code Integrity, AV) can touch a finished worker process and report an
-        # access after the project completed, which otherwise throws from a BuildXL IO-completion
-        # thread and takes down the build. These paths are outside the repo and NuGet roots, so
-        # they are already excluded from observations; allowing them only avoids the crash.
-        MSBuildCacheAllowFileAccessAfterProjectFinishFilePatterns = "$env:SystemRoot\**"
+        # Code Integrity and MSBuild telemetry can access machine-local files after the project
+        # completed. These paths are outside the repo and NuGet roots, so they cannot enter the
+        # PathSet; allowing only the known files avoids terminating the BuildXL callback while
+        # retaining the late-access diagnostic.
+        MSBuildCacheAllowFileAccessAfterProjectFinishFilePatterns = "$env:SystemRoot\System32\ci.dll;$env:LOCALAPPDATA\Microsoft\Windows\INetCache\IE\**\dyntelconfig*.cache"
     }
 
     foreach ($key in $ExtraProperties.Keys) {
