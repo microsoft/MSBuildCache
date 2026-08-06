@@ -128,6 +128,12 @@ It is expected that this plugin is used within an Azure Pipeline. The `SYSTEM_AC
 
 `$(System.AccessToken)` by default does not have the scope relevant to Pipeline Caching. The scope can be enabled by setting the `EnablePipelineCache` pipeline variable. Additionally, the scope will get automatically added if the [Cache task](https://learn.microsoft.com/en-us/azure/devops/pipelines/release/caching?view=azure-devops#cache-task-how-it-works) is used somewhere in the pipeline.
 
+These settings are available in addition to the [Common Settings](#common-settings):
+
+| MSBuild Property Name | Setting Type | Default value | Description |
+| ------------- | ------------ | ------------- | ----------- |
+| `$(MSBuildCacheMaxSelectorsPerWeakFingerprint)` | `int` | 10 | The maximum number of recently published selectors retained for each weak fingerprint. Lower values reduce selector-manifest publishing work; higher values preserve more historical cache candidates. |
+
 ### Microsoft.MSBuildCache.Local
 [![NuGet Version](https://img.shields.io/nuget/v/Microsoft.MSBuildCache.Local.svg)](https://www.nuget.org/packages/Microsoft.MSBuildCache.Local)
 [![NuGet Downloads](https://img.shields.io/nuget/dt/Microsoft.MSBuildCache.Local.svg)](https://www.nuget.org/packages/Microsoft.MSBuildCache.Local)

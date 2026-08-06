@@ -81,6 +81,13 @@ public sealed class PluginSettingsTests
             new[] { 123, 456, 789 });
 
     [TestMethod]
+    public void MaxSelectorsPerWeakFingerprintSetting()
+        => TestBasicSetting(
+            nameof(PluginSettings.MaxSelectorsPerWeakFingerprint),
+            pluginSettings => pluginSettings.MaxSelectorsPerWeakFingerprint,
+            new[] { 1, 10, 100 });
+
+    [TestMethod]
     public void LocalCacheRootPathSetting()
         => TestBasicSetting(
             nameof(PluginSettings.LocalCacheRootPath),

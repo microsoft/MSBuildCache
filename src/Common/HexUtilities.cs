@@ -7,6 +7,8 @@ namespace Microsoft.MSBuildCache;
 
 public static class HexUtilities
 {
+    private const string HexCharacters = "0123456789ABCDEF";
+
     private static readonly ushort[] HexToNybble =
     {
         0, 1, 2, 3, 4, 5, 6, 7, 8, 9,  // Character codes 0-9.
@@ -22,6 +24,19 @@ public static class HexUtilities
         => hex == null
             ? Array.Empty<byte>()
             : HexToBytes(hex.AsSpan());
+
+    internal static string BytesToHex(ReadOnlySpan<byte> bytes)
+    {
+        var result = new char[bytes.Length * 2];
+        for (int byteIndex = 0; byteIndex < bytes.Length; byteIndex++)
+        {
+            byte value = bytes[byteIndex];
+            result[byteIndex * 2] = HexCharacters[value >> 4];
+            result[(byteIndex * 2) + 1] = HexCharacters[value & 0x0F];
+        }
+
+        return new string(result);
+    }
 
     /// <summary>
     /// Parses hexadecimal strings the form '1234abcd' or '0x9876fedb' into

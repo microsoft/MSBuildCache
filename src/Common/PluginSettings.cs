@@ -69,6 +69,11 @@ public class PluginSettings
     public int MaxConcurrentCacheContentOperations { get; init; } = 64;
 
     /// <summary>
+    /// Gets the maximum number of recently published selectors retained for each weak fingerprint by cache implementations that store selector history.
+    /// </summary>
+    public int MaxSelectorsPerWeakFingerprint { get; init; } = 10;
+
+    /// <summary>
     /// Base directory to use for the local cache. If null, the default value is the "MSBuildCache" folder in the root of the drive the repo root is on.
     /// </summary>
     public string LocalCacheRootPath

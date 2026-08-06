@@ -1,3 +1,13 @@
 <Project>
+  <PropertyGroup Condition="'$(MSBuildCacheEnabled)' != 'false'">
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheMaxSelectorsPerWeakFingerprint</MSBuildCacheGlobalPropertiesToIgnore>
+  </PropertyGroup>
+
   <Import Project="Microsoft.MSBuildCache.Common.targets" />
+
+  <ItemGroup Condition="'$(MSBuildCacheEnabled)' != 'false'">
+    <ProjectCachePlugin Update="$(MSBuildCacheAssembly)">
+      <MaxSelectorsPerWeakFingerprint>$(MSBuildCacheMaxSelectorsPerWeakFingerprint)</MaxSelectorsPerWeakFingerprint>
+    </ProjectCachePlugin>
+  </ItemGroup>
 </Project>

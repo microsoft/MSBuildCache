@@ -33,6 +33,12 @@ public sealed class MSBuildCacheAzurePipelinesPlugin : MSBuildCachePluginBase
             throw new InvalidOperationException();
         }
 
+        if (Settings.MaxSelectorsPerWeakFingerprint <= 0)
+        {
+            throw new InvalidOperationException(
+                $"The {nameof(PluginSettings.MaxSelectorsPerWeakFingerprint)} setting must be positive, but was {Settings.MaxSelectorsPerWeakFingerprint}.");
+        }
+
         logger.LogMessage($"Using Azure DevOps with session '{AzDOHelpers.SessionGuid}'.", MessageImportance.Normal);
 
         FileLog fileLog = new(Path.Combine(Settings.LogDirectory, "CacheClient.log"));
@@ -63,7 +69,8 @@ public sealed class MSBuildCacheAzurePipelinesPlugin : MSBuildCachePluginBase
             Settings.AsyncCachePublishing,
             Settings.AsyncCacheMaterialization,
             Settings.SkipUnchangedOutputFiles,
-            Settings.TouchOutputFiles);
+            Settings.TouchOutputFiles,
+            Settings.MaxSelectorsPerWeakFingerprint);
     }
 
     private static async Task<ICacheSession> StartCacheSessionAsync(Context context, LocalCache cache, string name)

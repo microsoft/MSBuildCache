@@ -53,9 +53,8 @@ namespace Microsoft.MSBuildCache.AzurePipelines;
 /// 
 /// For first phase we'll have the Manifest:
 ///  1. itself include any PathSet content (not really working yet)
-///  2. include all selectors as custom metadata
-/// Because this is 1->1, we'll basically accumulate selectors here.
-/// We'll probably need to add some kind of LRU so it doesn't grow unbounded.
+///  2. include a bounded window of recently published selectors as custom metadata
+/// Because this is 1->1, each publication carries the most recent distinct selectors forward.
 ///  
 /// For second phase we'll have the Manifest
 ///  1. itself include references to the output content 
@@ -71,9 +70,11 @@ internal sealed class PipelineCachingCacheClient : CacheClient
 
     private const string NodeBuildResultRelativePath = $"{InternalMetadataPathPrefix}/NodeBuildResult";
     private const string PathSetRelativePathBase = $"{InternalMetadataPathPrefix}/PathSets";
-    private static string PathSetRelativePath(Selector s) => $"{PathSetRelativePathBase}/{s.ContentHash}";
+    private static string PathSetRelativePath(ContentHash pathSetHash) => $"{PathSetRelativePathBase}/{pathSetHash}";
     private const string SelectorsRelativePathBase = $"{InternalMetadataPathPrefix}/Selectors";
     internal static string SelectorRelativePath(Selector s) => $"{SelectorsRelativePathBase}/{s.ContentHash}/{s.Output.ToHexString()}";
+    private const string SelectorOrderRelativePathBase = $"{InternalMetadataPathPrefix}/SelectorOrder";
+    private static string SelectorOrderRelativePath(Selector s, int index) => SelectorManifestHistory.CreateOrderPath(SelectorOrderRelativePathBase, s, index);
 
     // Prefer a temp directory on the same drive as the repo root so that hard links work.
     private static readonly string TempFolder = Environment.GetEnvironmentVariable("AGENT_TEMPDIRECTORY") ?? Path.GetTempPath();
@@ -89,6 +90,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
     private readonly DedupStoreHttpClient _dedupHttpClient;
     private readonly DedupStoreClientWithDataport _dedupClient;
     private readonly DedupManifestArtifactClient _manifestClient;
+    private readonly int _maxSelectorsPerWeakFingerprint;
     private readonly Task _startupTask;
 
     public PipelineCachingCacheClient(
@@ -107,10 +109,17 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         bool enableAsyncPublishing,
         bool enableAsyncMaterialization,
         bool skipUnchangedOutputFiles,
-        bool touchOutputFiles)
+        bool touchOutputFiles,
+        int maxSelectorsPerWeakFingerprint)
         : base(rootContext, fingerprintFactory, hasher, repoRoot, nugetPackageRoot, getFileRealizationMode, localCache, localCAS, maxConcurrentCacheContentOperations, enableAsyncPublishing, enableAsyncMaterialization, skipUnchangedOutputFiles, touchOutputFiles)
     {
+        if (maxSelectorsPerWeakFingerprint <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxSelectorsPerWeakFingerprint), maxSelectorsPerWeakFingerprint, "The selector retention limit must be positive.");
+        }
+
         _remoteCacheIsReadOnly = remoteCacheIsReadOnly;
+        _maxSelectorsPerWeakFingerprint = maxSelectorsPerWeakFingerprint;
         _universe = $"pccc-{(int)hasher.Info.HashType}-{InternalSeed}-" + (string.IsNullOrEmpty(universe) ? "DEFAULT" : universe);
 
         _azureDevopsTracer = new CallbackAppTraceSource(
@@ -322,45 +331,47 @@ internal sealed class PipelineCachingCacheClient : CacheClient
 
             string key = ComputeSelectorsKey(fingerprint.WeakFingerprint, forWrite: true);
 
-            var selectors = await GetSelectors(context, fingerprint.WeakFingerprint, cancellationToken).ToHashSetAsync(cancellationToken);
+            List<Selector> previousSelectors = await GetSelectors(context, fingerprint.WeakFingerprint, cancellationToken).ToListAsync(cancellationToken);
+            SelectorManifestPlan selectorPlan = SelectorRetentionPolicy.CreatePlan(
+                previousSelectors,
+                fingerprint.Selector,
+                EmptySelector.ContentHash,
+                pathSetBytes?.hash,
+                _maxSelectorsPerWeakFingerprint);
 
-            selectors.Add(fingerprint.Selector);
+            Dictionary<string, FileInfo> extras = new((selectorPlan.Selectors.Count * 2) + selectorPlan.PathSets.Count);
 
-            // TODO: limit the number of selectors we store.
-
-            Dictionary<string, FileInfo> extras = new(selectors.Count);
-
-            foreach (Selector selector in selectors)
+            for (int selectorIndex = 0; selectorIndex < selectorPlan.Selectors.Count; selectorIndex++)
             {
+                Selector selector = selectorPlan.Selectors[selectorIndex];
+
                 // the selector is just a fake file
                 extras.Add(SelectorRelativePath(selector), emptyFileInfo);
+                extras.Add(SelectorOrderRelativePath(selector, selectorIndex), emptyFileInfo);
+            }
 
-                // Multiple selectors may have the same pathset hash but different outputs (eg, if a non-predicted output changed),
-                // so only add it once.
-                string pathSetRelativePath = PathSetRelativePath(selector);
-                if (selector.ContentHash != EmptySelector.ContentHash
-                    && !extras.ContainsKey(pathSetRelativePath))
-                {
+            foreach (SelectorPathSet pathSet in selectorPlan.PathSets)
+            {
 #if NET9_0
 #pragma warning disable IDE0079
 #pragma warning disable CA2000
 #endif
-                    var pathSetTempFile = new TempFile(FileSystem.Instance, TempFolder);
+                var pathSetTempFile = new TempFile(FileSystem.Instance, TempFolder);
 #if NET9_0
 #pragma warning restore CA2000
 #pragma warning restore IDE0079
 #endif
-                    var bytes = selector.ContentHash == pathSetBytes?.hash
-                        ? pathSetBytes.Value.bytes
-                        : await GetBytes(context, selector.ContentHash.ToBlobIdentifier().ToDedupIdentifier(), cancellationToken);
+                pathSetTempFiles.Add(pathSetTempFile);
+
+                byte[] bytes = pathSet.RequiresDownload
+                    ? await GetBytes(context, pathSet.ContentHash.ToBlobIdentifier().ToDedupIdentifier(), cancellationToken)
+                    : pathSetBytes!.Value.bytes;
 #if NETFRAMEWORK
-                    File.WriteAllBytes(pathSetTempFile.Path, bytes);
+                File.WriteAllBytes(pathSetTempFile.Path, bytes);
 #else
-                    await File.WriteAllBytesAsync(pathSetTempFile.Path, bytes, cancellationToken);
+                await File.WriteAllBytesAsync(pathSetTempFile.Path, bytes, cancellationToken);
 #endif
-                    extras.Add(pathSetRelativePath, new FileInfo(pathSetTempFile.Path));
-                    pathSetTempFiles.Add(pathSetTempFile);
-                }
+                extras.Add(PathSetRelativePath(pathSet.ContentHash), new FileInfo(pathSetTempFile.Path));
             }
 
             var result = await WithHttpRetries(
@@ -603,10 +614,13 @@ internal sealed class PipelineCachingCacheClient : CacheClient
 
         using var manifestStream = new MemoryStream(await GetBytes(context, result.ManifestId, cancellationToken));
         Manifest manifest = JsonSerializer.Deserialize<Manifest>(manifestStream)!;
-        foreach (ManifestItem selectorItem in manifest.Items.Where(i => i.Path.StartsWith(SelectorsRelativePathBase, StringComparison.Ordinal)))
+        IReadOnlyList<Selector> selectors = SelectorManifestHistory.ReadSelectors(
+            manifest.Items.Select(item => item.Path),
+            SelectorsRelativePathBase,
+            SelectorOrderRelativePathBase);
+        foreach (Selector selector in selectors)
         {
-            string[] tokens = selectorItem.Path.Substring(SelectorsRelativePathBase.Length + 1).Split('/');
-            yield return new Selector(new ContentHash(tokens[0]), HexUtilities.HexToBytes(tokens[1]));
+            yield return selector;
         }
     }
 
