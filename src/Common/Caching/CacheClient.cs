@@ -28,12 +28,13 @@ using WeakFingerprint = BuildXL.Cache.MemoizationStore.Interfaces.Sessions.Finge
 
 namespace Microsoft.MSBuildCache.Caching;
 
-public abstract class CacheClient : ICacheClient
+public abstract class CacheClient : ICacheClient, IMaterializingCacheClient
 {
     private static readonly byte[] EmptySelectorOutput = new byte[1];
     private readonly OutputHasher _outputHasher;
     private readonly ConcurrentDictionary<NodeContext, Task> _publishingTasks = new();
     private readonly ConcurrentDictionary<NodeContext, Task> _materializationTasks = new();
+    private readonly ConcurrentDictionary<NodeContext, CacheQueryResult> _nodeQueryResults = new();
     private readonly ConcurrentDictionary<string, bool> _directoryCreationCache = new();
     private readonly ConcurrentDictionary<string, Lazy<Task<string>>> _placeFromPackageCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly ICopyOnWriteFilesystem _copyOnWriteFilesystem = CopyOnWriteFilesystemFactory.GetInstance();
@@ -363,16 +364,38 @@ public abstract class CacheClient : ICacheClient
         bool materializeOutputs,
         CancellationToken cancellationToken)
     {
-        (PathSet? PathSet, NodeBuildResult? NodeBuildResult) result = await GetNodeInternalAsync(nodeContext, materializeOutputs, cancellationToken);
+        CacheQueryResult result = await QueryNodeAsync(nodeContext, cancellationToken);
+        return await CompleteQueryAsync(result, materializeOutputs, cancellationToken);
+    }
+
+    public async Task<(PathSet?, NodeBuildResult?)> GetNodeInternalAsync(
+        NodeContext nodeContext,
+        bool materializeOutputs,
+        CancellationToken cancellationToken)
+    {
+        CacheQueryResult result = await QueryNodeInternalAsync(nodeContext, cancellationToken);
+        return await CompleteQueryAsync(result, materializeOutputs, cancellationToken);
+    }
+
+    Task<CacheQueryResult> IMaterializingCacheClient.QueryNodeAsync(
+        NodeContext nodeContext,
+        CancellationToken cancellationToken)
+        => QueryNodeAsync(nodeContext, cancellationToken);
+
+    private async Task<CacheQueryResult> QueryNodeAsync(
+        NodeContext nodeContext,
+        CancellationToken cancellationToken)
+    {
+        CacheQueryResult result = await QueryNodeInternalAsync(nodeContext, cancellationToken);
 
         // On cache miss ensure all dependencies are materialized before returning to MSBuild so that MSBuild's execution will actually work.
-        if (_enableAsyncMaterialization && result.NodeBuildResult == null)
+        if (result.NodeBuildResult == null)
         {
             foreach (NodeContext dependency in nodeContext.Dependencies)
             {
-                if (_materializationTasks.TryGetValue(dependency, out Task? dependencyMaterializationTask))
+                if (_nodeQueryResults.TryGetValue(dependency, out CacheQueryResult? dependencyResult))
                 {
-                    await dependencyMaterializationTask;
+                    await dependencyResult.EnsureOutputsMaterializedAsync(cancellationToken);
                 }
             }
         }
@@ -380,9 +403,8 @@ public abstract class CacheClient : ICacheClient
         return result;
     }
 
-    public async Task<(PathSet?, NodeBuildResult?)> GetNodeInternalAsync(
+    private async Task<CacheQueryResult> QueryNodeInternalAsync(
         NodeContext nodeContext,
-        bool materializeOutputs,
         CancellationToken cancellationToken)
     {
         Context context = new(RootContext);
@@ -393,7 +415,7 @@ public abstract class CacheClient : ICacheClient
         if (weakFingerprint == null)
         {
             Tracer.Debug(context, $"Weak fingerprint is null for {nodeContext.Id}");
-            return (null, null);
+            return new CacheQueryResult(null, null, null, waitForMaterialization: true);
         }
 
         WeakFingerprint cacheWeakFingerprint = new(weakFingerprint.Hash);
@@ -402,7 +424,7 @@ public abstract class CacheClient : ICacheClient
         if (!selector.HasValue)
         {
             // GetMatchingSelectorAsync logs sufficiently
-            return (null, null);
+            return new CacheQueryResult(null, null, null, waitForMaterialization: true);
         }
 
         StrongFingerprint cacheStrongFingerprint = new(cacheWeakFingerprint, selector.Value);
@@ -411,14 +433,14 @@ public abstract class CacheClient : ICacheClient
         if (cacheEntry is null)
         {
             Tracer.Debug(context, $"{nameof(GetCacheEntryAsync)} did not find an entry for {cacheStrongFingerprint}.");
-            return (null, null);
+            return new CacheQueryResult(null, null, null, waitForMaterialization: true);
         }
 
         using Stream? nodeBuildResultStream = await cacheEntry.GetNodeBuildResultAsync(context, cancellationToken);
         if (nodeBuildResultStream is null)
         {
             Tracer.Debug(context, $"Failed to fetch NodeBuildResult for {cacheStrongFingerprint}");
-            return (null, null);
+            return new CacheQueryResult(null, null, null, waitForMaterialization: true);
         }
 
         // The first file is special: it is a serialized NodeBuildResult file.
@@ -426,7 +448,7 @@ public abstract class CacheClient : ICacheClient
         if (nodeBuildResult is null)
         {
             Tracer.Debug(context, $"Failed to deserialize NodeBuildResult for {cacheStrongFingerprint}");
-            return (null, null);
+            return new CacheQueryResult(null, null, null, waitForMaterialization: true);
         }
 
         async Task CopyPackageContentToDestinationAsync(string sourceAbsolutePath, string destinationAbsolutePath)
@@ -523,29 +545,39 @@ public abstract class CacheClient : ICacheClient
             }
         }
 
-        if (materializeOutputs)
+        Task MaterializeOutputsAsync(CancellationToken ct)
         {
             if (_enableAsyncMaterialization)
             {
-                _materializationTasks.TryAdd(
-                    nodeContext,
-                    // Avoid using a cancellation token since MSBuild will cancel it when it thinks the build is finished and we await these tasks at that point.
-                    // Note that this means that we effectively cannot cancel this operation once started and the user will have to wait.
-                    Task.Run(
-                        async () =>
-                        {
-                            await PlaceFilesAsync(CancellationToken.None);
-                            _materializationTasks.TryRemove(nodeContext, out _);
-                        },
-                        CancellationToken.None));
+                // Avoid using a cancellation token since MSBuild will cancel it when it thinks the build is finished and we await these tasks at that point.
+                // Note that this means that we effectively cannot cancel this operation once started and the user will have to wait.
+                Task materializationTask = Task.Run(() => PlaceFilesAsync(CancellationToken.None), CancellationToken.None);
+                _materializationTasks.TryAdd(nodeContext, materializationTask);
+                return materializationTask;
             }
-            else
-            {
-                await PlaceFilesAsync(cancellationToken);
-            }
+
+            return PlaceFilesAsync(ct);
         }
 
-        return (pathSet, nodeBuildResult);
+        CacheQueryResult queryResult = new(
+            pathSet,
+            nodeBuildResult,
+            MaterializeOutputsAsync,
+            waitForMaterialization: !_enableAsyncMaterialization);
+        return _nodeQueryResults.GetOrAdd(nodeContext, queryResult);
+    }
+
+    private static async Task<(PathSet?, NodeBuildResult?)> CompleteQueryAsync(
+        CacheQueryResult result,
+        bool materializeOutputs,
+        CancellationToken cancellationToken)
+    {
+        if (materializeOutputs && result.NodeBuildResult is not null)
+        {
+            await result.MaterializeOutputsAsync(cancellationToken);
+        }
+
+        return (result.PathSet, result.NodeBuildResult);
     }
 
     private async Task<(Selector? Selector, PathSet? PathSet)> GetMatchingSelectorAsync(
