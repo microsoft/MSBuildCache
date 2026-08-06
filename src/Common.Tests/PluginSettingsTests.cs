@@ -249,6 +249,32 @@ public sealed class PluginSettingsTests
             pluginSettings => pluginSettings.AllowFileAccessAfterProjectFinishFilePatterns);
 
     [TestMethod]
+    public void AllowFileAccessAfterProjectFinishFilePatternsSupportsMachineLocalCategories()
+    {
+        Dictionary<string, string> settings = new(StringComparer.OrdinalIgnoreCase)
+        {
+            [nameof(PluginSettings.AllowFileAccessAfterProjectFinishFilePatterns)] =
+                @"\**\ApplicationInsights.config;" +
+                @"C:\Users\Test\AppData\Local\Microsoft\VSApplicationInsights\**;" +
+                @"C:\Users\Test\AppData\Local\Microsoft\Windows\INetCache\**;" +
+                @"C:\Windows\**",
+        };
+
+        PluginSettings pluginSettings = PluginSettings.Create<PluginSettings>(
+            settings,
+            NullPluginLogger.Instance,
+            RepoRoot,
+            supportsProbeAndEnumerationCapture: true);
+
+        IReadOnlyCollection<Glob> patterns = pluginSettings.AllowFileAccessAfterProjectFinishFilePatterns;
+        Assert.IsTrue(patterns.Any(pattern => pattern.IsMatch(@"C:\Program Files\Telemetry\ApplicationInsights.config")));
+        Assert.IsTrue(patterns.Any(pattern => pattern.IsMatch(@"C:\Users\Test\AppData\Local\Microsoft\VSApplicationInsights\config.json")));
+        Assert.IsTrue(patterns.Any(pattern => pattern.IsMatch(@"C:\Users\Test\AppData\Local\Microsoft\Windows\INetCache\IE\ABC\dyntelconfig[2].cache")));
+        Assert.IsTrue(patterns.Any(pattern => pattern.IsMatch(@"C:\Windows\System32\ci.dll")));
+        Assert.IsFalse(patterns.Any(pattern => pattern.IsMatch(@"X:\Repo\src\Program.cs")));
+    }
+
+    [TestMethod]
     [DynamicData(nameof(GlobTestCases), DynamicDataDisplayName = nameof(GetTestCaseDisplayName))]
     public void AllowProcessCloseAfterProjectFinishProcessPatternsSetting(GlobTestCase testCase)
         => TestGlobListSetting(

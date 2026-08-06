@@ -173,7 +173,7 @@ function Invoke-ScenarioBuild
     New-Item -ItemType Directory -Path $stepLogDir -Force > $null
 
     $lateFileAccessPatterns = @(
-        "**\ApplicationInsights.config"
+        "\**\ApplicationInsights.config"
         "$env:LOCALAPPDATA\Microsoft\VSApplicationInsights\**"
         "$env:LOCALAPPDATA\Microsoft\Windows\INetCache\**"
         "$env:SystemRoot\**"
