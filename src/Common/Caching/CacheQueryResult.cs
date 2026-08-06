@@ -8,19 +8,14 @@ using Microsoft.MSBuildCache.Fingerprinting;
 
 namespace Microsoft.MSBuildCache.Caching;
 
-internal interface IMaterializingCacheClient
-{
-    Task<CacheQueryResult> QueryNodeAsync(NodeContext nodeContext, CancellationToken cancellationToken);
-}
-
-internal sealed class CacheQueryResult
+public sealed class CacheQueryResult
 {
     private readonly object _materializationLock = new();
     private readonly Func<CancellationToken, Task>? _materializeOutputsAsync;
     private readonly bool _waitForMaterialization;
     private Task? _materializationTask;
 
-    internal CacheQueryResult(
+    public CacheQueryResult(
         PathSet? pathSet,
         NodeBuildResult? nodeBuildResult,
         Func<CancellationToken, Task>? materializeOutputsAsync,

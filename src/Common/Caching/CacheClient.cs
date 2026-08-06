@@ -28,7 +28,7 @@ using WeakFingerprint = BuildXL.Cache.MemoizationStore.Interfaces.Sessions.Finge
 
 namespace Microsoft.MSBuildCache.Caching;
 
-public abstract class CacheClient : ICacheClient, IMaterializingCacheClient
+public abstract class CacheClient : ICacheClient
 {
     private static readonly byte[] EmptySelectorOutput = new byte[1];
     private readonly OutputHasher _outputHasher;
@@ -359,34 +359,11 @@ public abstract class CacheClient : ICacheClient, IMaterializingCacheClient
         }
     }
 
-    public async Task<(PathSet?, NodeBuildResult?)> GetNodeAsync(
-        NodeContext nodeContext,
-        bool materializeOutputs,
-        CancellationToken cancellationToken)
-    {
-        CacheQueryResult result = await QueryNodeAsync(nodeContext, cancellationToken);
-        return await CompleteQueryAsync(result, materializeOutputs, cancellationToken);
-    }
-
-    public async Task<(PathSet?, NodeBuildResult?)> GetNodeInternalAsync(
-        NodeContext nodeContext,
-        bool materializeOutputs,
-        CancellationToken cancellationToken)
-    {
-        CacheQueryResult result = await QueryNodeInternalAsync(nodeContext, cancellationToken);
-        return await CompleteQueryAsync(result, materializeOutputs, cancellationToken);
-    }
-
-    Task<CacheQueryResult> IMaterializingCacheClient.QueryNodeAsync(
-        NodeContext nodeContext,
-        CancellationToken cancellationToken)
-        => QueryNodeAsync(nodeContext, cancellationToken);
-
-    private async Task<CacheQueryResult> QueryNodeAsync(
+    public async Task<CacheQueryResult> GetNodeAsync(
         NodeContext nodeContext,
         CancellationToken cancellationToken)
     {
-        CacheQueryResult result = await QueryNodeInternalAsync(nodeContext, cancellationToken);
+        CacheQueryResult result = await GetNodeInternalAsync(nodeContext, cancellationToken);
 
         // On cache miss ensure all dependencies are materialized before returning to MSBuild so that MSBuild's execution will actually work.
         if (result.NodeBuildResult == null)
@@ -403,7 +380,7 @@ public abstract class CacheClient : ICacheClient, IMaterializingCacheClient
         return result;
     }
 
-    private async Task<CacheQueryResult> QueryNodeInternalAsync(
+    public async Task<CacheQueryResult> GetNodeInternalAsync(
         NodeContext nodeContext,
         CancellationToken cancellationToken)
     {
@@ -565,19 +542,6 @@ public abstract class CacheClient : ICacheClient, IMaterializingCacheClient
             MaterializeOutputsAsync,
             waitForMaterialization: !_enableAsyncMaterialization);
         return _nodeQueryResults.GetOrAdd(nodeContext, queryResult);
-    }
-
-    private static async Task<(PathSet?, NodeBuildResult?)> CompleteQueryAsync(
-        CacheQueryResult result,
-        bool materializeOutputs,
-        CancellationToken cancellationToken)
-    {
-        if (materializeOutputs && result.NodeBuildResult is not null)
-        {
-            await result.MaterializeOutputsAsync(cancellationToken);
-        }
-
-        return (result.PathSet, result.NodeBuildResult);
     }
 
     private async Task<(Selector? Selector, PathSet? PathSet)> GetMatchingSelectorAsync(

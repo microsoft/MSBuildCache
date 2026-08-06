@@ -435,36 +435,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
         nodeContext.SetStartTime();
 
-        CacheQueryResult queryResult;
-        if (_cacheClient is IMaterializingCacheClient materializingCacheClient)
-        {
-            queryResult = await materializingCacheClient.QueryNodeAsync(nodeContext, cancellationToken);
-        }
-        else
-        {
-            (PathSet? legacyPathSet, NodeBuildResult? legacyBuildResult) = await _cacheClient.GetNodeAsync(
-                nodeContext,
-                materializeOutputs,
-                cancellationToken);
-
-            queryResult = new CacheQueryResult(
-                legacyPathSet,
-                legacyBuildResult,
-                materializeOutputs || legacyBuildResult is null ? null : MaterializeLegacyCacheResultAsync,
-                waitForMaterialization: true);
-
-            async Task MaterializeLegacyCacheResultAsync(CancellationToken ct)
-            {
-                (_, NodeBuildResult? materializedBuildResult) = await _cacheClient.GetNodeAsync(
-                    nodeContext,
-                    materializeOutputs: true,
-                    ct);
-                if (materializedBuildResult is null)
-                {
-                    throw new CacheException($"Failed to materialize the previously found cache result for {nodeContext.Id}.");
-                }
-            }
-        }
+        CacheQueryResult queryResult = await _cacheClient.GetNodeAsync(nodeContext, cancellationToken);
 
         PathSet? pathSet = queryResult.PathSet;
         NodeBuildResult? nodeBuildResult = queryResult.NodeBuildResult;
@@ -474,7 +445,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             return new NodeCacheResult(CacheResult.IndicateNonCacheHit(CacheResultType.CacheMiss), queryResult);
         }
 
-        if (materializeOutputs && _cacheClient is IMaterializingCacheClient)
+        if (materializeOutputs)
         {
             await queryResult.MaterializeOutputsAsync(cancellationToken);
         }

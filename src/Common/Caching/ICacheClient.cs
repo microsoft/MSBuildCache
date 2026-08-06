@@ -19,7 +19,7 @@ public interface ICacheClient : IAsyncDisposable
         Func<IReadOnlyDictionary<string, ContentHash>, NodeBuildResult> nodeBuildResultBuilder,
         CancellationToken cancellationToken);
 
-    Task<(PathSet?, NodeBuildResult?)> GetNodeAsync(NodeContext nodeContext, bool materializeOutputs, CancellationToken cancellationToken);
+    Task<CacheQueryResult> GetNodeAsync(NodeContext nodeContext, CancellationToken cancellationToken);
 
     Task ShutdownAsync(CancellationToken cancellationToken);
 }
