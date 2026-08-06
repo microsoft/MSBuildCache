@@ -575,7 +575,16 @@ public abstract class CacheClient : ICacheClient
                 continue;
             }
 
-            // Create a strong fingerprint from the PathSet and see if it matches the selector's strong fingerprint.
+            // Required for correctness, not just speed: probe and enumeration entries hash their recorded
+            // state into the strong fingerprint rather than anything read from disk, so the comparison below
+            // cannot detect that they no longer hold. This check is what enforces them. The fingerprint
+            // comparison still covers file-content changes.
+            if (!_fingerprintFactory.MatchesCurrentState(pathSet))
+            {
+                Tracer.Debug(context, $"Skipping selector with PathSet hash {pathSetHash}. Probes/enumerations no longer match current filesystem state.");
+                continue;
+            }
+
             Fingerprint? possibleStrongFingerprint = await _fingerprintFactory.GetStrongFingerprintAsync(pathSet);
             if (possibleStrongFingerprint != null && ByteArrayComparer.ArraysEqual(possibleStrongFingerprint.Hash, selectorStrongFingerprint))
             {

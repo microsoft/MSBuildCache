@@ -9,6 +9,7 @@ using System.Reflection;
 using System.Text;
 using DotNet.Globbing;
 using Microsoft.Build.Experimental.ProjectCache;
+using Microsoft.MSBuildCache.FileAccess;
 
 namespace Microsoft.MSBuildCache;
 
@@ -111,10 +112,25 @@ public class PluginSettings
 
     public bool TouchOutputFiles { get; init; }
 
+    /// <summary>
+    /// Enables probe and directory-enumeration tracking in fingerprints. When false, only file content
+    /// reads contribute to the fingerprint, matching pre-feature behavior.
+    /// </summary>
+    /// <remarks>
+    /// Forced to false when the running MSBuild does not report the required file-access fields (see
+    /// <see cref="FileAccessDataCapabilities"/>), so this always reflects what the build actually did.
+    /// It contributes to the weak fingerprint, which keeps caches produced with and without the feature
+    /// from being shared — important because an entry produced without it records no probe or
+    /// enumeration dependencies at all, and reusing that entry on a host that does track them would be
+    /// an incorrect hit.
+    /// </remarks>
+    public bool EnableProbeAndEnumerationFingerprinting { get; init; } = true;
+
     public static T Create<T>(
         IReadOnlyDictionary<string, string> settings,
         PluginLoggerBase logger,
-        string repoRoot)
+        string repoRoot,
+        bool supportsProbeAndEnumerationCapture)
         where T : PluginSettings
     {
         T? pluginSettings = Activator.CreateInstance<T>();
@@ -176,6 +192,24 @@ public class PluginSettings
                 // We already checked CanRead, should not be null
                 MethodInfo getMethod = property.GetGetMethod(nonPublic: true)!;
                 settingValue = getMethod.Invoke(pluginSettings, Array.Empty<object>());
+            }
+
+            // Probe and enumeration fingerprinting is unsound on a host that doesn't report enumeration
+            // patterns, so an explicit `true` is overridden rather than honored. Clamping the setting
+            // itself keeps it the single source of truth, including for the weak fingerprint, instead of
+            // leaving a configured value that disagrees with behavior.
+            if (!supportsProbeAndEnumerationCapture
+                && settingValue is true
+                && propertyName.Equals(nameof(EnableProbeAndEnumerationFingerprinting), StringComparison.Ordinal))
+            {
+                settingValue = false;
+                MethodInfo setMethod = property.GetSetMethod(nonPublic: true)!;
+                _ = setMethod.Invoke(pluginSettings, new object[] { false });
+
+                logger.LogMessage(
+                    $"Setting '{propertyName}' was forced to false because the running MSBuild "
+                    + $"({FileAccessDataCapabilities.MSBuildVersion ?? "unknown version"}) does not report directory "
+                    + "enumeration patterns. A newer MSBuild is required to enable it.");
             }
 
             logMessage.Append(propertyName);

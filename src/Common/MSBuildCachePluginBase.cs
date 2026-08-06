@@ -223,7 +223,11 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
         _buildId = GetBuildId();
 
-        Settings = PluginSettings.Create<TPluginSettings>(context.PluginSettings, logger, _repoRoot);
+        Settings = PluginSettings.Create<TPluginSettings>(
+            context.PluginSettings,
+            logger,
+            _repoRoot,
+            FileAccessDataCapabilities.IsSupported);
 
         // The local cache does not allow multiple processes to access it at the same time and will block indefinitely while waiting for a lock on the directory.
         // In certain scenarios where MSBuild is invoked recursively, such as is done for Fakes projects, this can lead to a hang as the child MSBuild waits for the
@@ -614,11 +618,15 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         List<Task<(byte[]?, string)>> packageFileHashingTasks = new();
         static async Task<(byte[]?, string)> WrapHashingTask(Task<byte[]?> hashTask, string packageRootRelativeFilePath) => (await hashTask, packageRootRelativeFilePath);
 
-        List<string> filesRead = new();
         using var observedInputsWriter = new StreamWriter(Path.Combine(nodeContext.LogDirectory, "observedInputs.txt"));
-        foreach (string absolutePath in fileAccesses.Inputs)
+        foreach (ObservedAccess observation in fileAccesses.Observations)
         {
-            filesRead.Add(absolutePath);
+            if (observation.Type != ObservationType.FileContentRead)
+            {
+                continue;
+            }
+
+            string absolutePath = observation.Path;
 
             string? packageRootRelativeFilePath = absolutePath.MakePathRelativeTo(NugetPackageRoot);
             if (packageRootRelativeFilePath != null)
@@ -717,7 +725,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             }
         }
 
-        PathSet? pathSet = FingerprintFactory.GetPathSet(nodeContext, filesRead);
+        PathSet? pathSet = FingerprintFactory.GetPathSet(nodeContext, fileAccesses.Observations);
 
         if (buildResult.OverallResult != BuildResultCode.Success)
         {

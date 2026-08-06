@@ -23,7 +23,10 @@ public class PluginSettingsExtensibilityTests
     {
         Dictionary<string, string> settings = new(StringComparer.OrdinalIgnoreCase);
         MockPluginLogger logger = new();
-        _ = PluginSettings.Create<MockPluginSettings>(settings, logger, RepoRoot);
+
+        // Pin the capability so this stays a test of settings logging; without it the probe-and-enumeration
+        // clamp would log a second entry whenever the test host's MSBuild predates the required fields.
+        _ = PluginSettings.Create<MockPluginSettings>(settings, logger, RepoRoot, supportsProbeAndEnumerationCapture: true);
 
         Assert.HasCount(1, logger.LogEntries);
 
@@ -52,7 +55,11 @@ public class PluginSettingsExtensibilityTests
     {
         Dictionary<string, string> settings = new(StringComparer.OrdinalIgnoreCase);
         MockPluginLogger logger = new();
-        MockPluginSettings pluginSettings = PluginSettings.Create<MockPluginSettings>(settings, logger, RepoRoot);
+        MockPluginSettings pluginSettings = PluginSettings.Create<MockPluginSettings>(
+            settings,
+            logger,
+            RepoRoot,
+            supportsProbeAndEnumerationCapture: true);
 
         Assert.AreEqual(DefaultMockPluginSettings.StringSetting, pluginSettings.StringSetting);
 
@@ -119,7 +126,11 @@ public class PluginSettingsExtensibilityTests
             { nameof(DefaultMockPluginSettings.ISetSetting), "InvalidValue" },
         };
         MockPluginLogger logger = new();
-        MockPluginSettings pluginSettings = PluginSettings.Create<MockPluginSettings>(settings, logger, RepoRoot);
+        MockPluginSettings pluginSettings = PluginSettings.Create<MockPluginSettings>(
+            settings,
+            logger,
+            RepoRoot,
+            supportsProbeAndEnumerationCapture: true);
 
         AssertInvalidValueHandled(nameof(MockPluginSettings.EnumSetting), pluginSettings => pluginSettings.EnumSetting);
 
@@ -196,7 +207,11 @@ public class PluginSettingsExtensibilityTests
             { nameof(DefaultMockPluginSettings.ISetSetting), "4; 5; 6" },
         };
         MockPluginLogger logger = new();
-        MockPluginSettings pluginSettings = PluginSettings.Create<MockPluginSettings>(settings, logger, RepoRoot);
+        MockPluginSettings pluginSettings = PluginSettings.Create<MockPluginSettings>(
+            settings,
+            logger,
+            RepoRoot,
+            supportsProbeAndEnumerationCapture: true);
 
         Assert.AreEqual("B", pluginSettings.StringSetting);
 
@@ -241,7 +256,12 @@ public class PluginSettingsExtensibilityTests
             { nameof(MockPluginSettingsWithUnsupportedType.UnsupportedTypeSetting), "Baz" },
         };
         MockPluginLogger logger = new();
-        MockPluginSettingsWithUnsupportedType pluginSettings = PluginSettings.Create<MockPluginSettingsWithUnsupportedType>(settings, logger, RepoRoot);
+        MockPluginSettingsWithUnsupportedType pluginSettings =
+            PluginSettings.Create<MockPluginSettingsWithUnsupportedType>(
+                settings,
+                logger,
+                RepoRoot,
+                supportsProbeAndEnumerationCapture: true);
 
         AssertNotLogged(logger, PluginLogLevel.Warning, "has invalid value");
         AssertLogged(logger, PluginLogLevel.Warning, "has unsupported type");
