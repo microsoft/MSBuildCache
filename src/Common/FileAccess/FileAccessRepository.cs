@@ -263,15 +263,17 @@ internal sealed class FileAccessRepository : IDisposable
 
                     if (processMatch != null)
                     {
-                        _logger.LogWarning(
+                        _logger.LogWarningOrMessage(
                             $"File access reported from process after the project finished, but process matched {nameof(_pluginSettings.AllowFileAccessAfterProjectFinishProcessPatterns)} `{processMatch}`. " +
-                            $"This may lead to incorrect caching. Node Id: {_nodeContext.Id}, Process Id: {fileAccessData.ProcessId} ProcessPath: `{processName}` File Path: `{path}`");
+                            $"This may lead to incorrect caching. Node Id: {_nodeContext.Id}, Process Id: {fileAccessData.ProcessId} ProcessPath: `{processName}` File Path: `{path}`",
+                            _pluginSettings.LogAllowFileAccessAfterProjectFinishMatchesAsMessages);
                     }
                     else if (fileMatch != null)
                     {
-                        _logger.LogWarning(
+                        _logger.LogWarningOrMessage(
                             $"File access reported from process after the project finished, but file path matched {nameof(_pluginSettings.AllowFileAccessAfterProjectFinishFilePatterns)} `{fileMatch}`. " +
-                            $"This may lead to incorrect caching. Node Id: {_nodeContext.Id}, Process Id: {fileAccessData.ProcessId} ProcessPath: `{processName}` File Path: `{path}`");
+                            $"This may lead to incorrect caching. Node Id: {_nodeContext.Id}, Process Id: {fileAccessData.ProcessId} ProcessPath: `{processName}` File Path: `{path}`",
+                            _pluginSettings.LogAllowFileAccessAfterProjectFinishMatchesAsMessages);
                     }
                     else
                     {

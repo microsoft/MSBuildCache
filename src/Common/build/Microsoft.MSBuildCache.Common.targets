@@ -18,6 +18,7 @@
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheAsyncCacheMaterialization</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheAllowFileAccessAfterProjectFinishProcessPatterns</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheAllowFileAccessAfterProjectFinishFilePatterns</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheLogAllowFileAccessAfterProjectFinishMatchesAsMessages</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheAllowProcessCloseAfterProjectFinishProcessPatterns</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheGlobalPropertiesToIgnore</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheGetResultsForUnqueriedDependencies</MSBuildCacheGlobalPropertiesToIgnore>
@@ -43,6 +44,7 @@
       <AsyncCacheMaterialization>$(MSBuildCacheAsyncCacheMaterialization)</AsyncCacheMaterialization>
       <AllowFileAccessAfterProjectFinishProcessPatterns>$(MSBuildCacheAllowFileAccessAfterProjectFinishProcessPatterns)</AllowFileAccessAfterProjectFinishProcessPatterns>
       <AllowFileAccessAfterProjectFinishFilePatterns>$(MSBuildCacheAllowFileAccessAfterProjectFinishFilePatterns)</AllowFileAccessAfterProjectFinishFilePatterns>
+      <LogAllowFileAccessAfterProjectFinishMatchesAsMessages>$(MSBuildCacheLogAllowFileAccessAfterProjectFinishMatchesAsMessages)</LogAllowFileAccessAfterProjectFinishMatchesAsMessages>
       <AllowProcessCloseAfterProjectFinishProcessPatterns>$(MSBuildCacheAllowProcessCloseAfterProjectFinishProcessPatterns)</AllowProcessCloseAfterProjectFinishProcessPatterns>
       <GlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore)</GlobalPropertiesToIgnore>
       <GetResultsForUnqueriedDependencies>$(MSBuildCacheGetResultsForUnqueriedDependencies)</GetResultsForUnqueriedDependencies>
