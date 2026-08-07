@@ -357,16 +357,26 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
     private async Task EndBuildInnerAsync(PluginLoggerBase logger, CancellationToken cancellationToken)
     {
-        if (_cacheClient is not null)
+        try
         {
-            await _cacheClient.ShutdownAsync(cancellationToken);
+            if (_cacheClient is not null)
+            {
+                await _cacheClient.ShutdownAsync(cancellationToken);
+            }
+        }
+        finally
+        {
+            try
+            {
+                await DisposeAsync();
+            }
+            finally
+            {
+                _pluginLogger = null;
+            }
         }
 
-        await DisposeAsync();
-
         LogCacheStats(logger);
-
-        _pluginLogger = null;
     }
 
     public override Task<CacheResult> GetCacheResultAsync(BuildRequestData buildRequest, PluginLoggerBase logger, CancellationToken cancellationToken)
