@@ -253,11 +253,16 @@ public sealed class CasCacheClient : CacheClient
             throw new CacheException($"{nameof(_twoLevelCacheSession.AddOrGetContentHashListAsync)} failed for {fingerprint}.");
         }
 
-        return contentHashList.Equals(addResult?.ContentHashListWithDeterminism.ContentHashList)
-            ? AddNodeResult.Added
-            : AddNodeResult.AlreadyExists;
+        return GetAddNodeResult(addResult);
 
         // TODO dfederm: Handle CHL races
+    }
+
+    internal static AddNodeResult GetAddNodeResult(AddOrGetContentHashListResult addResult)
+    {
+        return addResult.ContentHashListWithDeterminism.ContentHashList == null
+            ? AddNodeResult.Added
+            : AddNodeResult.AlreadyExists;
     }
 
     protected override async Task<ICacheEntry?> GetCacheEntryAsync(
