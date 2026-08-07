@@ -9,6 +9,9 @@
     <ProjectReference Include="..\Common\Microsoft.MSBuildCache.Common.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Microsoft.MSBuildCache.AzurePipelines.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.VisualStudio.Services.PipelineCache.WebApi" />
     <PackageReference Include="Microsoft.VisualStudio.Services.BlobStore.Client" />
     <PackageReference Include="Microsoft.VisualStudio.Services.BlobStore.Client.Cache" />

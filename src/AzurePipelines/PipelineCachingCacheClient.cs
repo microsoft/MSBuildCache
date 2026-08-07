@@ -81,7 +81,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
     private static readonly string DomainId = WellKnownDomainIds.DefaultDomainId.ToString();
 
     private const char KeySegmentSeperator = '|';
-    private const int InternalSeed = 5;
+    private const int InternalSeed = 6;
     private readonly bool _remoteCacheIsReadOnly;
     private readonly string _universe;
     private readonly IAppTraceSource _azureDevopsTracer;
@@ -323,7 +323,37 @@ internal sealed class PipelineCachingCacheClient : CacheClient
         }
 
         // add the WFP -> Selector mapping
-        bool wfpAddded;
+        await _startupTask;
+        string selectorsReadKey = ComputeSelectorsReadKey(_universe, fingerprint.WeakFingerprint);
+        bool wfpAddded = await SelectorPublication.AddAsync(
+            fingerprint.Selector,
+            selectorsReadKey,
+            (key, ct) => QueryPipelineCaching(
+                context,
+                new VisualStudio.Services.PipelineCache.WebApi.Fingerprint(key.Split(KeySegmentSeperator)),
+                ct),
+            (key, ct) => QueryRequiredPipelineCaching(
+                context,
+                new VisualStudio.Services.PipelineCache.WebApi.Fingerprint(key.Split(KeySegmentSeperator)),
+                ct),
+            (predecessor, ct) => ReadSelectorsAsync(context, predecessor, ct),
+            predecessor => ComputeSelectorsWriteKey(_universe, fingerprint.WeakFingerprint, predecessor?.ManifestId.ValueString),
+            (predecessor, selectors, key, ct) => TryPublishSelectorsAsync(context, fingerprint, selectors, key, pathSetBytes, ct),
+            cancellationToken);
+
+        return wfpAddded || sfpAddded
+            ? AddNodeResult.Added
+            : AddNodeResult.AlreadyExists;
+    }
+
+    private async Task<bool> TryPublishSelectorsAsync(
+        Context context,
+        StrongFingerprint fingerprint,
+        IReadOnlyCollection<Selector> selectors,
+        string key,
+        (ContentHash hash, byte[] bytes)? pathSetBytes,
+        CancellationToken cancellationToken)
+    {
         List<TempFile> pathSetTempFiles = new();
         try
         {
@@ -333,12 +363,6 @@ internal sealed class PipelineCachingCacheClient : CacheClient
             FileInfo emptyFileInfo = new(emptyFile.Path);
 
             List<FileInfo> infos = new();
-
-            string key = ComputeSelectorsKey(fingerprint.WeakFingerprint, forWrite: true);
-
-            var selectors = await GetSelectors(context, fingerprint.WeakFingerprint, cancellationToken).ToHashSetAsync(cancellationToken);
-
-            selectors.Add(fingerprint.Selector);
 
             // TODO: limit the number of selectors we store.
 
@@ -364,7 +388,7 @@ internal sealed class PipelineCachingCacheClient : CacheClient
 #pragma warning restore CA2000
 #pragma warning restore IDE0079
 #endif
-                    var bytes = selector.ContentHash == pathSetBytes?.hash
+                    byte[] bytes = selector.ContentHash == pathSetBytes?.hash
                         ? pathSetBytes.Value.bytes
                         : await GetBytes(context, selector.ContentHash.ToBlobIdentifier().ToDedupIdentifier(), cancellationToken);
 #if NETFRAMEWORK
@@ -380,18 +404,19 @@ internal sealed class PipelineCachingCacheClient : CacheClient
             PublishResult result = await WithHttpRetries(
                 () => _manifestClient.PublishAsync(TempFolder, infos, extras, new ArtifactPublishOptions(), manifestFileOutputPath: null, cancellationToken),
                 cacheContext: context,
-                message: $"Publishing content for {fingerprint}",
+                message: $"Publishing selectors for {fingerprint}",
                 cancellationToken);
 
+            var cacheFingerprint = new VisualStudio.Services.PipelineCache.WebApi.Fingerprint(key.Split(KeySegmentSeperator));
             CreatePipelineCacheArtifactContract entry = new(
                 DomainId,
-                new VisualStudio.Services.PipelineCache.WebApi.Fingerprint(key.Split(KeySegmentSeperator)),
+                cacheFingerprint,
                 result.ManifestId,
                 result.RootId,
                 result.ProofNodes,
                 ContentFormatConstants.Files);
 
-            wfpAddded = await WithHttpRetries(
+            return await WithHttpRetries(
                 async () =>
                 {
                     try
@@ -406,16 +431,12 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                     }
                 },
                 cacheContext: context,
-                message: $"Storing cache key for {fingerprint}",
+                message: $"Storing selector cache key for {fingerprint}",
                 cancellationToken);
-
-            return wfpAddded || sfpAddded
-                ? AddNodeResult.Added
-                : AddNodeResult.AlreadyExists;
         }
         finally
         {
-            foreach (var pathSetTempFile in pathSetTempFiles)
+            foreach (TempFile pathSetTempFile in pathSetTempFiles)
             {
                 pathSetTempFile.Dispose();
             }
@@ -618,24 +639,37 @@ internal sealed class PipelineCachingCacheClient : CacheClient
     {
         await _startupTask;
 
-        string key = ComputeSelectorsKey(fingerprint, forWrite: false);
         PipelineCacheArtifact? result = await QueryPipelineCaching(
             context,
-            new VisualStudio.Services.PipelineCache.WebApi.Fingerprint(key.Split(KeySegmentSeperator)),
+            new VisualStudio.Services.PipelineCache.WebApi.Fingerprint(ComputeSelectorsReadKey(_universe, fingerprint).Split(KeySegmentSeperator)),
             cancellationToken);
 
+        foreach (Selector selector in await ReadSelectorsAsync(context, result, cancellationToken))
+        {
+            yield return selector;
+        }
+    }
+
+    private async Task<IReadOnlyCollection<Selector>> ReadSelectorsAsync(
+        Context context,
+        PipelineCacheArtifact? result,
+        CancellationToken cancellationToken)
+    {
         if (result == null)
         {
-            yield break;
+            return [];
         }
 
+        HashSet<Selector> selectors = new();
         using var manifestStream = new MemoryStream(await GetBytes(context, result.ManifestId, cancellationToken));
         Manifest manifest = JsonSerializer.Deserialize<Manifest>(manifestStream)!;
         foreach (ManifestItem selectorItem in manifest.Items.Where(i => i.Path.StartsWith(SelectorsRelativePathBase, StringComparison.Ordinal)))
         {
             string[] tokens = selectorItem.Path.Substring(SelectorsRelativePathBase.Length + 1).Split('/');
-            yield return new Selector(new ContentHash(tokens[0]), HexUtilities.HexToBytes(tokens[1]));
+            selectors.Add(new Selector(new ContentHash(tokens[0]), HexUtilities.HexToBytes(tokens[1])));
         }
+
+        return selectors;
     }
 
     protected override async Task<OpenStreamResult> OpenStreamAsync(Context context, ContentHash contentHash, CancellationToken cancellationToken)
@@ -710,14 +744,34 @@ internal sealed class PipelineCachingCacheClient : CacheClient
     }
 
     private string ComputeKey(StrongFingerprint sfp, bool forWrite) =>
-        forWrite
-            ? $"outputs{InternalSeed}{KeySegmentSeperator}{_universe}{KeySegmentSeperator}{sfp.WeakFingerprint.Serialize()}{KeySegmentSeperator}{sfp.Selector.ContentHash.Serialize()}{KeySegmentSeperator}{DateTime.UtcNow.Ticks}"
-            : $"outputs{InternalSeed}{KeySegmentSeperator}{_universe}{KeySegmentSeperator}{sfp.WeakFingerprint.Serialize()}{KeySegmentSeperator}{sfp.Selector.ContentHash.Serialize()}{KeySegmentSeperator}**";
+        ComputeOutputKey(_universe, sfp, forWrite, DateTime.UtcNow.Ticks);
 
-    private string ComputeSelectorsKey(BuildXL.Cache.MemoizationStore.Interfaces.Sessions.Fingerprint wfp, bool forWrite) =>
+    internal static string ComputeOutputKey(string universe, StrongFingerprint sfp, bool forWrite, long writeId) =>
         forWrite
-            ? $"selector{InternalSeed}{KeySegmentSeperator}{_universe}{KeySegmentSeperator}{wfp.Serialize()}{KeySegmentSeperator}{DateTime.UtcNow.Ticks}"
-            : $"selector{InternalSeed}{KeySegmentSeperator}{_universe}{KeySegmentSeperator}{wfp.Serialize()}{KeySegmentSeperator}**";
+            ? $"outputs{InternalSeed}{KeySegmentSeperator}{universe}{KeySegmentSeperator}{sfp.WeakFingerprint.Serialize()}{KeySegmentSeperator}{sfp.Selector.ContentHash.Serialize()}{KeySegmentSeperator}{sfp.Selector.Output.ToHexString()}{KeySegmentSeperator}{writeId}"
+            : $"outputs{InternalSeed}{KeySegmentSeperator}{universe}{KeySegmentSeperator}{sfp.WeakFingerprint.Serialize()}{KeySegmentSeperator}{sfp.Selector.ContentHash.Serialize()}{KeySegmentSeperator}{sfp.Selector.Output.ToHexString()}{KeySegmentSeperator}**";
+
+    internal static string ComputeSelectorsReadKey(string universe, BuildXL.Cache.MemoizationStore.Interfaces.Sessions.Fingerprint wfp) =>
+        $"selector{InternalSeed}{KeySegmentSeperator}{universe}{KeySegmentSeperator}{wfp.Serialize()}{KeySegmentSeperator}**";
+
+    internal static string ComputeSelectorsWriteKey(
+        string universe,
+        BuildXL.Cache.MemoizationStore.Interfaces.Sessions.Fingerprint wfp,
+        string? predecessorManifestId) =>
+        $"selector{InternalSeed}{KeySegmentSeperator}{universe}{KeySegmentSeperator}{wfp.Serialize()}{KeySegmentSeperator}{predecessorManifestId ?? "root"}";
+
+    private Task<PipelineCacheArtifact> QueryRequiredPipelineCaching(
+        Context context,
+        VisualStudio.Services.PipelineCache.WebApi.Fingerprint key,
+        CancellationToken cancellationToken)
+    {
+        return WithHttpRetries(
+            async () => await QueryPipelineCaching(context, key, cancellationToken)
+                ?? throw new CacheException($"Pipeline Cache entry `{key}` was reported as existing but is not yet visible."),
+            cacheContext: context,
+            message: $"Querying required cache entry '{key}'",
+            cancellationToken);
+    }
 
     private Task<PipelineCacheArtifact?> QueryPipelineCaching(Context context, VisualStudio.Services.PipelineCache.WebApi.Fingerprint key, CancellationToken cancellationToken)
     {
