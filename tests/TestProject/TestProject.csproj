@@ -15,4 +15,39 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
+  <!--
+    Opt-in large output, for cache backends which transfer large objects differently from small ones, such as S3
+    multipart. The content is seeded deterministically so that a rebuild produces the same hash.
+  -->
+  <UsingTask TaskName="WriteLargeFile"
+             TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll"
+             Condition="'$(LargeOutputSizeInMegabytes)' != ''">
+    <ParameterGroup>
+      <FilePath ParameterType="System.String" Required="true" />
+      <SizeInMegabytes ParameterType="System.Int32" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Code Type="Fragment" Language="cs">
+        <![CDATA[
+        var buffer = new byte[1024 * 1024];
+        var random = new System.Random(42);
+        System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(FilePath));
+        using (var stream = System.IO.File.Create(FilePath))
+        {
+            for (int i = 0; i < SizeInMegabytes; i++)
+            {
+                random.NextBytes(buffer);
+                stream.Write(buffer, 0, buffer.Length);
+            }
+        }
+        ]]>
+      </Code>
+    </Task>
+  </UsingTask>
+
+  <Target Name="WriteLargeOutput" AfterTargets="Build" Condition="'$(LargeOutputSizeInMegabytes)' != ''">
+    <WriteLargeFile FilePath="$(MSBuildProjectDirectory)\$(OutDir)large.bin" SizeInMegabytes="$(LargeOutputSizeInMegabytes)" />
+  </Target>
+
 </Project>
