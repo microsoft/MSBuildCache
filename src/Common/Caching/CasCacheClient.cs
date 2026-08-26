@@ -38,6 +38,7 @@ public sealed class CasCacheClient : CacheClient
 
     private readonly ICacheSession? _remoteCacheSession;
     private readonly ICacheSession _twoLevelCacheSession;
+    private readonly bool _remoteCacheIsReadOnly;
 
     public CasCacheClient(
         Context rootContext,
@@ -65,6 +66,7 @@ public sealed class CasCacheClient : CacheClient
         else
         {
             _remoteCacheSession = remoteCache.Value.session;
+            _remoteCacheIsReadOnly = remoteCache.Value.config.RemoteCacheIsReadOnly;
             cacheSession = new TwoLevelCacheSession(
                 nameof(TwoLevelCacheSession),
                 localCacheSession,
@@ -202,7 +204,11 @@ public sealed class CasCacheClient : CacheClient
         }
 
         // Now that we've ensured everything is in the local cache, we can upload to the remote cache.
-        if (_remoteCacheSession != null)
+        // When the remote cache is read-only, skip this entirely: the content hash list which would reference
+        // this content is not published either (TwoLevelCacheSession honors RemoteCacheIsReadOnly below), so any
+        // content uploaded here could never be retrieved by a subsequent build. Uploading it would only cost
+        // egress, storage and time.
+        if (_remoteCacheSession != null && !_remoteCacheIsReadOnly)
         {
             // determine what needs to be uploaded
             PutFileOperation[] pinResults = await PinBulkAsync(context, _remoteCacheSession, _putRemoteTaskCache, pinContentHashes, cancellationToken);
