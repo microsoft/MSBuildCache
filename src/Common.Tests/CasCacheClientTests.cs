@@ -78,7 +78,10 @@ public class CasCacheClientTests
 
     private static (CasCacheClient CacheClient, RecordingCacheSession LocalSession, RecordingCacheSession RemoteSession) CreateCacheClient(bool remoteCacheIsReadOnly)
     {
-        IContentHasher hasher = HashInfoLookup.GetContentHasher(HashType.Vso0);
+#pragma warning disable CA2000 // Ownership of the hasher, caches, sessions and logger is transferred to the cache client, which disposes them.
+        // Create a hasher rather than using HashInfoLookup.GetContentHasher, which returns a process-wide
+        // instance that must not be disposed. CacheClient disposes the hasher it is given.
+        IContentHasher hasher = HashInfoLookup.Find(HashType.Vso0).CreateContentHasher();
 
         // The local session reports content as present so nothing needs to be ingested from disk.
         RecordingCacheSession localSession = new("local", pinSucceeds: true);
@@ -86,7 +89,6 @@ public class CasCacheClientTests
         // The remote session reports content as missing, so a writable remote would upload it.
         RecordingCacheSession remoteSession = new("remote", pinSucceeds: false);
 
-#pragma warning disable CA2000 // Ownership of the caches, sessions and logger is transferred to the cache client, which disposes them.
         RecordingCache localCache = new(localSession);
         RecordingCache remoteCache = new(remoteSession);
 
