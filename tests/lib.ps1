@@ -108,7 +108,8 @@ function Invoke-MSBuildCacheBuild
     $output = Get-Content $stdout -Raw
     $hitMatch = [regex]::Match($output, 'Cache Hit Count: (?<Value>\d+)')
     $missMatch = [regex]::Match($output, 'Cache Miss Count: (?<Value>\d+)')
-    $ratioMatch = [regex]::Match($output, 'Cache Hit Ratio: (?<Value>\d+\.\d+%)')
+    # The ratio is formatted for the build's culture, so the decimal separator and the spacing before '%' vary.
+    $ratioMatch = [regex]::Match($output, 'Cache Hit Ratio: (?<Value>\d+[.,]\d+\s*%)')
     if (-not ($hitMatch.Success -and $missMatch.Success -and $ratioMatch.Success))
     {
         throw "[$Context] could not parse cache statistics from $stdout."
@@ -120,6 +121,16 @@ function Invoke-MSBuildCacheBuild
         HitRatio = $ratioMatch.Groups['Value'].Value
         LogDir   = $LogDirectory
     }
+}
+
+function Get-ComparableRatio
+{
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Ratio
+    )
+
+    return ($Ratio -replace '\s', '') -replace ',', '.'
 }
 
 function Assert-CacheStats
@@ -150,9 +161,12 @@ function Assert-CacheStats
     }
 
     $expectedRatio = "{0:P1}" -f ($ExpectedHits / ($ExpectedHits + $ExpectedMisses))
+
+    # The build and this script may format the ratio differently, since a percentage's decimal separator and the
+    # spacing before '%' are culture specific, and the space can be non-breaking.
     $matches = $Result.Hits -eq $ExpectedHits `
         -and $Result.Misses -eq $ExpectedMisses `
-        -and $Result.HitRatio -eq $expectedRatio
+        -and (Get-ComparableRatio $Result.HitRatio) -eq (Get-ComparableRatio $expectedRatio)
 
     $marker = if ($matches) { "PASS" } else { "FAIL" }
     Write-Host ("  [{0,4}] {1}  hits={2} misses={3} ratio={4}  (expected hits={5} misses={6} ratio={7})" `

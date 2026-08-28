@@ -1,0 +1,27 @@
+<Project>
+  <PropertyGroup Condition="'$(MSBuildCacheEnabled)' != 'false'">
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheS3BucketName</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheS3Region</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheS3ServiceUrl</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheS3ForcePathStyle</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheS3KeyPrefix</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheS3MultipartThresholdBytes</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheS3MultipartPartSizeBytes</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheS3MaxConcurrentPartsPerObject</MSBuildCacheGlobalPropertiesToIgnore>
+  </PropertyGroup>
+
+  <Import Project="Microsoft.MSBuildCache.Common.targets" />
+
+  <ItemGroup Condition="'$(MSBuildCacheEnabled)' != 'false'">
+    <ProjectCachePlugin Update="$(MSBuildCacheAssembly)">
+      <BucketName>$(MSBuildCacheS3BucketName)</BucketName>
+      <Region>$(MSBuildCacheS3Region)</Region>
+      <ServiceUrl>$(MSBuildCacheS3ServiceUrl)</ServiceUrl>
+      <ForcePathStyle>$(MSBuildCacheS3ForcePathStyle)</ForcePathStyle>
+      <KeyPrefix>$(MSBuildCacheS3KeyPrefix)</KeyPrefix>
+      <MultipartThresholdBytes>$(MSBuildCacheS3MultipartThresholdBytes)</MultipartThresholdBytes>
+      <MultipartPartSizeBytes>$(MSBuildCacheS3MultipartPartSizeBytes)</MultipartPartSizeBytes>
+      <MaxConcurrentPartsPerObject>$(MSBuildCacheS3MaxConcurrentPartsPerObject)</MaxConcurrentPartsPerObject>
+    </ProjectCachePlugin>
+  </ItemGroup>
+</Project>

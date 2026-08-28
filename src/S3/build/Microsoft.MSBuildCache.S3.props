@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <MSBuildCacheAssembly Condition="'$(MSBuildRuntimeType)' != 'Core'">$(MSBuildThisFileDirectory)net472\Microsoft.MSBuildCache.S3.dll</MSBuildCacheAssembly>
+    <MSBuildCacheAssembly Condition="'$(MSBuildRuntimeType)' == 'Core'">$(MSBuildThisFileDirectory)net9.0\Microsoft.MSBuildCache.S3.dll</MSBuildCacheAssembly>
+
+    <!-- Path-style is required for most MinIO / custom endpoint setups. -->
+    <MSBuildCacheS3ForcePathStyle Condition="'$(MSBuildCacheS3ForcePathStyle)' == '' and '$(MSBuildCacheS3ServiceUrl)' != ''">true</MSBuildCacheS3ForcePathStyle>
+    <MSBuildCacheS3ForcePathStyle Condition="'$(MSBuildCacheS3ForcePathStyle)' == ''">false</MSBuildCacheS3ForcePathStyle>
+  </PropertyGroup>
+
+  <Import Project="Microsoft.MSBuildCache.Common.props" />
+</Project>
