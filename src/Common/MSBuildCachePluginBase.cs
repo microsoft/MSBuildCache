@@ -114,6 +114,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         nameof(_pluginLogger),
         nameof(_repoRoot),
         nameof(NugetPackageRoot),
+        nameof(Settings),
         nameof(_pathNormalizer),
         nameof(ContentHasher),
         nameof(InputHasher),
@@ -482,7 +483,8 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
                         MessageImportance.Low));
         }
 
-        (PathSet? pathSet, NodeBuildResult? nodeBuildResult);
+        PathSet? pathSet;
+        NodeBuildResult? nodeBuildResult;
         using (operationTimingScope)
         {
             (pathSet, nodeBuildResult) = await _cacheClient.GetNodeAsync(nodeContext, materializeOutputs, cancellationToken);
