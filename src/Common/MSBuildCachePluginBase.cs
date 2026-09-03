@@ -480,7 +480,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
                 (timedNodeContext, operation, elapsedMicroseconds) =>
                     logger.LogMessage(
                         $"MSBuildCache phase \"{operation}\" for \"{timedNodeContext.Id}\" elapsed {elapsedMicroseconds} us.",
-                        MessageImportance.Low));
+                        MessageImportance.High));
         }
 
         PathSet? pathSet;
