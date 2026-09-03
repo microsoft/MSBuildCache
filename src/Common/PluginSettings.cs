@@ -114,6 +114,8 @@ public class PluginSettings
 
     public bool TouchOutputFiles { get; init; }
 
+    public bool LogCacheOperationTimings { get; init; }
+
     /// <summary>
     /// Enables probe and directory-enumeration tracking in fingerprints. When false, only file content
     /// reads contribute to the fingerprint, matching pre-feature behavior.

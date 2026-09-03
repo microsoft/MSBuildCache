@@ -90,6 +90,12 @@ public sealed class PluginSettingsTests
             new[] { 123, 456, 789 });
 
     [TestMethod]
+    public void LogCacheOperationTimingsSetting()
+        => TestBoolSetting(
+            nameof(PluginSettings.LogCacheOperationTimings),
+            pluginSettings => pluginSettings.LogCacheOperationTimings);
+
+    [TestMethod]
     public void LocalCacheRootPathSetting()
         => TestBasicSetting(
             nameof(PluginSettings.LocalCacheRootPath),

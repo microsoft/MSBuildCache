@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
@@ -46,6 +47,7 @@ public abstract class CacheClient : ICacheClient
     private readonly ICopyOnWriteFilesystem _copyOnWriteFilesystem = CopyOnWriteFilesystemFactory.GetInstance();
     private readonly IContentHasher _hasher;
     private readonly IFingerprintFactory _fingerprintFactory;
+    private readonly AsyncLocal<Action<NodeContext, string, long>?> _operationCompleted = new();
     private readonly bool _enableAsyncMaterialization;
     private readonly bool _touchOutputFiles;
     private readonly ICache _localCache;
@@ -125,6 +127,9 @@ public abstract class CacheClient : ICacheClient
     protected ConcurrentDictionary<ContentHash, Task<PutFileOperation>> PutLocalTaskCache { get; } = new();
 
     protected Func<string, FileRealizationMode> GetFileRealizationMode { get; }
+
+    internal IDisposable TrackOperationTimings(Action<NodeContext, string, long> operationCompleted)
+        => new OperationTimingScope(_operationCompleted, operationCompleted);
 
     /* abstract methods for subclasses to implement */
     protected abstract Task<OpenStreamResult> OpenStreamAsync(Context context, ContentHash contentHash, CancellationToken cancellationToken);
@@ -380,7 +385,10 @@ public abstract class CacheClient : ICacheClient
             {
                 if (_materializationTasks.TryGetValue(dependency, out Task? dependencyMaterializationTask))
                 {
-                    await dependencyMaterializationTask;
+                    using (StartOperation(nodeContext, "dependency-materialization-wait"))
+                    {
+                        await dependencyMaterializationTask;
+                    }
                 }
             }
         }
@@ -397,7 +405,12 @@ public abstract class CacheClient : ICacheClient
 
         Tracer.Debug(context, $"{nameof(GetNodeAsync)}: {nodeContext.Id}");
 
-        Fingerprint? weakFingerprint = await _fingerprintFactory.GetWeakFingerprintAsync(nodeContext);
+        Fingerprint? weakFingerprint;
+        using (StartOperation(nodeContext, "weak-fingerprint"))
+        {
+            weakFingerprint = await _fingerprintFactory.GetWeakFingerprintAsync(nodeContext);
+        }
+
         if (weakFingerprint == null)
         {
             Tracer.Debug(context, $"Weak fingerprint is null for {nodeContext.Id}");
@@ -406,7 +419,7 @@ public abstract class CacheClient : ICacheClient
 
         WeakFingerprint cacheWeakFingerprint = new(weakFingerprint.Hash);
 
-        (Selector? selector, PathSet? pathSet) = await GetMatchingSelectorAsync(context, cacheWeakFingerprint, cancellationToken);
+        (Selector? selector, PathSet? pathSet) = await GetMatchingSelectorAsync(context, nodeContext, cacheWeakFingerprint, cancellationToken);
         if (!selector.HasValue)
         {
             // GetMatchingSelectorAsync logs sufficiently
@@ -415,22 +428,39 @@ public abstract class CacheClient : ICacheClient
 
         StrongFingerprint cacheStrongFingerprint = new(cacheWeakFingerprint, selector.Value);
 
-        ICacheEntry? cacheEntry = await GetCacheEntryAsync(context, cacheStrongFingerprint, cancellationToken);
+        ICacheEntry? cacheEntry;
+        using (StartOperation(nodeContext, "cache-entry-lookup"))
+        {
+            cacheEntry = await GetCacheEntryAsync(context, cacheStrongFingerprint, cancellationToken);
+        }
+
         if (cacheEntry is null)
         {
             Tracer.Debug(context, $"{nameof(GetCacheEntryAsync)} did not find an entry for {cacheStrongFingerprint}.");
             return (null, null);
         }
 
-        using Stream? nodeBuildResultStream = await cacheEntry.GetNodeBuildResultAsync(context, cancellationToken);
+        Stream? nodeBuildResultStream;
+        using (StartOperation(nodeContext, "node-result-fetch"))
+        {
+            nodeBuildResultStream = await cacheEntry.GetNodeBuildResultAsync(context, cancellationToken);
+        }
+
         if (nodeBuildResultStream is null)
         {
             Tracer.Debug(context, $"Failed to fetch NodeBuildResult for {cacheStrongFingerprint}");
             return (null, null);
         }
 
+        using Stream nodeBuildResultStreamToDispose = nodeBuildResultStream;
+
         // The first file is special: it is a serialized NodeBuildResult file.
-        NodeBuildResult? nodeBuildResult = await DeserializeAsync(context, nodeBuildResultStream, SourceGenerationContext.Default.NodeBuildResult, cancellationToken);
+        NodeBuildResult? nodeBuildResult;
+        using (StartOperation(nodeContext, "node-result-deserialize"))
+        {
+            nodeBuildResult = await DeserializeAsync(context, nodeBuildResultStreamToDispose, SourceGenerationContext.Default.NodeBuildResult, cancellationToken);
+        }
+
         if (nodeBuildResult is null)
         {
             Tracer.Debug(context, $"Failed to deserialize NodeBuildResult for {cacheStrongFingerprint}");
@@ -542,14 +572,21 @@ public abstract class CacheClient : ICacheClient
                     Task.Run(
                         async () =>
                         {
-                            await PlaceFilesAsync(CancellationToken.None);
+                            using (StartOperation(nodeContext, "output-materialization"))
+                            {
+                                await PlaceFilesAsync(CancellationToken.None);
+                            }
+
                             _materializationTasks.TryRemove(nodeContext, out _);
                         },
                         CancellationToken.None));
             }
             else
             {
-                await PlaceFilesAsync(cancellationToken);
+                using (StartOperation(nodeContext, "output-materialization"))
+                {
+                    await PlaceFilesAsync(cancellationToken);
+                }
             }
         }
 
@@ -558,13 +595,27 @@ public abstract class CacheClient : ICacheClient
 
     private async Task<(Selector? Selector, PathSet? PathSet)> GetMatchingSelectorAsync(
         Context context,
+        NodeContext nodeContext,
         WeakFingerprint weakFingerprint,
         CancellationToken cancellationToken)
     {
         context = new(context);
 
-        await foreach (Selector selector in GetSelectors(context, weakFingerprint, cancellationToken))
+        await using IAsyncEnumerator<Selector> selectors = GetSelectors(context, weakFingerprint, cancellationToken).GetAsyncEnumerator(cancellationToken);
+        while (true)
         {
+            bool hasSelector;
+            using (StartOperation(nodeContext, "selector-query"))
+            {
+                hasSelector = await selectors.MoveNextAsync();
+            }
+
+            if (!hasSelector)
+            {
+                break;
+            }
+
+            Selector selector = selectors.Current;
             if (selector == EmptySelector)
             {
                 // Special-case for the empty selector, which always matches.
@@ -575,7 +626,11 @@ public abstract class CacheClient : ICacheClient
             ContentHash pathSetHash = selector.ContentHash;
             byte[]? selectorStrongFingerprint = selector.Output;
 
-            PathSet? pathSet = await FetchAndDeserializeFromCacheAsync(context, pathSetHash, SourceGenerationContext.Default.PathSet, cancellationToken);
+            PathSet? pathSet;
+            using (StartOperation(nodeContext, "path-set-fetch"))
+            {
+                pathSet = await FetchAndDeserializeFromCacheAsync(context, pathSetHash, SourceGenerationContext.Default.PathSet, cancellationToken);
+            }
 
             if (pathSet is null)
             {
@@ -587,13 +642,24 @@ public abstract class CacheClient : ICacheClient
             // state into the strong fingerprint rather than anything read from disk, so the comparison below
             // cannot detect that they no longer hold. This check is what enforces them. The fingerprint
             // comparison still covers file-content changes.
-            if (!_fingerprintFactory.MatchesCurrentState(pathSet))
+            bool matchesCurrentState;
+            using (StartOperation(nodeContext, "path-set-validation"))
+            {
+                matchesCurrentState = _fingerprintFactory.MatchesCurrentState(pathSet);
+            }
+
+            if (!matchesCurrentState)
             {
                 Tracer.Debug(context, $"Skipping selector with PathSet hash {pathSetHash}. Probes/enumerations no longer match current filesystem state.");
                 continue;
             }
 
-            Fingerprint? possibleStrongFingerprint = await _fingerprintFactory.GetStrongFingerprintAsync(pathSet);
+            Fingerprint? possibleStrongFingerprint;
+            using (StartOperation(nodeContext, "strong-fingerprint"))
+            {
+                possibleStrongFingerprint = await _fingerprintFactory.GetStrongFingerprintAsync(pathSet);
+            }
+
             if (possibleStrongFingerprint != null && ByteArrayComparer.ArraysEqual(possibleStrongFingerprint.Hash, selectorStrongFingerprint))
             {
                 Tracer.Debug(context, $"Matched matching selector with PathSet hash {pathSetHash} for weak fingerprint {weakFingerprint}");
@@ -603,6 +669,53 @@ public abstract class CacheClient : ICacheClient
 
         Tracer.Debug(context, $"No matching selectors for weak fingerprint {weakFingerprint}");
         return (null, null);
+    }
+
+    private OperationTimer StartOperation(NodeContext nodeContext, string operation)
+        => new(_operationCompleted.Value, nodeContext, operation);
+
+    private sealed class OperationTimingScope : IDisposable
+    {
+        private readonly AsyncLocal<Action<NodeContext, string, long>?> _operationCompleted;
+        private readonly Action<NodeContext, string, long>? _previousOperationCompleted;
+
+        public OperationTimingScope(
+            AsyncLocal<Action<NodeContext, string, long>?> operationCompleted,
+            Action<NodeContext, string, long> currentOperationCompleted)
+        {
+            _operationCompleted = operationCompleted;
+            _previousOperationCompleted = operationCompleted.Value;
+            operationCompleted.Value = currentOperationCompleted;
+        }
+
+        public void Dispose()
+        {
+            _operationCompleted.Value = _previousOperationCompleted;
+        }
+    }
+
+    private readonly struct OperationTimer : IDisposable
+    {
+        private readonly Action<NodeContext, string, long>? _operationCompleted;
+        private readonly NodeContext _nodeContext;
+        private readonly string _operation;
+        private readonly long _startTimestamp;
+
+        public OperationTimer(Action<NodeContext, string, long>? operationCompleted, NodeContext nodeContext, string operation)
+        {
+            _operationCompleted = operationCompleted;
+            _nodeContext = nodeContext;
+            _operation = operation;
+            _startTimestamp = operationCompleted is null ? 0 : Stopwatch.GetTimestamp();
+        }
+
+        public void Dispose()
+        {
+            _operationCompleted?.Invoke(
+                _nodeContext,
+                _operation,
+                (long)((Stopwatch.GetTimestamp() - _startTimestamp) * 1_000_000.0 / Stopwatch.Frequency));
+        }
     }
 
     private static async Task<byte[]> SerializeAsync<T>(T data, JsonTypeInfo<T> typeInfo, CancellationToken cancellationToken)

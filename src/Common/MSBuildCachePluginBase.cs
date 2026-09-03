@@ -472,7 +472,22 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
         nodeContext.SetStartTime();
 
-        (PathSet? pathSet, NodeBuildResult? nodeBuildResult) = await _cacheClient.GetNodeAsync(nodeContext, materializeOutputs, cancellationToken);
+        IDisposable? operationTimingScope = null;
+        if (Settings.LogCacheOperationTimings && _cacheClient is CacheClient cacheClient)
+        {
+            operationTimingScope = cacheClient.TrackOperationTimings(
+                (timedNodeContext, operation, elapsedMicroseconds) =>
+                    logger.LogMessage(
+                        $"MSBuildCache phase \"{operation}\" for \"{timedNodeContext.Id}\" elapsed {elapsedMicroseconds} us.",
+                        MessageImportance.Low));
+        }
+
+        (PathSet? pathSet, NodeBuildResult? nodeBuildResult);
+        using (operationTimingScope)
+        {
+            (pathSet, nodeBuildResult) = await _cacheClient.GetNodeAsync(nodeContext, materializeOutputs, cancellationToken);
+        }
+
         if (nodeBuildResult is null)
         {
             Interlocked.Increment(ref _cacheMissCount);
