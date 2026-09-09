@@ -41,7 +41,7 @@ public sealed class PluginSettingsTests
         {
             // All properties are { get; init; }
             Assert.IsTrue(property.CanRead);
-            Assert.IsTrue(property.GetSetMethod()!.ReturnParameter.GetRequiredCustomModifiers().Any(t => t.Name.Equals("IsExternalInit", StringComparison.Ordinal)));
+            Assert.Contains(t => t.Name.Equals("IsExternalInit", StringComparison.Ordinal), property.GetSetMethod()!.ReturnParameter.GetRequiredCustomModifiers());
 
             // RepoRoot isn't included in the logging.
             bool isLogged = !property.Name.Equals(nameof(PluginSettings.RepoRoot), StringComparison.Ordinal);
@@ -135,18 +135,18 @@ public sealed class PluginSettingsTests
             "The setting must be forced off when the host MSBuild cannot report the required file access fields, "
             + "even when the user explicitly asked for it.");
 
-        Assert.IsTrue(
-            logger.LogEntries.Any(entry => entry.Message.Contains(
+        Assert.Contains(
+            entry => entry.Message.Contains(
                 nameof(PluginSettings.EnableProbeAndEnumerationFingerprinting), StringComparison.Ordinal)
-                && entry.Message.Contains("forced to false", StringComparison.Ordinal)),
+                && entry.Message.Contains("forced to false", StringComparison.Ordinal), logger.LogEntries,
             "Forcing the setting off must be logged so the cache-behavior change is diagnosable.");
 
         // Naming the running version is what makes the message actionable — otherwise a user is told the
         // feature is off but not what they are on or that upgrading would fix it.
         if (FileAccessDataCapabilities.MSBuildVersion is string msbuildVersion)
         {
-            Assert.IsTrue(
-                logger.LogEntries.Any(entry => entry.Message.Contains(msbuildVersion, StringComparison.Ordinal)),
+            Assert.Contains(
+                entry => entry.Message.Contains(msbuildVersion, StringComparison.Ordinal), logger.LogEntries,
                 $"The message must name the running MSBuild version ('{msbuildVersion}').");
         }
     }
@@ -267,11 +267,11 @@ public sealed class PluginSettingsTests
             supportsProbeAndEnumerationCapture: true);
 
         IReadOnlyCollection<Glob> patterns = pluginSettings.AllowFileAccessAfterProjectFinishFilePatterns;
-        Assert.IsTrue(patterns.Any(pattern => pattern.IsMatch(@"C:\Program Files\Telemetry\ApplicationInsights.config")));
-        Assert.IsTrue(patterns.Any(pattern => pattern.IsMatch(@"C:\Users\Test\AppData\Local\Microsoft\VSApplicationInsights\config.json")));
-        Assert.IsTrue(patterns.Any(pattern => pattern.IsMatch(@"C:\Users\Test\AppData\Local\Microsoft\Windows\INetCache\IE\ABC\dyntelconfig[2].cache")));
-        Assert.IsTrue(patterns.Any(pattern => pattern.IsMatch(@"C:\Windows\System32\ci.dll")));
-        Assert.IsFalse(patterns.Any(pattern => pattern.IsMatch(@"X:\Repo\src\Program.cs")));
+        Assert.Contains(pattern => pattern.IsMatch(@"C:\Program Files\Telemetry\ApplicationInsights.config"), patterns);
+        Assert.Contains(pattern => pattern.IsMatch(@"C:\Users\Test\AppData\Local\Microsoft\VSApplicationInsights\config.json"), patterns);
+        Assert.Contains(pattern => pattern.IsMatch(@"C:\Users\Test\AppData\Local\Microsoft\Windows\INetCache\IE\ABC\dyntelconfig[2].cache"), patterns);
+        Assert.Contains(pattern => pattern.IsMatch(@"C:\Windows\System32\ci.dll"), patterns);
+        Assert.DoesNotContain(pattern => pattern.IsMatch(@"X:\Repo\src\Program.cs"), patterns);
     }
 
     [TestMethod]
@@ -403,7 +403,7 @@ public sealed class PluginSettingsTests
             RepoRoot,
             supportsProbeAndEnumerationCapture: true);
 
-        CollectionAssert.AreEqual(testCase.ExpectedValues.ToList(), valueAccessor(pluginSettings).ToList());
+        Assert.AreSequenceEqual(testCase.ExpectedValues.ToList(), valueAccessor(pluginSettings).ToList());
     }
 
     public static IEnumerable<object[]> GlobTestCases
