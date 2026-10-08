@@ -35,7 +35,7 @@ public class PluginSettingsExtensibilityTests
         {
             // All properties are { get; init; }
             Assert.IsTrue(property.CanRead);
-            Assert.IsTrue(property.GetSetMethod()!.ReturnParameter.GetRequiredCustomModifiers().Any(t => t.Name.Equals("IsExternalInit", StringComparison.Ordinal)));
+            Assert.Contains(t => t.Name.Equals("IsExternalInit", StringComparison.Ordinal), property.GetSetMethod()!.ReturnParameter.GetRequiredCustomModifiers());
 
             // RepoRoot isn't included in the logging.
             bool shouldBeLogged = !property.Name.Equals(nameof(PluginSettings.RepoRoot), StringComparison.Ordinal);
@@ -80,17 +80,17 @@ public class PluginSettingsExtensibilityTests
 
         Assert.AreEqual(DefaultMockPluginSettings.GlobSetting.ToString(), pluginSettings.GlobSetting.ToString());
 
-        CollectionAssert.AreEqual(DefaultMockPluginSettings.ArraySetting, pluginSettings.ArraySetting);
+        Assert.AreSequenceEqual(DefaultMockPluginSettings.ArraySetting, pluginSettings.ArraySetting);
 
-        CollectionAssert.AreEqual(DefaultMockPluginSettings.ListSetting, pluginSettings.ListSetting);
-        CollectionAssert.AreEqual(DefaultMockPluginSettings.IListSetting.ToList(), pluginSettings.IListSetting.ToList());
-        CollectionAssert.AreEqual(DefaultMockPluginSettings.ICollectionSetting.ToList(), pluginSettings.ICollectionSetting.ToList());
-        CollectionAssert.AreEqual(DefaultMockPluginSettings.IEnumerableSetting.ToList(), pluginSettings.IEnumerableSetting.ToList());
-        CollectionAssert.AreEqual(DefaultMockPluginSettings.IReadOnlyListSetting.ToList(), pluginSettings.IReadOnlyListSetting.ToList());
-        CollectionAssert.AreEqual(DefaultMockPluginSettings.IReadOnlyCollectionSetting.ToList(), pluginSettings.IReadOnlyCollectionSetting.ToList());
+        Assert.AreSequenceEqual(DefaultMockPluginSettings.ListSetting, pluginSettings.ListSetting);
+        Assert.AreSequenceEqual(DefaultMockPluginSettings.IListSetting.ToList(), pluginSettings.IListSetting.ToList());
+        Assert.AreSequenceEqual(DefaultMockPluginSettings.ICollectionSetting.ToList(), pluginSettings.ICollectionSetting.ToList());
+        Assert.AreSequenceEqual(DefaultMockPluginSettings.IEnumerableSetting.ToList(), pluginSettings.IEnumerableSetting.ToList());
+        Assert.AreSequenceEqual(DefaultMockPluginSettings.IReadOnlyListSetting.ToList(), pluginSettings.IReadOnlyListSetting.ToList());
+        Assert.AreSequenceEqual(DefaultMockPluginSettings.IReadOnlyCollectionSetting.ToList(), pluginSettings.IReadOnlyCollectionSetting.ToList());
 
-        CollectionAssert.AreEquivalent(DefaultMockPluginSettings.HashSetSetting.ToList(), pluginSettings.HashSetSetting.ToList());
-        CollectionAssert.AreEquivalent(DefaultMockPluginSettings.ISetSetting.ToList(), pluginSettings.ISetSetting.ToList());
+        Assert.AreSequenceEqual(DefaultMockPluginSettings.HashSetSetting.ToList(), pluginSettings.HashSetSetting.ToList(), SequenceOrder.InAnyOrder);
+        Assert.AreSequenceEqual(DefaultMockPluginSettings.ISetSetting.ToList(), pluginSettings.ISetSetting.ToList(), SequenceOrder.InAnyOrder);
 
         AssertNotLogged(logger, PluginLogLevel.Warning, "has invalid value");
         AssertNotLogged(logger, PluginLogLevel.Warning, "has unsupported type");
@@ -172,7 +172,7 @@ public class PluginSettingsExtensibilityTests
         void CollectionAssertInvalidValueHandled<T>(string settingName, Func<MockPluginSettings, ICollection<T>> valueAccessor)
         {
             AssertLogged(logger, PluginLogLevel.Warning, $"'{settingName}' has invalid value");
-            CollectionAssert.AreEqual(valueAccessor(DefaultMockPluginSettings).ToList(), valueAccessor(pluginSettings).ToList());
+            Assert.AreSequenceEqual(valueAccessor(DefaultMockPluginSettings).ToList(), valueAccessor(pluginSettings).ToList());
         }
     }
 
@@ -232,17 +232,17 @@ public class PluginSettingsExtensibilityTests
 
         Assert.AreEqual(@"X:\Repo\**\b.*", pluginSettings.GlobSetting.ToString());
 
-        CollectionAssert.AreEqual(new[] { 4, 5, 6 }, pluginSettings.ArraySetting);
+        Assert.AreSequenceEqual(new[] { 4, 5, 6 }, pluginSettings.ArraySetting);
 
-        CollectionAssert.AreEqual(new[] { 4, 5, 6 }, pluginSettings.ListSetting);
-        CollectionAssert.AreEqual(new[] { 4, 5, 6 }, pluginSettings.IListSetting.ToList());
-        CollectionAssert.AreEqual(new[] { 4, 5, 6 }, pluginSettings.ICollectionSetting.ToList());
-        CollectionAssert.AreEqual(new[] { 4, 5, 6 }, pluginSettings.IEnumerableSetting.ToList());
-        CollectionAssert.AreEqual(new[] { 4, 5, 6 }, pluginSettings.IReadOnlyListSetting.ToList());
-        CollectionAssert.AreEqual(new[] { 4, 5, 6 }, pluginSettings.IReadOnlyCollectionSetting.ToList());
+        Assert.AreSequenceEqual(new[] { 4, 5, 6 }, pluginSettings.ListSetting);
+        Assert.AreSequenceEqual(new[] { 4, 5, 6 }, pluginSettings.IListSetting.ToList());
+        Assert.AreSequenceEqual(new[] { 4, 5, 6 }, pluginSettings.ICollectionSetting.ToList());
+        Assert.AreSequenceEqual(new[] { 4, 5, 6 }, pluginSettings.IEnumerableSetting.ToList());
+        Assert.AreSequenceEqual(new[] { 4, 5, 6 }, pluginSettings.IReadOnlyListSetting.ToList());
+        Assert.AreSequenceEqual(new[] { 4, 5, 6 }, pluginSettings.IReadOnlyCollectionSetting.ToList());
 
-        CollectionAssert.AreEquivalent(new[] { 4, 5, 6 }, pluginSettings.HashSetSetting.ToList());
-        CollectionAssert.AreEquivalent(new[] { 4, 5, 6 }, pluginSettings.ISetSetting.ToList());
+        Assert.AreSequenceEqual(new[] { 4, 5, 6 }, pluginSettings.HashSetSetting.ToList(), SequenceOrder.InAnyOrder);
+        Assert.AreSequenceEqual(new[] { 4, 5, 6 }, pluginSettings.ISetSetting.ToList(), SequenceOrder.InAnyOrder);
 
         AssertNotLogged(logger, PluginLogLevel.Warning, "has invalid value");
         AssertNotLogged(logger, PluginLogLevel.Warning, "has unsupported type");
