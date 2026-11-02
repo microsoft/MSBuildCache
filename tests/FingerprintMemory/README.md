@@ -8,8 +8,12 @@ as happens during publication and diagnostic writing.
 From the repository root:
 
 ```powershell
-dotnet run --project tests/FingerprintMemory --configuration Release --framework net9.0 -- 200 2000 20
+dotnet build tests/FingerprintMemory/FingerprintMemory.csproj --configuration Release
+dotnet run --project tests/FingerprintMemory --configuration Release --framework net9.0 --no-build -- 200 2000 20
 ```
+
+Build first, then use `--no-build` to skip the implicit build and restore. This
+avoids a static-graph restore failure observed with SDK 10.0.403 and `dotnet run`.
 
 The three arguments are project count, directory-member count, and reporting batch
 size. The default mode forces collections between batches to expose data still
