@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using BuildXL.Cache.ContentStore.Hashing;
@@ -27,9 +28,11 @@ public sealed class FingerprintFactory : IFingerprintFactory
     // is based on data which is unchanging after it's computed. The weak fingerprints are based on dependencies' results, but
     // it's assumed that dependencies will always finish first.
     private readonly ConcurrentDictionary<NodeContext, Task<Fingerprint?>> _weakFingerprintCache = new();
-    private readonly ConcurrentDictionary<PathSet, Task<Fingerprint?>> _strongFingerprintCache = new();
 
-    private readonly ConcurrentDictionary<string, byte[]> _stringHashCache = new(StringComparer.OrdinalIgnoreCase);
+    // Publication and diagnostic writing reuse the same PathSet. Keep its result while callers own
+    // that object, without retaining every completed PathSet and its detailed fingerprint for the build.
+    // Lazy prevents concurrent table callbacks from starting duplicate calculations for the same object.
+    private readonly ConditionalWeakTable<PathSet, Lazy<Task<Fingerprint?>>> _strongFingerprintCache = new();
     private readonly IContentHasher _contentHasher;
     private readonly IInputHasher _inputHasher;
     private readonly List<FingerprintEntry> _pluginSettingsFingerprintEntries;
@@ -363,25 +366,22 @@ public sealed class FingerprintFactory : IFingerprintFactory
     public async Task<Fingerprint?> GetStrongFingerprintAsync(PathSet? pathSet)
         => pathSet == null
             ? null
-            : await _strongFingerprintCache.GetOrAdd(
+            : await _strongFingerprintCache.GetValue(
                 pathSet,
-                async pathSet =>
-                {
-                    if (pathSet?.Entries == null || pathSet.Entries.Count == 0)
-                    {
-                        return null;
-                    }
+                key => new Lazy<Task<Fingerprint?>>(() => ComputeStrongFingerprintAsync(key))).Value;
 
-                    List<FingerprintEntry> entries = new();
-                    await SortAndAddPathSetEntriesAsync(entries, pathSet.Entries, pathsAreNormalized: true);
+    private async Task<Fingerprint?> ComputeStrongFingerprintAsync(PathSet pathSet)
+    {
+        if (pathSet.Entries.Count == 0)
+        {
+            return null;
+        }
 
-                    if (entries.Count == 0)
-                    {
-                        return null;
-                    }
+        List<FingerprintEntry> entries = new();
+        await SortAndAddPathSetEntriesAsync(entries, pathSet.Entries, pathsAreNormalized: true);
 
-                    return CreateFingerprint(entries);
-                });
+        return CreateFingerprint(entries);
+    }
 
     /// <summary>
     /// Returns true if every non-FCR observation in <paramref name="cachedPathSet"/> still matches the
@@ -760,19 +760,11 @@ public sealed class FingerprintFactory : IFingerprintFactory
         // Replace absolute paths with a placeholder
         info = _pathNormalizer.Normalize(info);
 
-        return new FingerprintEntry(
-            _stringHashCache.GetOrAdd(
-                info,
-                str =>
-                {
-                    // Normalize case before hashing. We expect these strings to be case-insensitive
-                    str = str.ToUpperInvariant();
-
-                    byte[] bytes = Encoding.UTF8.GetBytes(str);
-                    ContentHash hash = _contentHasher.GetContentHash(bytes);
-                    return hash.ToHashByteArray();
-                }),
-            info);
+        // Normalize case before hashing. We expect these strings to be case-insensitive.
+        // Do not memoize descriptions: probes and directory members can produce millions of them.
+        byte[] bytes = Encoding.UTF8.GetBytes(info.ToUpperInvariant());
+        ContentHash hash = _contentHasher.GetContentHash(bytes);
+        return new FingerprintEntry(hash.ToHashByteArray(), info);
     }
 
     /// <summary>
