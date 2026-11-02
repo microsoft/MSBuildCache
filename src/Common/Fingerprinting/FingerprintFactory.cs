@@ -33,6 +33,8 @@ public sealed class FingerprintFactory : IFingerprintFactory
     // that object, without retaining every completed PathSet and its detailed fingerprint for the build.
     // Lazy prevents concurrent table callbacks from starting duplicate calculations for the same object.
     private readonly ConditionalWeakTable<PathSet, Lazy<Task<Fingerprint?>>> _strongFingerprintCache = new();
+
+    private readonly ConcurrentDictionary<string, byte[]> _stringHashCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly IContentHasher _contentHasher;
     private readonly IInputHasher _inputHasher;
     private readonly List<FingerprintEntry> _pluginSettingsFingerprintEntries;
@@ -760,11 +762,19 @@ public sealed class FingerprintFactory : IFingerprintFactory
         // Replace absolute paths with a placeholder
         info = _pathNormalizer.Normalize(info);
 
-        // Normalize case before hashing. We expect these strings to be case-insensitive.
-        // Do not memoize descriptions: probes and directory members can produce millions of them.
-        byte[] bytes = Encoding.UTF8.GetBytes(info.ToUpperInvariant());
-        ContentHash hash = _contentHasher.GetContentHash(bytes);
-        return new FingerprintEntry(hash.ToHashByteArray(), info);
+        return new FingerprintEntry(
+            _stringHashCache.GetOrAdd(
+                info,
+                str =>
+                {
+                    // Normalize case before hashing. We expect these strings to be case-insensitive
+                    str = str.ToUpperInvariant();
+
+                    byte[] bytes = Encoding.UTF8.GetBytes(str);
+                    ContentHash hash = _contentHasher.GetContentHash(bytes);
+                    return hash.ToHashByteArray();
+                }),
+            info);
     }
 
     /// <summary>

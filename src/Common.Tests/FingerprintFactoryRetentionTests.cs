@@ -2,6 +2,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -113,7 +114,7 @@ public class FingerprintFactoryRetentionTests
 
             Assert.IsFalse(IsAlive(references.PathSet), "The factory must not retain a completed strong-fingerprint key.");
             Assert.IsFalse(IsAlive(references.Fingerprint), "The factory must release a fingerprint after its key becomes unreachable.");
-            Assert.IsFalse(IsAlive(references.Description), "The factory must release unique strong-fingerprint descriptions too.");
+            Assert.IsFalse(IsAlive(references.Entries), "The factory must release the expanded fingerprint entries after their key becomes unreachable.");
         }
         finally
         {
@@ -255,7 +256,7 @@ public class FingerprintFactoryRetentionTests
         LifetimeReferences references = CaptureWeakReferences(factory, pathSet);
         CollectFully();
         Assert.IsTrue(IsAlive(references.Fingerprint), "A live key must retain its completed memoized fingerprint.");
-        Assert.IsTrue(IsAlive(references.Description), "A live key must retain its fingerprint diagnostics.");
+        Assert.IsTrue(IsAlive(references.Entries), "A live key must retain its fingerprint diagnostics.");
         GC.KeepAlive(pathSet);
         return references;
     }
@@ -270,11 +271,12 @@ public class FingerprintFactoryRetentionTests
         return new LifetimeReferences(
             new WeakReference<PathSet>(pathSet),
             new WeakReference<Fingerprint>(fingerprint),
-            new WeakReference<string>(fingerprint.Entries[0].Description));
+            // The string-hash cache retains descriptions; the expanded entry list must still be collectible.
+            new WeakReference<IReadOnlyList<FingerprintEntry>>(fingerprint.Entries));
     }
 
     private static bool AnyTargetIsAlive(LifetimeReferences references)
-        => IsAlive(references.PathSet) || IsAlive(references.Fingerprint) || IsAlive(references.Description);
+        => IsAlive(references.PathSet) || IsAlive(references.Fingerprint) || IsAlive(references.Entries);
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static bool IsAlive<T>(WeakReference<T> reference)
@@ -291,7 +293,7 @@ public class FingerprintFactoryRetentionTests
     private sealed record LifetimeReferences(
         WeakReference<PathSet> PathSet,
         WeakReference<Fingerprint> Fingerprint,
-        WeakReference<string> Description);
+        WeakReference<IReadOnlyList<FingerprintEntry>> Entries);
 
     private sealed class TestPluginSettings : PluginSettings
     {
