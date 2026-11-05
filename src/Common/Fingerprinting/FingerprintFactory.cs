@@ -370,20 +370,23 @@ public sealed class FingerprintFactory : IFingerprintFactory
             ? null
             : await _strongFingerprintCache.GetValue(
                 pathSet,
-                key => new Lazy<Task<Fingerprint?>>(() => ComputeStrongFingerprintAsync(key))).Value;
+                pathSet => new Lazy<Task<Fingerprint?>>(async () =>
+                {
+                    if (pathSet?.Entries == null || pathSet.Entries.Count == 0)
+                    {
+                        return null;
+                    }
 
-    private async Task<Fingerprint?> ComputeStrongFingerprintAsync(PathSet pathSet)
-    {
-        if (pathSet.Entries.Count == 0)
-        {
-            return null;
-        }
+                    List<FingerprintEntry> entries = new();
+                    await SortAndAddPathSetEntriesAsync(entries, pathSet.Entries, pathsAreNormalized: true);
 
-        List<FingerprintEntry> entries = new();
-        await SortAndAddPathSetEntriesAsync(entries, pathSet.Entries, pathsAreNormalized: true);
+                    if (entries.Count == 0)
+                    {
+                        return null;
+                    }
 
-        return CreateFingerprint(entries);
-    }
+                    return CreateFingerprint(entries);
+                })).Value;
 
     /// <summary>
     /// Returns true if every non-FCR observation in <paramref name="cachedPathSet"/> still matches the
