@@ -1,6 +1,6 @@
 -ConsoleLoggerParameters:Verbosity=Minimal;Summary;ForceNoAlign
 -MaxCPUCount
--NodeReuse:false
+-multithreaded
 -Restore
--Property:NuGetInteractive=True
+-interactive
 -Graph

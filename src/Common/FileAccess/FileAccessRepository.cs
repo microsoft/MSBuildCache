@@ -698,7 +698,11 @@ internal sealed class FileAccessRepository : IDisposable
             => fileInfo.AccessAndOperations.Any(access =>
                 access.ReportedFileOperation == ReportedFileOperation.CreateDirectory
                 || (access.FlagsAndAttributes & FlagsAndAttributes.FILE_ATTRIBUTE_DIRECTORY) != 0)
+#if NET11_0_OR_GREATER
+            || fileInfo.FilePath.EndsWith('\\', StringComparison.Ordinal);
+#else
             || fileInfo.FilePath.EndsWith('\\');
+#endif
 
         private static bool ParentFolderExists(FileAccessInfo fileInfo, List<RemoveDirectoryOperation> deletedDirectories)
         {

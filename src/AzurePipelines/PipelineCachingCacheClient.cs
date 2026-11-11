@@ -379,12 +379,12 @@ internal sealed class PipelineCachingCacheClient : CacheClient
                 if (selector.ContentHash != EmptySelector.ContentHash
                     && !extras.ContainsKey(pathSetRelativePath))
                 {
-#if NET9_0
+#if NET10_0_OR_GREATER
 #pragma warning disable IDE0079
 #pragma warning disable CA2000
 #endif
                     var pathSetTempFile = new TempFile(FileSystem.Instance, TempFolder);
-#if NET9_0
+#if NET10_0_OR_GREATER
 #pragma warning restore CA2000
 #pragma warning restore IDE0079
 #endif
