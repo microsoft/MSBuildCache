@@ -1,6 +1,6 @@
 -ConsoleLoggerParameters:Verbosity=Minimal;Summary;ForceNoAlign
 -MaxCPUCount
--multithreaded
+-NodeReuse:false
 -Restore
 -interactive
 -Graph
