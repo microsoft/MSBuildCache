@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using DotNet.Globbing;
@@ -246,6 +247,45 @@ public class PluginSettingsExtensibilityTests
 
         AssertNotLogged(logger, PluginLogLevel.Warning, "has invalid value");
         AssertNotLogged(logger, PluginLogLevel.Warning, "has unsupported type");
+    }
+
+    [TestMethod]
+    [DataRow("fr-FR")]
+    [DataRow("de-DE")]
+    [DataRow("en-US")]
+    public void NumericValuesIgnoreCurrentCulture(string cultureName)
+    {
+        Dictionary<string, string> settings = new(StringComparer.OrdinalIgnoreCase)
+        {
+            { nameof(DefaultMockPluginSettings.IntSetting), "-2" },
+            { nameof(DefaultMockPluginSettings.FloatSetting), "2.5" },
+            { nameof(DefaultMockPluginSettings.DoubleSetting), "2.5" },
+            { nameof(DefaultMockPluginSettings.DecimalSetting), "2.5" },
+        };
+        MockPluginLogger logger = new();
+
+        CultureInfo originalCulture = CultureInfo.CurrentCulture;
+        MockPluginSettings pluginSettings;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo(cultureName);
+            pluginSettings = PluginSettings.Create<MockPluginSettings>(
+                settings,
+                logger,
+                RepoRoot,
+                supportsProbeAndEnumerationCapture: true);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+
+        Assert.AreEqual(-2, pluginSettings.IntSetting);
+        Assert.AreEqual(2.5f, pluginSettings.FloatSetting);
+        Assert.AreEqual(2.5d, pluginSettings.DoubleSetting);
+        Assert.AreEqual(2.5M, pluginSettings.DecimalSetting);
+
+        AssertNotLogged(logger, PluginLogLevel.Warning, "has invalid value");
     }
 
     [TestMethod]
