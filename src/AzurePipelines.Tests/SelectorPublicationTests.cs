@@ -112,15 +112,14 @@ public class SelectorPublicationTests
 
         Assert.IsTrue(await firstPublication);
         Assert.IsTrue(await secondPublication);
-        CollectionAssert.AreEquivalent(
-            new[] { existingSelector, firstSelector, secondSelector },
-            finalWinner!.Selectors.ToArray());
+        Assert.AreSequenceEqual(
+            new[] { existingSelector, firstSelector, secondSelector }, finalWinner!.Selectors.ToArray(), SequenceOrder.InAnyOrder);
         string initialWriteKey = PipelineCachingCacheClient.ComputeSelectorsWriteKey(Universe, weakFingerprint, initial.Id);
-        CollectionAssert.AreEqual(new[] { initialWriteKey }, conflictQueries.ToArray());
+        Assert.AreSequenceEqual(new[] { initialWriteKey }, conflictQueries.ToArray());
         Assert.AreEqual(
             PipelineCachingCacheClient.ComputeSelectorsWriteKey(Universe, weakFingerprint, firstWinner!.Id),
             finalWriteKey);
-        StringAssert.StartsWith(latestKey, "selector6|", StringComparison.Ordinal);
+        Assert.StartsWith("selector6|", latestKey, StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -136,9 +135,9 @@ public class SelectorPublicationTests
         string secondKey = PipelineCachingCacheClient.ComputeOutputKey("universe", second, forWrite: false, writeId: 0);
 
         Assert.AreNotEqual(firstKey, secondKey);
-        StringAssert.StartsWith(firstKey, "outputs6|", StringComparison.Ordinal);
-        StringAssert.Contains(firstKey, "|01|", StringComparison.Ordinal);
-        StringAssert.Contains(secondKey, "|02|", StringComparison.Ordinal);
+        Assert.StartsWith("outputs6|", firstKey, StringComparison.Ordinal);
+        Assert.Contains("|01|", firstKey, StringComparison.Ordinal);
+        Assert.Contains("|02|", secondKey, StringComparison.Ordinal);
     }
 
     private static Selector CreateSelector(byte output)

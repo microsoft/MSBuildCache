@@ -27,7 +27,7 @@ public class PathSetTests
 
         Assert.IsNotNull(deserialized);
         Assert.IsNotNull(deserialized!.Entries, "Entries must never be null; it is hashed before it can be checked.");
-        Assert.AreEqual(0, deserialized.Entries.Count);
+        Assert.IsEmpty(deserialized.Entries);
 
         // Both must be callable, since the type is used as a cache key.
         _ = deserialized.GetHashCode();
@@ -153,7 +153,7 @@ public class PathSetTests
         Assert.IsNotNull(deserialized);
         Assert.AreEqual(original, deserialized);
         // Sanity-check that every type round-tripped: equality covers it, but be explicit about the schema field.
-        Assert.AreEqual(4, deserialized!.Entries.Count);
+        Assert.HasCount(4, deserialized!.Entries);
         Assert.AreEqual(ObservationType.FileContentRead, deserialized.Entries[0].Type);
         Assert.AreEqual(ObservationType.DirectoryEnumeration, deserialized.Entries[1].Type);
         Assert.AreEqual("*.cs", deserialized.Entries[1].EnumerationPattern);

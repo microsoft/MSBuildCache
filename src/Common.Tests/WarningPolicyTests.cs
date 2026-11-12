@@ -55,8 +55,8 @@ public sealed class WarningPolicyTests
     {
         BuildInvocationResult result = await RunBuildAsync(logAsMessage: false, warnAsError: false, emitUnrelatedWarning: false);
 
-        StringAssert.Contains(result.Output, "Build succeeded.", StringComparison.Ordinal);
-        StringAssert.Contains(result.Output, WarningPolicyTestPlugin.DiagnosticMessage, StringComparison.Ordinal);
+        Assert.Contains("Build succeeded.", result.Output, StringComparison.Ordinal);
+        Assert.Contains(WarningPolicyTestPlugin.DiagnosticMessage, result.Output, StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -64,8 +64,8 @@ public sealed class WarningPolicyTests
     {
         BuildInvocationResult result = await RunBuildAsync(logAsMessage: false, warnAsError: true, emitUnrelatedWarning: false);
 
-        StringAssert.Contains(result.Output, "Build FAILED.", StringComparison.Ordinal);
-        StringAssert.Contains(result.Output, WarningPolicyTestPlugin.DiagnosticMessage, StringComparison.Ordinal);
+        Assert.Contains("Build FAILED.", result.Output, StringComparison.Ordinal);
+        Assert.Contains(WarningPolicyTestPlugin.DiagnosticMessage, result.Output, StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -73,8 +73,8 @@ public sealed class WarningPolicyTests
     {
         BuildInvocationResult result = await RunBuildAsync(logAsMessage: true, warnAsError: true, emitUnrelatedWarning: false);
 
-        StringAssert.Contains(result.Output, "Build succeeded.", StringComparison.Ordinal);
-        StringAssert.Contains(result.Output, WarningPolicyTestPlugin.DiagnosticMessage, StringComparison.Ordinal);
+        Assert.Contains("Build succeeded.", result.Output, StringComparison.Ordinal);
+        Assert.Contains(WarningPolicyTestPlugin.DiagnosticMessage, result.Output, StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -82,8 +82,8 @@ public sealed class WarningPolicyTests
     {
         BuildInvocationResult result = await RunBuildAsync(logAsMessage: true, warnAsError: true, emitUnrelatedWarning: true);
 
-        StringAssert.Contains(result.Output, "Build FAILED.", StringComparison.Ordinal);
-        StringAssert.Contains(result.Output, "Unrelated warning", StringComparison.Ordinal);
+        Assert.Contains("Build FAILED.", result.Output, StringComparison.Ordinal);
+        Assert.Contains("Unrelated warning", result.Output, StringComparison.Ordinal);
     }
 
     private async Task<BuildInvocationResult> RunBuildAsync(bool logAsMessage, bool warnAsError, bool emitUnrelatedWarning)
@@ -111,7 +111,7 @@ public sealed class WarningPolicyTests
               </Target>
             </Project>
             """;
-        await File.WriteAllTextAsync(projectPath, projectContents);
+        await File.WriteAllTextAsync(projectPath, projectContents, TestContext.CancellationToken);
 
         ProcessStartInfo startInfo = new()
         {
@@ -139,9 +139,9 @@ public sealed class WarningPolicyTests
         }
 
         using Process process = Process.Start(startInfo)!;
-        Task<string> standardOutput = process.StandardOutput.ReadToEndAsync();
-        Task<string> standardError = process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
+        Task<string> standardOutput = process.StandardOutput.ReadToEndAsync(TestContext.CancellationToken);
+        Task<string> standardError = process.StandardError.ReadToEndAsync(TestContext.CancellationToken);
+        await process.WaitForExitAsync(TestContext.CancellationToken);
 
         string output = await standardOutput + await standardError;
         return new BuildInvocationResult(output);

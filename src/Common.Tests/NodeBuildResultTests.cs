@@ -28,7 +28,7 @@ public class NodeBuildResultTests
         foreach (IList<string> permutation in names.Permutations())
         {
             var ordinal_sorted = new SortedSet<string>(permutation, StringComparer.OrdinalIgnoreCase);
-            CollectionAssert.AreEqual(baseline, ordinal_sorted);
+            Assert.AreSequenceEqual(baseline, ordinal_sorted);
         }
     }
 
@@ -55,7 +55,7 @@ public class NodeBuildResultTests
             string serialized = JsonSerializer.Serialize(nodeBuildResult, SourceGenerationContext.Default.NodeBuildResult);
             NodeBuildResult deserialized = JsonSerializer.Deserialize(serialized, SourceGenerationContext.Default.NodeBuildResult)!;
 
-            CollectionAssert.AreEqual(expected.Keys, deserialized.Outputs.Keys, "\n" +
+            Assert.AreSequenceEqual(expected.Keys, deserialized.Outputs.Keys, "\n" +
                 "Permutation: " + string.Join(", ", permutation) + "\n" +
                 "Serialized: " + serialized + "\n" +
                 "Deserialized: " + string.Join(", ", deserialized.Outputs.Keys) + "\n" +

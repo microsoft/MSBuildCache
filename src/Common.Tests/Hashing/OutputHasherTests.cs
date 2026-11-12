@@ -33,7 +33,7 @@ public class OutputHasherTests
 #if NETFRAMEWORK
         File.WriteAllText(file, "someContent");
 #else
-        await File.WriteAllTextAsync(file, "someContent");
+        await File.WriteAllTextAsync(file, "someContent", TestContext.CancellationToken);
 #endif
 
         ContentHash hash = await hasher.ComputeHashAsync(file, CancellationToken.None);

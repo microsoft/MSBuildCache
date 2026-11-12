@@ -25,7 +25,7 @@ public class HashingExtensionsTests
 
         // This doesn't mean anything to a human; it's just intended to exercise the code
         byte[] expectedHash = new byte[] { 0x77, 0x8a, 0xaa, 0x14, 0x80, 0x06, 0x5d, 0xf8, 0x87, 0xe0, 0xab, 0xb5, 0x59, 0xd8, 0x26, 0xc5 };
-        CollectionAssert.AreEqual(expectedHash, ContentHasher.CombineHashes(hashes));
+        Assert.AreSequenceEqual(expectedHash, ContentHasher.CombineHashes(hashes));
     }
 
     [TestMethod]
@@ -50,9 +50,8 @@ public class HashingExtensionsTests
             null,
         };
 
-        CollectionAssert.AreEqual(
-            ContentHasher.CombineHashes(hashesWithGaps),
-            ContentHasher.CombineHashes(hashes));
+        Assert.AreSequenceEqual(
+            ContentHasher.CombineHashes(hashesWithGaps), ContentHasher.CombineHashes(hashes));
     }
 
     [TestMethod]

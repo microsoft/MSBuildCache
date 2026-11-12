@@ -47,14 +47,14 @@ public class DirectoryFileHasherTests
 #if NETFRAMEWORK
         File.WriteAllText(absolutePath, fileContent);
 #else
-        await File.WriteAllTextAsync(absolutePath, fileContent);
+        await File.WriteAllTextAsync(absolutePath, fileContent, TestContext.CancellationToken);
 #endif
 
         byte[]? hash = await hasher.GetHashAsync(absolutePath);
         if (expectedToHaveHash)
         {
             byte[] expectedHash = ContentHasher.GetContentHash(Encoding.Default.GetBytes(fileContent)).ToHashByteArray();
-            CollectionAssert.AreEqual(expectedHash, hash);
+            Assert.AreSequenceEqual(expectedHash, hash);
         }
         else
         {
