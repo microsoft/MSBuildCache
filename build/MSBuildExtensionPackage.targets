@@ -41,6 +41,7 @@
   <!-- ILRepack -->
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <ILRepackEnabled>true</ILRepackEnabled>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
   <ItemGroup Condition=" '$(ILRepackEnabled)' == 'true' ">
@@ -64,10 +65,14 @@
     <PackageReference Include="protobuf-net.Grpc"/>
   </ItemGroup>
 
+  <Target Name="GetUnmergedAssemblyPath" Returns="@(IntermediateAssembly->'%(FullPath)')" />
+
   <Target Name="ILRepacker" AfterTargets="Build" Condition="'$(ILRepack)' != ''">
     <ItemGroup>
       <LibraryPaths Include="$(OutputPath)"/>
       <LibraryPaths Include="$(PkgMicrosoft_Build_Framework)\lib\net472"/>
+      <LibraryPaths Include="@(ReferencePath->WithMetadataValue('Filename', 'System.Runtime')->'%(RootDir)%(Directory)')"
+                    Condition="'$(TargetFrameworkIdentifier)' == '.NETCoreApp'"/>
     </ItemGroup>
 
     <ItemGroup>
@@ -78,7 +83,7 @@
     </ItemGroup>
 
     <PropertyGroup>
-      <IlRepackCommand>$(ILRepack) /allowduplicateresources /union /parallel /out:$(OutputPath)$(AssemblyName)$(TargetExt) @(LibraryPaths->'/lib:%(FullPath)', ' ')</IlRepackCommand>
+      <IlRepackCommand>$(ILRepack) /allowduplicateresources /union /parallel /out:&quot;$(TargetPath)&quot; @(LibraryPaths->'/lib:&quot;%(FullPath)\.&quot;', ' ')</IlRepackCommand>
       <IlRepackCommand Condition="'$(IlRepackVerbose)' == 'true'">$(IlRepackCommand) /verbose</IlRepackCommand>
       <IlRepackCommand Condition="'$(DelaySign)' == 'true'">$(IlRepackCommand) /delaysign</IlRepackCommand>
       <IlRepackCommand Condition="'$(AssemblyOriginatorKeyFile)' != ''">$(IlRepackCommand) /keyfile:$(AssemblyOriginatorKeyFile)</IlRepackCommand>
