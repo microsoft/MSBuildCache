@@ -20,9 +20,11 @@ internal sealed class FakeAmazonS3Client : AmazonS3Client
 {
     public const string ServiceUrl = "http://127.0.0.1:9/";
 
-    private readonly ConcurrentDictionary<string, byte[]> _objects = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, StoredObject> _objects = new(StringComparer.Ordinal);
     private readonly ConcurrentQueue<GetObjectRequest> _reads = new();
     private readonly ConcurrentQueue<string> _writtenKeys = new();
+    private readonly ConcurrentQueue<string> _renewedKeys = new();
+    private readonly ConcurrentQueue<CopyObjectRequest> _copies = new();
     private int _metadataReadCount;
 
     public FakeAmazonS3Client()
@@ -42,6 +44,10 @@ internal sealed class FakeAmazonS3Client : AmazonS3Client
 
     public IReadOnlyList<string> WrittenKeys => _writtenKeys.ToArray();
 
+    public IReadOnlyList<string> RenewedKeys => _renewedKeys.ToArray();
+
+    public IReadOnlyList<CopyObjectRequest> Copies => _copies.ToArray();
+
     public int MetadataReadCount => Volatile.Read(ref _metadataReadCount);
 
     public Func<GetObjectRequest, Task>? BeforeRead { get; set; }
@@ -50,11 +56,27 @@ internal sealed class FakeAmazonS3Client : AmazonS3Client
 
     public Func<ListObjectsV2Request, Task>? BeforeList { get; set; }
 
+    public Func<CopyObjectRequest, Task>? BeforeCopy { get; set; }
+
     public int MaxKeysPerPage { get; set; } = int.MaxValue;
 
-    public void Put(string key, byte[] bytes) => _objects[key] = bytes;
+    public void Put(string key, byte[] bytes) => _objects[key] = new StoredObject(bytes, DateTime.UtcNow);
 
-    public byte[] Read(string key) => _objects[key];
+    public byte[] Read(string key) => _objects[key].Bytes;
+
+    public DateTime LastModified(string key) => _objects[key].LastModified;
+
+    public void Backdate(string key, TimeSpan age)
+    {
+        StoredObject stored = _objects[key];
+        _objects[key] = stored with { LastModified = DateTime.UtcNow - age };
+    }
+
+    public void OverrideContentLength(string key, long contentLength)
+    {
+        StoredObject stored = _objects[key];
+        _objects[key] = stored with { ReportedLength = contentLength };
+    }
 
     public override async Task<GetObjectResponse> GetObjectAsync(GetObjectRequest request, CancellationToken cancellationToken)
     {
@@ -65,11 +87,12 @@ internal sealed class FakeAmazonS3Client : AmazonS3Client
             await BeforeRead(request);
         }
 
-        if (!_objects.TryGetValue(request.Key, out byte[]? content))
+        if (!_objects.TryGetValue(request.Key, out StoredObject? stored))
         {
             throw NoSuchKey(request.Key);
         }
 
+        byte[] content = stored.Bytes;
         byte[] body = request.ByteRange is null
             ? content
             : content.AsSpan((int)request.ByteRange.Start, (int)(request.ByteRange.End - request.ByteRange.Start + 1)).ToArray();
@@ -95,14 +118,15 @@ internal sealed class FakeAmazonS3Client : AmazonS3Client
     {
         Interlocked.Increment(ref _metadataReadCount);
 
-        if (!_objects.TryGetValue(request.Key, out byte[]? content))
+        if (!_objects.TryGetValue(request.Key, out StoredObject? stored))
         {
             throw NoSuchKey(request.Key);
         }
 
         return Task.FromResult(new GetObjectMetadataResponse
         {
-            ContentLength = content.Length,
+            ContentLength = stored.ReportedLength ?? stored.Bytes.Length,
+            LastModified = stored.LastModified,
             HttpStatusCode = HttpStatusCode.OK,
         });
     }
@@ -112,7 +136,7 @@ internal sealed class FakeAmazonS3Client : AmazonS3Client
         using MemoryStream buffer = new();
         await request.InputStream.CopyToAsync(buffer, cancellationToken);
 
-        _objects[request.Key] = buffer.ToArray();
+        _objects[request.Key] = new StoredObject(buffer.ToArray(), DateTime.UtcNow);
         _writtenKeys.Enqueue(request.Key);
 
         return new PutObjectResponse { HttpStatusCode = HttpStatusCode.OK };
@@ -134,7 +158,7 @@ internal sealed class FakeAmazonS3Client : AmazonS3Client
         List<S3Object> page = keys
             .Skip(start)
             .Take(MaxKeysPerPage)
-            .Select(key => new S3Object { BucketName = request.BucketName, Key = key, Size = _objects[key].Length })
+            .Select(key => new S3Object { BucketName = request.BucketName, Key = key, Size = _objects[key].Bytes.Length })
             .ToList();
 
         int next = start + page.Count;
@@ -149,6 +173,33 @@ internal sealed class FakeAmazonS3Client : AmazonS3Client
         };
     }
 
+    public override async Task<CopyObjectResponse> CopyObjectAsync(CopyObjectRequest request, CancellationToken cancellationToken)
+    {
+        _copies.Enqueue(request);
+        if (BeforeCopy is not null)
+        {
+            await BeforeCopy(request);
+        }
+
+        if (!_objects.TryGetValue(request.SourceKey, out StoredObject? stored))
+        {
+            throw NoSuchKey(request.SourceKey);
+        }
+
+        if (string.Equals(request.SourceKey, request.DestinationKey, StringComparison.Ordinal)
+            && string.Equals(request.SourceBucket, request.DestinationBucket, StringComparison.Ordinal)
+            && request.MetadataDirective != S3MetadataDirective.REPLACE)
+        {
+            throw new AmazonS3Exception("Copying an object to itself requires a change.", ErrorType.Sender, "InvalidRequest", "fake-request-id", HttpStatusCode.BadRequest);
+        }
+
+        _objects[request.DestinationKey] = stored with { LastModified = DateTime.UtcNow };
+        _renewedKeys.Enqueue(request.DestinationKey);
+        return new CopyObjectResponse { HttpStatusCode = HttpStatusCode.OK };
+    }
+
     public static AmazonS3Exception NoSuchKey(string key)
         => new($"The specified key '{key}' does not exist.", ErrorType.Sender, "NoSuchKey", "fake-request-id", HttpStatusCode.NotFound);
+
+    private sealed record StoredObject(byte[] Bytes, DateTime LastModified, long? ReportedLength = null);
 }

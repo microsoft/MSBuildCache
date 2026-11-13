@@ -188,6 +188,9 @@ These settings are available in addition to the [Common Settings](#common-settin
 | `$(MSBuildCacheS3MultipartThresholdBytes)` | `long` | 33554432 (32 MB) | Objects at or above this size are transferred as multiple parts in parallel instead of as a single request. |
 | `$(MSBuildCacheS3MultipartPartSizeBytes)` | `long` | 8388608 (8 MB) | The part size for multipart transfers. Values below S3's 5 MB minimum are raised to it. |
 | `$(MSBuildCacheS3MaxConcurrentPartsPerObject)` | `int` | 8 | How many parts of a single object are transferred concurrently. |
+| `$(MSBuildCacheS3ContentRenewalAgeDays)` | `double` | 0 | Reused content older than this is rewritten in place. Zero renews on every reuse. |
+
+Objects live under `{prefix}/{cas|entries|selectors}/...`. That lets a lifecycle rule give content a longer lifetime than the entries which name it. When one rule expires the whole bucket from the last write, the default of 0 is the safe setting: publication rewrites reused content so a new entry cannot outlive it. If content is configured to outlive entries, raise this by the difference.
 
 The bucket must already exist. Credentials are resolved in the following order:
 1. If [`AWSCredentials`](https://docs.aws.amazon.com/sdkfornet/v3/apidocs/items/Runtime/TAWSCredentials.html) are provided directly in the plugin's constructor, they are used. This only applies when using the programmatic project cache API.

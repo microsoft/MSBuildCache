@@ -103,7 +103,8 @@ public sealed class MSBuildCacheS3Plugin : MSBuildCachePluginBase<S3PluginSettin
             Settings.TouchOutputFiles,
             Settings.MultipartThresholdBytes,
             Settings.MultipartPartSizeBytes,
-            Settings.MaxConcurrentPartsPerObject);
+            Settings.MaxConcurrentPartsPerObject,
+            Settings.ContentRenewalAgeDays);
     }
 
     private AmazonS3Client CreateS3Client(S3PluginSettings settings)

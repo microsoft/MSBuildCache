@@ -8,6 +8,7 @@
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheS3MultipartThresholdBytes</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheS3MultipartPartSizeBytes</MSBuildCacheGlobalPropertiesToIgnore>
     <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheS3MaxConcurrentPartsPerObject</MSBuildCacheGlobalPropertiesToIgnore>
+    <MSBuildCacheGlobalPropertiesToIgnore>$(MSBuildCacheGlobalPropertiesToIgnore);MSBuildCacheS3ContentRenewalAgeDays</MSBuildCacheGlobalPropertiesToIgnore>
   </PropertyGroup>
 
   <Import Project="Microsoft.MSBuildCache.Common.targets" />
@@ -22,6 +23,7 @@
       <MultipartThresholdBytes>$(MSBuildCacheS3MultipartThresholdBytes)</MultipartThresholdBytes>
       <MultipartPartSizeBytes>$(MSBuildCacheS3MultipartPartSizeBytes)</MultipartPartSizeBytes>
       <MaxConcurrentPartsPerObject>$(MSBuildCacheS3MaxConcurrentPartsPerObject)</MaxConcurrentPartsPerObject>
+      <ContentRenewalAgeDays>$(MSBuildCacheS3ContentRenewalAgeDays)</ContentRenewalAgeDays>
     </ProjectCachePlugin>
   </ItemGroup>
 </Project>

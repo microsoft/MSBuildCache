@@ -33,6 +33,7 @@ public class S3ObjectKeysTests
         StringAssert.StartsWith(casKey, $"{KeyPrefix}/", StringComparison.Ordinal);
         StringAssert.Contains(casKey, $"/{Universe}/", StringComparison.Ordinal);
         StringAssert.Contains(casKey, "/cas/", StringComparison.Ordinal);
+        StringAssert.StartsWith(casKey, $"{KeyPrefix}/cas/", StringComparison.Ordinal);
     }
 
     [TestMethod]

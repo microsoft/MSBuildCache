@@ -78,7 +78,8 @@ internal sealed class S3CacheClientHarness : IAsyncDisposable
         long multipartPartSizeBytes = 0,
         int maxConcurrentPartsPerObject = 8,
         int maxConcurrentCacheContentOperations = 32,
-        bool remoteCacheIsReadOnly = false)
+        bool remoteCacheIsReadOnly = false,
+        double contentRenewalAgeDays = 0)
     {
         _rootDirectory = Path.Combine(Path.GetTempPath(), "MSBuildCacheS3Tests", Guid.NewGuid().ToString("N"));
         RepoRoot = Path.Combine(_rootDirectory, "repo");
@@ -115,7 +116,8 @@ internal sealed class S3CacheClientHarness : IAsyncDisposable
             touchOutputFiles: false,
             multipartThresholdBytes,
             multipartPartSizeBytes,
-            maxConcurrentPartsPerObject);
+            maxConcurrentPartsPerObject,
+            contentRenewalAgeDays);
 #pragma warning restore CA2000
     }
 

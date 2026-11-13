@@ -8,16 +8,18 @@ using Fingerprint = BuildXL.Cache.MemoizationStore.Interfaces.Sessions.Fingerpri
 
 namespace Microsoft.MSBuildCache.S3;
 
-// All keys are under {keyPrefix}/v{layoutVersion}-{hashType}/{universe}/:
-//   cas/{contentHash}: output files and PathSets.
-//   selectors/{weakFingerprint}/{pathSetHash}/{strongFingerprint}: empty objects, listed to find the selectors of a weak fingerprint.
-//   entries/{weakFingerprint}/{pathSetHash}/{strongFingerprint}: the NodeBuildResult.
+// Keys are {keyPrefix}/{kind}/v{layoutVersion}-{hashType}/{universe}/...
+// The kind comes first so a lifecycle rule can match cas, entries, or selectors by a literal prefix.
+//   cas: output files and PathSets.
+//   selectors: empty objects, listed to find the selectors of a weak fingerprint.
+//   entries: the NodeBuildResult.
 internal sealed class S3ObjectKeys
 {
     // Bump when existing objects become unreadable by the new layout.
     private const int LayoutVersion = 1;
 
-    private readonly string _rootPrefix;
+    private readonly string _keyPrefix;
+    private readonly string _scope;
 
     public S3ObjectKeys(string keyPrefix, HashType hashType, string universe)
     {
@@ -27,20 +29,23 @@ internal sealed class S3ObjectKeys
             sanitizedPrefix = "msbuildcache";
         }
 
-        _rootPrefix = $"{sanitizedPrefix}/v{LayoutVersion}-{(int)hashType}/{universe}";
+        _keyPrefix = sanitizedPrefix;
+        _scope = $"v{LayoutVersion}-{(int)hashType}/{universe}";
     }
 
     public string GetCas(ContentHash contentHash)
-        => $"{_rootPrefix}/cas/{Escape(contentHash.Serialize())}";
+        => $"{KindPrefix("cas")}{Escape(contentHash.Serialize())}";
 
     public string GetEntry(StrongFingerprint fingerprint)
-        => $"{_rootPrefix}/entries/{GetSelectorPath(fingerprint.WeakFingerprint, fingerprint.Selector)}";
+        => $"{KindPrefix("entries")}{GetSelectorPath(fingerprint.WeakFingerprint, fingerprint.Selector)}";
 
     public string GetSelector(StrongFingerprint fingerprint)
-        => $"{_rootPrefix}/selectors/{GetSelectorPath(fingerprint.WeakFingerprint, fingerprint.Selector)}";
+        => $"{KindPrefix("selectors")}{GetSelectorPath(fingerprint.WeakFingerprint, fingerprint.Selector)}";
 
     public string GetSelectorPrefix(Fingerprint weakFingerprint)
-        => $"{_rootPrefix}/selectors/{Escape(weakFingerprint.Serialize())}/";
+        => $"{KindPrefix("selectors")}{Escape(weakFingerprint.Serialize())}/";
+
+    private string KindPrefix(string kind) => $"{_keyPrefix}/{kind}/{_scope}/";
 
     public bool TryParseSelector(string key, Fingerprint weakFingerprint, out Selector selector)
     {

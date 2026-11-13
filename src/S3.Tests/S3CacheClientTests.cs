@@ -290,7 +290,7 @@ public class S3CacheClientTests
     }
 
     [TestMethod]
-    public async Task AddNodeOnlyWritesSelectorForExistingEntry()
+    public async Task AddNodeRewritesExistingEntryAndSelector()
     {
         await using S3CacheClientHarness harness = new();
         StrongFingerprint fingerprint = CreateStrongFingerprint();
@@ -304,7 +304,128 @@ public class S3CacheClientTests
 
         Assert.AreEqual(AddNodeResult.AlreadyExists, result);
 
-        CollectionAssert.AreEqual(new[] { harness.Keys.GetSelector(fingerprint) }, harness.S3.WrittenKeys.ToArray());
+        CollectionAssert.AreEqual(
+            new[] { harness.Keys.GetEntry(fingerprint), harness.Keys.GetSelector(fingerprint) },
+            harness.S3.WrittenKeys.ToArray());
+    }
+
+    [TestMethod]
+    public async Task AddNodeRenewsExistingContent()
+    {
+        await using S3CacheClientHarness harness = new();
+        byte[] output = S3CacheClientHarness.CreateContent(4096);
+        ContentHash outputHash = harness.PutContentInBucket(output);
+        string casKey = harness.Keys.GetCas(outputHash);
+        harness.S3.Backdate(casKey, TimeSpan.FromDays(10));
+        byte[] nodeBuildResult = S3CacheClientHarness.CreateContent(64);
+
+        await harness.AddNodeAsync(
+            CreateStrongFingerprint(),
+            new Dictionary<string, ContentHash> { [harness.PathUnderRepoRoot("output.bin")] = outputHash },
+            (harness.HashOf(nodeBuildResult), nodeBuildResult));
+
+        CollectionAssert.Contains(harness.S3.RenewedKeys.ToArray(), casKey);
+        CollectionAssert.DoesNotContain(harness.S3.WrittenKeys.ToArray(), casKey);
+        CollectionAssert.AreEqual(output, harness.S3.Read(casKey));
+    }
+
+    [TestMethod]
+    public async Task AddNodeRenewsAnExistingPathSet()
+    {
+        await using S3CacheClientHarness harness = new();
+        byte[] pathSet = S3CacheClientHarness.CreateContent(256);
+        ContentHash pathSetHash = harness.PutContentInBucket(pathSet);
+        string casKey = harness.Keys.GetCas(pathSetHash);
+        harness.S3.Backdate(casKey, TimeSpan.FromDays(10));
+        byte[] nodeBuildResult = S3CacheClientHarness.CreateContent(64);
+
+        await harness.AddNodeAsync(
+            CreateStrongFingerprint(),
+            new Dictionary<string, ContentHash>(),
+            (harness.HashOf(nodeBuildResult), nodeBuildResult),
+            (pathSetHash, pathSet));
+
+        CollectionAssert.Contains(harness.S3.RenewedKeys.ToArray(), casKey);
+        CollectionAssert.DoesNotContain(harness.S3.WrittenKeys.ToArray(), casKey);
+    }
+
+    [TestMethod]
+    [DataRow(1, false)]
+    [DataRow(8, true)]
+    public async Task AddNodeRenewsContentAtTheConfiguredAge(int ageInDays, bool expectRenewal)
+    {
+        await using S3CacheClientHarness harness = new(contentRenewalAgeDays: 7);
+        byte[] output = S3CacheClientHarness.CreateContent(4096);
+        ContentHash outputHash = harness.PutContentInBucket(output);
+        string casKey = harness.Keys.GetCas(outputHash);
+        harness.S3.Backdate(casKey, TimeSpan.FromDays(ageInDays));
+        byte[] nodeBuildResult = S3CacheClientHarness.CreateContent(64);
+
+        await harness.AddNodeAsync(
+            CreateStrongFingerprint(),
+            new Dictionary<string, ContentHash> { [harness.PathUnderRepoRoot("output.bin")] = outputHash },
+            (harness.HashOf(nodeBuildResult), nodeBuildResult));
+
+        Assert.AreEqual(expectRenewal, harness.S3.RenewedKeys.Contains(casKey));
+    }
+
+    [TestMethod]
+    public async Task AddNodeUploadsWhenRenewalFails()
+    {
+        await using S3CacheClientHarness harness = new();
+        byte[] output = S3CacheClientHarness.CreateContent(4096);
+        ContentHash outputHash = harness.PutContentInBucket(output);
+        string outputPath = harness.PathUnderRepoRoot("output.bin");
+        await File.WriteAllBytesAsync(outputPath, output);
+        harness.S3.BeforeCopy = _ => throw FakeAmazonS3Client.NoSuchKey(harness.Keys.GetCas(outputHash));
+        byte[] nodeBuildResult = S3CacheClientHarness.CreateContent(64);
+
+        await harness.AddNodeAsync(
+            CreateStrongFingerprint(),
+            new Dictionary<string, ContentHash> { [outputPath] = outputHash },
+            (harness.HashOf(nodeBuildResult), nodeBuildResult));
+
+        CollectionAssert.Contains(harness.S3.WrittenKeys.ToArray(), harness.Keys.GetCas(outputHash));
+        CollectionAssert.AreEqual(output, harness.S3.Read(harness.Keys.GetCas(outputHash)));
+    }
+
+    [TestMethod]
+    public async Task AddNodeUploadsContentTooLargeToCopy()
+    {
+        await using S3CacheClientHarness harness = new();
+        byte[] output = S3CacheClientHarness.CreateContent(4096);
+        ContentHash outputHash = harness.PutContentInBucket(output);
+        string outputPath = harness.PathUnderRepoRoot("output.bin");
+        await File.WriteAllBytesAsync(outputPath, output);
+        string casKey = harness.Keys.GetCas(outputHash);
+        harness.S3.OverrideContentLength(casKey, 5L * 1024 * 1024 * 1024);
+        byte[] nodeBuildResult = S3CacheClientHarness.CreateContent(64);
+
+        await harness.AddNodeAsync(
+            CreateStrongFingerprint(),
+            new Dictionary<string, ContentHash> { [outputPath] = outputHash },
+            (harness.HashOf(nodeBuildResult), nodeBuildResult));
+
+        Assert.HasCount(0, harness.S3.Copies);
+        CollectionAssert.Contains(harness.S3.WrittenKeys.ToArray(), casKey);
+    }
+
+    [TestMethod]
+    public async Task AddNodeRenewsContentWithAFutureTimestamp()
+    {
+        await using S3CacheClientHarness harness = new(contentRenewalAgeDays: 7);
+        byte[] output = S3CacheClientHarness.CreateContent(4096);
+        ContentHash outputHash = harness.PutContentInBucket(output);
+        string casKey = harness.Keys.GetCas(outputHash);
+        harness.S3.Backdate(casKey, TimeSpan.FromHours(-2));
+        byte[] nodeBuildResult = S3CacheClientHarness.CreateContent(64);
+
+        await harness.AddNodeAsync(
+            CreateStrongFingerprint(),
+            new Dictionary<string, ContentHash> { [harness.PathUnderRepoRoot("output.bin")] = outputHash },
+            (harness.HashOf(nodeBuildResult), nodeBuildResult));
+
+        CollectionAssert.Contains(harness.S3.RenewedKeys.ToArray(), casKey);
     }
 
     [TestMethod]

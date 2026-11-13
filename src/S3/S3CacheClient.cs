@@ -36,6 +36,9 @@ internal sealed class S3CacheClient : CacheClient
     // S3 rejects parts smaller than this, except for the last part of a multipart upload.
     private const long MinimumPartSizeBytes = 5 * 1024 * 1024;
 
+    // A single CopyObject request cannot renew anything larger than this.
+    private const long MaximumSingleRequestCopyBytes = 5L * 1024 * 1024 * 1024;
+
     private readonly IAmazonS3 _s3;
     private readonly IContentHasher _hasher;
     private readonly TransferUtility _transferUtility;
@@ -45,6 +48,7 @@ internal sealed class S3CacheClient : CacheClient
     private readonly long _multipartThresholdBytes;
     private readonly long _partSizeBytes;
     private readonly int _maxConcurrentPartsPerObject;
+    private readonly TimeSpan _contentRenewalAge;
 
     // The same content is often published by many projects.
     private readonly ConcurrentDictionary<ContentHash, Task> _remoteUploads = new();
@@ -75,7 +79,8 @@ internal sealed class S3CacheClient : CacheClient
         bool touchOutputFiles,
         long multipartThresholdBytes,
         long multipartPartSizeBytes,
-        int maxConcurrentPartsPerObject)
+        int maxConcurrentPartsPerObject,
+        double contentRenewalAgeDays)
         : base(rootContext, fingerprintFactory, hasher, repoRoot, nugetPackageRoot, getFileRealizationMode, localCache, localCas, maxConcurrentCacheContentOperations, enableAsyncPublishing, enableAsyncMaterialization, skipUnchangedOutputFiles, touchOutputFiles)
     {
         _s3 = s3;
@@ -85,6 +90,9 @@ internal sealed class S3CacheClient : CacheClient
         _multipartThresholdBytes = Math.Max(1, multipartThresholdBytes);
         _partSizeBytes = Math.Max(MinimumPartSizeBytes, multipartPartSizeBytes);
         _maxConcurrentPartsPerObject = Math.Max(1, maxConcurrentPartsPerObject);
+        _contentRenewalAge = double.IsNaN(contentRenewalAgeDays) || double.IsInfinity(contentRenewalAgeDays)
+            ? TimeSpan.Zero
+            : TimeSpan.FromDays(Math.Min(365, Math.Max(0, contentRenewalAgeDays)));
         _partGate = new SemaphoreSlim(Math.Max(1, maxConcurrentCacheContentOperations));
         _keys = new S3ObjectKeys(keyPrefix, hasher.Info.HashType, universe);
 
@@ -111,7 +119,7 @@ internal sealed class S3CacheClient : CacheClient
         }
 
         string entryKey = _keys.GetEntry(fingerprint);
-        bool alreadyExists = await ObjectExistsAsync(context, entryKey, cancellationToken);
+        bool alreadyExists = await TryGetObjectMetadataAsync(context, entryKey, cancellationToken) is not null;
 
         Dictionary<ContentHash, string> contentAbsolutePaths = new(outputs.Count);
         foreach (KeyValuePair<string, ContentHash> kvp in outputs)
@@ -133,11 +141,9 @@ internal sealed class S3CacheClient : CacheClient
 
         await Task.WhenAll(uploadTasks);
 
-        if (!alreadyExists)
-        {
-            await PutObjectAsync(entryKey, nodeBuildResultBytes.bytes, cancellationToken);
-            Tracer.Debug(context, $"Stored S3 cache entry `{entryKey}` for {fingerprint}");
-        }
+        // Also rewrite an existing entry. Its selector is always rewritten, and a lifecycle rule counts from the last write.
+        await PutObjectAsync(entryKey, nodeBuildResultBytes.bytes, cancellationToken);
+        Tracer.Debug(context, $"Stored S3 cache entry `{entryKey}` for {fingerprint}");
 
         // Write the selector last so that a listed selector always has an entry. Also write it when the entry already
         // exists, in case an earlier publish failed after writing the entry.
@@ -279,7 +285,8 @@ internal sealed class S3CacheClient : CacheClient
                 async (_, _) =>
                 {
                     string casKey = _keys.GetCas(contentHash);
-                    if (await ObjectExistsAsync(context, casKey, cancellationToken))
+                    GetObjectMetadataResponse? existing = await TryGetObjectMetadataAsync(context, casKey, cancellationToken);
+                    if (existing is not null && await RenewObjectAsync(context, casKey, existing, cancellationToken))
                     {
                         return 0;
                     }
@@ -332,7 +339,8 @@ internal sealed class S3CacheClient : CacheClient
                     await PutLocalBytesAsync(context, contentHash, bytes, cancellationToken);
 
                     string casKey = _keys.GetCas(contentHash);
-                    if (!await ObjectExistsAsync(context, casKey, cancellationToken))
+                    GetObjectMetadataResponse? existing = await TryGetObjectMetadataAsync(context, casKey, cancellationToken);
+                    if (existing is null || !await RenewObjectAsync(context, casKey, existing, cancellationToken))
                     {
                         await PutObjectAsync(casKey, bytes, cancellationToken);
                     }
@@ -668,22 +676,18 @@ internal sealed class S3CacheClient : CacheClient
 #endif
     }
 
-    private async Task<long?> TryGetObjectLengthAsync(Context context, string key, CancellationToken cancellationToken)
+    private async Task<GetObjectMetadataResponse?> TryGetObjectMetadataAsync(Context context, string key, CancellationToken cancellationToken)
     {
         try
         {
-            (bool succeeded, long? length) = await _readRetry.TryRunAsync<long?>(
+            (bool succeeded, GetObjectMetadataResponse? metadata) = await _readRetry.TryRunAsync(
                 $"Metadata of `{GetObjectUrl(key)}`",
-                async () =>
-                {
-                    GetObjectMetadataResponse metadata = await _s3.GetObjectMetadataAsync(_bucketName, key, cancellationToken);
-                    return metadata.ContentLength;
-                },
+                () => _s3.GetObjectMetadataAsync(_bucketName, key, cancellationToken),
                 message => Tracer.Debug(context, message),
                 message => Tracer.Warning(context, message),
                 cancellationToken);
 
-            return succeeded ? length : null;
+            return succeeded ? metadata : null;
         }
         catch (AmazonS3Exception ex) when (IsNotFound(ex))
         {
@@ -691,8 +695,53 @@ internal sealed class S3CacheClient : CacheClient
         }
     }
 
-    private async Task<bool> ObjectExistsAsync(Context context, string key, CancellationToken cancellationToken)
-        => await TryGetObjectLengthAsync(context, key, cancellationToken) is not null;
+    private async Task<long?> TryGetObjectLengthAsync(Context context, string key, CancellationToken cancellationToken)
+        => (await TryGetObjectMetadataAsync(context, key, cancellationToken))?.ContentLength;
+
+    // Returns false when the caller must upload the content instead. A failed renewal is not safe to ignore,
+    // because the entry written afterwards would name content that can expire first.
+    private async Task<bool> RenewObjectAsync(Context context, string key, GetObjectMetadataResponse metadata, CancellationToken cancellationToken)
+    {
+        if (_contentRenewalAge > TimeSpan.Zero)
+        {
+            TimeSpan age = DateTime.UtcNow - metadata.LastModified.ToUniversalTime();
+            if (age >= TimeSpan.Zero && age < _contentRenewalAge)
+            {
+                return true;
+            }
+        }
+
+        if (metadata.ContentLength >= MaximumSingleRequestCopyBytes)
+        {
+            return false;
+        }
+
+        try
+        {
+            _ = await _s3.CopyObjectAsync(
+                new CopyObjectRequest
+                {
+                    SourceBucket = _bucketName,
+                    SourceKey = key,
+                    DestinationBucket = _bucketName,
+                    DestinationKey = key,
+                    MetadataDirective = S3MetadataDirective.REPLACE,
+                    StorageClass = metadata.StorageClass,
+                },
+                cancellationToken);
+
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Tracer.Warning(context, $"Failed to renew `{GetObjectUrl(key)}`, uploading it again: {ex}");
+            return false;
+        }
+    }
 
     private async Task UploadContentAsync(string key, Stream stream, CancellationToken cancellationToken)
     {

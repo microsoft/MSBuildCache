@@ -22,4 +22,7 @@ public class S3PluginSettings : PluginSettings
     public long MultipartPartSizeBytes { get; init; } = 8 * 1024 * 1024;
 
     public int MaxConcurrentPartsPerObject { get; init; } = 8;
+
+    // Reused content older than this is rewritten in place. Zero renews on every reuse.
+    public double ContentRenewalAgeDays { get; init; }
 }
