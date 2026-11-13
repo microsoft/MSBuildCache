@@ -23,6 +23,5 @@ public class S3PluginSettings : PluginSettings
 
     public int MaxConcurrentPartsPerObject { get; init; } = 8;
 
-    // Reused content older than this is rewritten in place. Zero renews on every reuse.
     public double ContentRenewalAgeDays { get; init; }
 }

@@ -8,11 +8,8 @@ using Fingerprint = BuildXL.Cache.MemoizationStore.Interfaces.Sessions.Fingerpri
 
 namespace Microsoft.MSBuildCache.S3;
 
-// Keys are {keyPrefix}/{kind}/v{layoutVersion}-{hashType}/{universe}/...
-// The kind comes first so a lifecycle rule can match cas, entries, or selectors by a literal prefix.
-//   cas: output files and PathSets.
-//   selectors: empty objects, listed to find the selectors of a weak fingerprint.
-//   entries: the NodeBuildResult.
+// {prefix}/{cas|entries|selectors}/v{version}-{hashType}/{universe}/...
+// The kind comes first so a lifecycle rule can match it by prefix.
 internal sealed class S3ObjectKeys
 {
     // Bump when existing objects become unreadable by the new layout.

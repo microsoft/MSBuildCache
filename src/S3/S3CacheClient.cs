@@ -90,9 +90,7 @@ internal sealed class S3CacheClient : CacheClient
         _multipartThresholdBytes = Math.Max(1, multipartThresholdBytes);
         _partSizeBytes = Math.Max(MinimumPartSizeBytes, multipartPartSizeBytes);
         _maxConcurrentPartsPerObject = Math.Max(1, maxConcurrentPartsPerObject);
-        _contentRenewalAge = double.IsNaN(contentRenewalAgeDays) || double.IsInfinity(contentRenewalAgeDays)
-            ? TimeSpan.Zero
-            : TimeSpan.FromDays(Math.Min(365, Math.Max(0, contentRenewalAgeDays)));
+        _contentRenewalAge = TimeSpan.FromDays(Math.Max(0, contentRenewalAgeDays));
         _partGate = new SemaphoreSlim(Math.Max(1, maxConcurrentCacheContentOperations));
         _keys = new S3ObjectKeys(keyPrefix, hasher.Info.HashType, universe);
 
@@ -141,12 +139,11 @@ internal sealed class S3CacheClient : CacheClient
 
         await Task.WhenAll(uploadTasks);
 
-        // Also rewrite an existing entry. Its selector is always rewritten, and a lifecycle rule counts from the last write.
+        // Rewrite an existing entry too: its selector is always rewritten, and both age from the last write.
         await PutObjectAsync(entryKey, nodeBuildResultBytes.bytes, cancellationToken);
         Tracer.Debug(context, $"Stored S3 cache entry `{entryKey}` for {fingerprint}");
 
-        // Write the selector last so that a listed selector always has an entry. Also write it when the entry already
-        // exists, in case an earlier publish failed after writing the entry.
+        // Selector last, so a listed selector has an entry.
         string selectorKey = _keys.GetSelector(fingerprint);
         await PutObjectAsync(selectorKey, Array.Empty<byte>(), cancellationToken);
         Tracer.Debug(context, $"Stored S3 selector `{selectorKey}`");
@@ -285,8 +282,7 @@ internal sealed class S3CacheClient : CacheClient
                 async (_, _) =>
                 {
                     string casKey = _keys.GetCas(contentHash);
-                    GetObjectMetadataResponse? existing = await TryGetObjectMetadataAsync(context, casKey, cancellationToken);
-                    if (existing is not null && await RenewObjectAsync(context, casKey, existing, cancellationToken))
+                    if (await TryKeepExistingAsync(context, casKey, cancellationToken))
                     {
                         return 0;
                     }
@@ -339,8 +335,7 @@ internal sealed class S3CacheClient : CacheClient
                     await PutLocalBytesAsync(context, contentHash, bytes, cancellationToken);
 
                     string casKey = _keys.GetCas(contentHash);
-                    GetObjectMetadataResponse? existing = await TryGetObjectMetadataAsync(context, casKey, cancellationToken);
-                    if (existing is null || !await RenewObjectAsync(context, casKey, existing, cancellationToken))
+                    if (!await TryKeepExistingAsync(context, casKey, cancellationToken))
                     {
                         await PutObjectAsync(casKey, bytes, cancellationToken);
                     }
@@ -695,16 +690,22 @@ internal sealed class S3CacheClient : CacheClient
         }
     }
 
+    private async Task<bool> TryKeepExistingAsync(Context context, string key, CancellationToken cancellationToken)
+    {
+        GetObjectMetadataResponse? existing = await TryGetObjectMetadataAsync(context, key, cancellationToken);
+        return existing is not null && await RenewObjectAsync(context, key, existing, cancellationToken);
+    }
+
     private async Task<long?> TryGetObjectLengthAsync(Context context, string key, CancellationToken cancellationToken)
         => (await TryGetObjectMetadataAsync(context, key, cancellationToken))?.ContentLength;
 
-    // Returns false when the caller must upload the content instead. A failed renewal is not safe to ignore,
-    // because the entry written afterwards would name content that can expire first.
+    // True when the existing object can stay. False means the caller uploads it, which resets its age.
     private async Task<bool> RenewObjectAsync(Context context, string key, GetObjectMetadataResponse metadata, CancellationToken cancellationToken)
     {
         if (_contentRenewalAge > TimeSpan.Zero)
         {
             TimeSpan age = DateTime.UtcNow - metadata.LastModified.ToUniversalTime();
+            // A future timestamp only means the store clock is ahead.
             if (age >= TimeSpan.Zero && age < _contentRenewalAge)
             {
                 return true;
@@ -725,6 +726,7 @@ internal sealed class S3CacheClient : CacheClient
                     SourceKey = key,
                     DestinationBucket = _bucketName,
                     DestinationKey = key,
+                    // S3 rejects a copy onto the same key unless the request changes something.
                     MetadataDirective = S3MetadataDirective.REPLACE,
                     StorageClass = metadata.StorageClass,
                 },
