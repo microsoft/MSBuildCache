@@ -11,6 +11,17 @@ namespace Microsoft.MSBuildCache.Tests;
 public class HexUtilitiesTests
 {
     [TestMethod]
+    public void BytesToHex()
+    {
+        const string expected = "00019ABCFF";
+
+        string hex = HexUtilities.BytesToHex(new byte[] { 0x00, 0x01, 0x9A, 0xBC, 0xFF });
+
+        Assert.AreEqual(expected, hex);
+        CollectionAssert.AreEqual(HexUtilities.HexToBytes(expected), new byte[] { 0x00, 0x01, 0x9A, 0xBC, 0xFF });
+    }
+
+    [TestMethod]
     [DataRow("0123456789ABCDEFabcdef", new byte[] { 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, 0xAB, 0xCD, 0xEF, })]
     [DataRow("", null)]
     [DataRow(null, null)]

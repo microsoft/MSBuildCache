@@ -1,0 +1,22 @@
+<Project Sdk="MSTest.Sdk">
+  <PropertyGroup>
+    <!-- Only supports x64 due to the RocksDB dependency -->
+    <Platform>x64</Platform>
+    <Platforms>$(Platform)</Platforms>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>Microsoft.MSBuildCache.S3.Tests</RootNamespace>
+    <!-- MSTest requires public test classes even though the test host is an application. -->
+    <NoWarn>$(NoWarn);CA1515</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\S3\Microsoft.MSBuildCache.S3.csproj" />
+  </ItemGroup>
+  <!-- In Release, Common is merged into the S3 assembly, so tests passing Common types to S3 types need the pre-merge assembly. -->
+  <PropertyGroup>
+    <PreMergeS3Assembly>$(MSBuildThisFileDirectory)..\S3\obj\$(Platform)\$(Configuration)\$(TargetFramework)\Microsoft.MSBuildCache.S3.dll</PreMergeS3Assembly>
+  </PropertyGroup>
+  <Target Name="UsePreMergeS3Assembly" AfterTargets="Build">
+    <Error Condition="!Exists('$(PreMergeS3Assembly)')" Text="Expected the pre-merge S3 assembly at '$(PreMergeS3Assembly)'." />
+    <Copy SourceFiles="$(PreMergeS3Assembly)" DestinationFolder="$(OutDir)" />
+  </Target>
+</Project>
