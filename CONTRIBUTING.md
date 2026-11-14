@@ -12,6 +12,8 @@ This project has adopted the [Microsoft Open Source Code of Conduct](https://ope
 For more information, see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
 contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
 
+For design context, see [fingerprinting](docs/fingerprinting.md) and [MSBuild hosting and dependencies](docs/dependencies.md).
+
 ## Building
 
 ### Building MSBuildCache
@@ -31,6 +33,8 @@ Build the msbuild repo:
 Note, MSBuild only needs to be built every time you update MSBuild, not every time you want to build MSBuildCache.
 
 The path to MSBuild is: `..\msbuild\artifacts\bin\bootstrap\net472\MSBuild\Current\Bin\amd64\MSBuild.exe`.
+
+To also compile MSBuildCache against custom MSBuild assemblies, set `MSBuildLibraries` to their directory. This changes compile references; invoke the custom MSBuild executable explicitly when testing the plugin.
 
 Note: when using a locally built MSBuild, many scenario may not work properly, for example C++ builds.
 
@@ -75,6 +79,19 @@ git clean -fdx
 popd
 <path-to-msbuild> /restore /graph /m /nr:false /reportfileaccesses
 ```
+
+### Build-level scenarios
+
+After building the local packages, run the existing build-level scenarios from the repository root in PowerShell 7 (`pwsh`):
+
+```powershell
+.\tests\scenarios.ps1 -MSBuildPath 'C:\path\to\MSBuild.exe' `
+    -Configuration Debug -RequireEnumerationCapability $true
+```
+
+Use a Windows x64 MSBuild host that exposes `FileAccessData.EnumeratePattern`; see the [custom MSBuild instructions](#using-a-custom-msbuild-optional). `-RequireEnumerationCapability $true` makes a missing capability fail rather than skip. Without it, unsupported hosts skip the scenarios with a warning.
+
+Use `-Scenarios` to select individual cases, or omit it to run the full suite. `-LocalPackageDir` selects the local packages, and `-TestRoot` and `-LogDirectory` select the scenario and log locations. The script recreates logs and scenario sandboxes, so use only disposable locations.
 
 ### Settings
 

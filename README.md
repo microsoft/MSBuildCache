@@ -76,6 +76,8 @@ These settings are common across all plugins, although different implementations
 | `$(MSBuildCacheIgnoreDotNetSdkPatchVersion)` | `bool` | false | Whether to ignore the patch version when doing cache lookups. This trades off some correctness for the sake of getting cache hits when the SDK version isn't exactly the same. The default behavior is to consider the exact SDK version, eg. "8.0.404". With this setting set to true, it will instead use something like "8.0.4XX". Note that the major version, minor version, and feature bands are still considered. |
 | `$(MSBuildCacheEnableProbeAndEnumerationFingerprinting)` | `bool` | true | Whether file probes (existence checks) and directory enumerations contribute to the strong fingerprint, enabling correct caching for incremental builds — including cases where MSBuild source globs match different files. Requires an MSBuild that reports directory enumeration patterns; on older versions this is forced to `false` and a message is logged. |
 
+Skipping unchanged outputs reduces disk I/O by relying on saved content identity and file metadata instead of rehashing existing files. Timestamp updates are a separate policy: they can affect downstream incrementality even when contents are unchanged or output replacement was skipped.
+
 When configuring settings which are list types, you should always append to the existing value to avoid overriding the defaults:
 
 ```xml
@@ -186,6 +188,11 @@ This package contains much of the shared logic for the plugins, including handli
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md)
+
+Design documentation:
+
+- [Fingerprinting and observed inputs](docs/fingerprinting.md)
+- [MSBuild hosting and dependencies](docs/dependencies.md)
 
 ## License
 
