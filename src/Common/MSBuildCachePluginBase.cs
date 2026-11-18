@@ -72,6 +72,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     private int _cacheHitCount;
     private long _cacheHitDurationMilliseconds;
     private int _cacheMissCount;
+    private int _fileAccessHandlerFailureCount;
 
     static MSBuildCachePluginBase() =>
         AppDomain.CurrentDomain.AssemblyResolve += (sender, args) =>
@@ -357,6 +358,9 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
     private async Task EndBuildInnerAsync(PluginLoggerBase logger, CancellationToken cancellationToken)
     {
+        // Read before DisposeAsync releases the repository.
+        int lateWriteCount = _fileAccessRepository?.LateWriteCount ?? 0;
+
         try
         {
             if (_cacheClient is not null)
@@ -377,6 +381,17 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         }
 
         LogCacheStats(logger);
+
+        // File access reports arrive on MSBuild's reporting threads, where an exception would crash the build.
+        // The handlers log their errors there instead, and the build fails here: MSBuild fails the build when
+        // EndBuildAsync logs an error.
+        int fileAccessHandlerFailureCount = Volatile.Read(ref _fileAccessHandlerFailureCount);
+        if (lateWriteCount > 0 || fileAccessHandlerFailureCount > 0)
+        {
+            logger.LogError(
+                $"The build may have cached incorrect results: {lateWriteCount} file(s) written after their project finished, " +
+                $"{fileAccessHandlerFailureCount} file access report(s) failed. See the errors above.");
+        }
     }
 
     public override Task<CacheResult> GetCacheResultAsync(BuildRequestData buildRequest, PluginLoggerBase logger, CancellationToken cancellationToken)
@@ -502,7 +517,14 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     {
         if (Initialized)
         {
-            TimeAndLog(_pluginLogger, () => HandleFileAccessInner(fileAccessContext, fileAccessData));
+            try
+            {
+                TimeAndLog(_pluginLogger, () => HandleFileAccessInner(fileAccessContext, fileAccessData));
+            }
+            catch (Exception e)
+            {
+                RecordFileAccessHandlerFailure(e);
+            }
         }
     }
 
@@ -528,8 +550,25 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     {
         if (Initialized)
         {
-            TimeAndLog(_pluginLogger, () => HandleProcessInner(fileAccessContext, processData));
+            try
+            {
+                TimeAndLog(_pluginLogger, () => HandleProcessInner(fileAccessContext, processData));
+            }
+            catch (Exception e)
+            {
+                RecordFileAccessHandlerFailure(e);
+            }
         }
+    }
+
+    /// <summary>
+    /// MSBuild calls the file access and process handlers on its reporting threads, where an exception
+    /// is unhandled and kills the build. Log the failure as an error and fail the build in <see cref="EndBuildAsync"/>.
+    /// </summary>
+    private void RecordFileAccessHandlerFailure(Exception e)
+    {
+        Interlocked.Increment(ref _fileAccessHandlerFailureCount);
+        _pluginLogger?.LogError($"A file access report could not be handled: {e.Message}");
     }
 
     private void HandleProcessInner(FileAccessContext fileAccessContext, ProcessData processData)

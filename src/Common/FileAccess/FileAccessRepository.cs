@@ -6,9 +6,11 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using DotNet.Globbing;
 using Microsoft.Build.Experimental.FileAccess;
 using Microsoft.Build.Experimental.ProjectCache;
+using Microsoft.Build.Framework;
 using Microsoft.MSBuildCache.Fingerprinting;
 
 namespace Microsoft.MSBuildCache.FileAccess;
@@ -36,6 +38,8 @@ internal sealed class FileAccessRepository : IDisposable
 
     private readonly PluginSettings _pluginSettings;
 
+    private int _lateWriteCount;
+
     public FileAccessRepository(PluginLoggerBase logger, PluginSettings pluginSettings)
     {
         _logger = logger;
@@ -53,6 +57,11 @@ internal sealed class FileAccessRepository : IDisposable
         _fileAccessStates.Clear();
     }
 
+    /// <summary>
+    /// The number of files written after their project finished, outside the allowed patterns.
+    /// </summary>
+    public int LateWriteCount => Volatile.Read(ref _lateWriteCount);
+
     public void AddFileAccess(NodeContext nodeContext, FileAccessData fileAccessData)
         => GetFileAccessesState(nodeContext).AddFileAccess(fileAccessData);
 
@@ -63,7 +72,7 @@ internal sealed class FileAccessRepository : IDisposable
         => GetFileAccessesState(nodeContext).FinishProject();
 
     private FileAccessesState GetFileAccessesState(NodeContext nodeContext)
-        => _fileAccessStates.GetOrAdd(nodeContext, nodeContext => new FileAccessesState(nodeContext, _logger, _pluginSettings, _processTable));
+        => _fileAccessStates.GetOrAdd(nodeContext, nodeContext => new FileAccessesState(nodeContext, _logger, _pluginSettings, _processTable, () => Interlocked.Increment(ref _lateWriteCount)));
 
     /// <summary>
     /// Builds the "ever-written or ancestor-of-written" set used to filter self-output probe
@@ -202,6 +211,8 @@ internal sealed class FileAccessRepository : IDisposable
 
         private readonly ConcurrentDictionary<ulong, string> _processTable;
 
+        private readonly Action _onLateWrite;
+
         private readonly StreamWriter _logFileStream;
 
         private Dictionary<string, FileAccessInfo>? _fileTable = new(StringComparer.OrdinalIgnoreCase);
@@ -216,16 +227,23 @@ internal sealed class FileAccessRepository : IDisposable
 
         private bool _isFinished;
 
+        private bool _hasLoggedLateAccess;
+
+        // FinishProject closes the log when no late access is allowed: such accesses are only logged to the build.
+        private bool _isLogClosed;
+
         public FileAccessesState(
             NodeContext nodeContext,
             PluginLoggerBase logger,
             PluginSettings pluginSettings,
-            ConcurrentDictionary<ulong, string> processTable)
+            ConcurrentDictionary<ulong, string> processTable,
+            Action onLateWrite)
         {
             _nodeContext = nodeContext;
             _logger = logger;
             _pluginSettings = pluginSettings;
             _processTable = processTable;
+            _onLateWrite = onLateWrite;
 
             // Only allocate the observations list when the feature flag is on. AddFileAccess uses _observations
             // being null vs non-null as the capture-or-skip signal so flag-off doesn't pay any per-probe cost.
@@ -275,11 +293,36 @@ internal sealed class FileAccessRepository : IDisposable
                             $"This may lead to incorrect caching. Node Id: {_nodeContext.Id}, Process Id: {fileAccessData.ProcessId} ProcessPath: `{processName}` File Path: `{path}`",
                             _pluginSettings.LogAllowFileAccessAfterProjectFinishMatchesAsMessages);
                     }
+                    else if ((fileAccessData.RequestedAccess & RequestedAccess.Write) != 0 && fileAccessData.Error == 0)
+                    {
+                        // A write after the project finished may be an output missing from the cache entry. This method runs on
+                        // MSBuild's file access reporting thread, where an exception would crash the build, so log an error instead.
+                        // The plugin then fails the build when it ends.
+                        _onLateWrite();
+                        _logger.LogError(
+                            $"File written by process `{processName}` after the project finished. " +
+                            $"This may lead to incorrect caching. Node Id: {_nodeContext.Id}, Path: {path}");
+                        return;
+                    }
                     else
                     {
-                        throw new InvalidOperationException(
+                        // A read, a probe, a failed access or a new process cannot change this project's outputs. MSBuild attributes
+                        // a reported access to the request executing on the node when it handles the report, so the access may
+                        // belong to another project. Warn once per project; a misattributed access usually comes with many others.
+                        string message =
                             $"File access reported from process `{processName}` after the project finished. " +
-                            $"This may lead to incorrect caching. Node Id: {_nodeContext.Id}, Path: {path}");
+                            $"It does not write a file, so it cannot change the outputs of this project. Node Id: {_nodeContext.Id}, Path: {path}";
+                        if (_hasLoggedLateAccess)
+                        {
+                            _logger.LogMessage(message, MessageImportance.Low);
+                        }
+                        else
+                        {
+                            _hasLoggedLateAccess = true;
+                            _logger.LogWarning(message);
+                        }
+
+                        return;
                     }
                 }
 
@@ -424,6 +467,12 @@ internal sealed class FileAccessRepository : IDisposable
 
                 _processTable.TryRemove(processData.ProcessId, out _);
 
+                // FinishProject may have closed the log already.
+                if (_isLogClosed)
+                {
+                    return;
+                }
+
                 _logFileStream.WriteLine(
                     "Process exited. PId: {0}, Parent: {1}, Name: {2}, ExitCode: {3}, CreationTime: {4}, ExitTime: {5}",
                     processData.ProcessId,
@@ -459,6 +508,7 @@ internal sealed class FileAccessRepository : IDisposable
                     _pluginSettings.AllowProcessCloseAfterProjectFinishProcessPatterns.Count == 0)
                 {
                     _logFileStream.Dispose();
+                    _isLogClosed = true;
                 }
             }
 
