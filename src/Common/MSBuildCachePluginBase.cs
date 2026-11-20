@@ -215,7 +215,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     {
         _pluginLogger = logger;
 
-        _repoRoot = GetRepoRoot(context, logger);
+        _repoRoot = await GetRepoRootAsync(context, logger, cancellationToken);
         if (_repoRoot == null)
         {
             return;
@@ -1051,7 +1051,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         return true;
     }
 
-    private static string? GetRepoRoot(CacheContext context, PluginLoggerBase logger)
+    private static async Task<string?> GetRepoRootAsync(CacheContext context, PluginLoggerBase logger, CancellationToken cancellationToken)
     {
         IEnumerable<string> projectFilePaths = context.Graph != null
             ? context.Graph.EntryPointNodes.Select(node => node.ProjectInstance.FullPath)
@@ -1084,6 +1084,18 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             return repoRoot;
         }
 
+        // Projects in submodules: the superproject's file hashes include the files of its initialized submodules.
+        string? superprojectRoot = GetOutermostRepoRoot(repoRoots);
+        if (superprojectRoot != null)
+        {
+            List<string> submodules = await new GitFileHashProvider(logger).GetInitializedSubmodulesAsync(superprojectRoot, cancellationToken);
+            if (AreInitializedSubmodules(superprojectRoot, repoRoots, submodules))
+            {
+                logger.LogMessage($"Repo root: {superprojectRoot}, with projects in its submodules: {string.Join(", ", repoRoots.Where(root => !PathsEqual(root, superprojectRoot)))}");
+                return superprojectRoot;
+            }
+        }
+
         logger.LogWarning($"Graph contains projects from multiple git repositories. Disabling the cache. Repo roots: {string.Join(", ", repoRoots)}");
         return null;
 
@@ -1100,6 +1112,43 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             return parentDir != null ? GetRepoRootInternal(parentDir) : null;
         }
     }
+
+    /// <summary>
+    /// Gets the repo root which contains all the others, e.g. a superproject whose submodules hold some of the projects.
+    /// </summary>
+    internal static string? GetOutermostRepoRoot(IReadOnlyCollection<string> repoRoots)
+        => repoRoots.FirstOrDefault(candidate => repoRoots.All(repoRoot => IsSameOrUnder(repoRoot, candidate)));
+
+    /// <summary>
+    /// Whether every repo root other than the superproject is one of its initialized submodules, whose files the
+    /// superproject's file hashes include.
+    /// </summary>
+    /// <param name="superprojectRoot">The superproject.</param>
+    /// <param name="repoRoots">The repo roots of the projects.</param>
+    /// <param name="submodules">The initialized submodules of the superproject, recursively, relative to it.</param>
+    internal static bool AreInitializedSubmodules(string superprojectRoot, IEnumerable<string> repoRoots, IReadOnlyCollection<string> submodules)
+    {
+        HashSet<string> submoduleRoots = new(
+            submodules.Select(submodule => NormalizeDirectory(Path.Combine(superprojectRoot, submodule))),
+            StringComparer.OrdinalIgnoreCase);
+        return repoRoots
+            .Where(repoRoot => !PathsEqual(repoRoot, superprojectRoot))
+            .All(repoRoot => submoduleRoots.Contains(NormalizeDirectory(repoRoot)));
+    }
+
+    private static bool IsSameOrUnder(string path, string directory)
+    {
+        string normalizedPath = NormalizeDirectory(path);
+        string normalizedDirectory = NormalizeDirectory(directory);
+        return normalizedPath.Equals(normalizedDirectory, StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.StartsWith(normalizedDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool PathsEqual(string path1, string path2)
+        => NormalizeDirectory(path1).Equals(NormalizeDirectory(path2), StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeDirectory(string path)
+        => Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
     private static string GetNuGetPackageRoot()
     {

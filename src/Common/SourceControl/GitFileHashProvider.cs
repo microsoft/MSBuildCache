@@ -240,7 +240,7 @@ internal sealed class GitFileHashProvider : ISourceControlFileHashProvider
             cancellationToken);
     }
 
-    private Task<List<string>> GetInitializedSubmodulesAsync(string repoRoot, CancellationToken cancellationToken)
+    internal Task<List<string>> GetInitializedSubmodulesAsync(string repoRoot, CancellationToken cancellationToken)
     {
         string stdErrString = string.Empty;
         return Git.RunAsync(

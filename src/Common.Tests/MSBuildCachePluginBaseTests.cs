@@ -109,6 +109,44 @@ public sealed class MSBuildCachePluginBaseTests
         StringAssert.Contains(logger.LogEntries[1].Message, "there is no ordering between the two nodes", StringComparison.Ordinal);
     }
 
+    [TestMethod]
+    public void RepoRootOfProjectsInASubmoduleIsTheSuperproject()
+    {
+        string[] repoRoots = [@"X:\Super\Sub", @"X:\Super"];
+
+        string? superproject = MSBuildCachePluginBase<PluginSettings>.GetOutermostRepoRoot(repoRoots);
+
+        Assert.AreEqual(@"X:\Super", superproject);
+        Assert.IsTrue(MSBuildCachePluginBase<PluginSettings>.AreInitializedSubmodules(superproject!, repoRoots, ["Sub"]));
+    }
+
+    [TestMethod]
+    public void RepoRootOfProjectsInANestedSubmoduleIsTheSuperproject()
+    {
+        // "git submodule status --recursive" lists the nested submodules with paths relative to the superproject.
+        string[] repoRoots = [@"X:\Super", @"X:\Super\Sub", @"X:\Super\Sub\Nested"];
+
+        string? superproject = MSBuildCachePluginBase<PluginSettings>.GetOutermostRepoRoot(repoRoots);
+
+        Assert.AreEqual(@"X:\Super", superproject);
+        Assert.IsTrue(MSBuildCachePluginBase<PluginSettings>.AreInitializedSubmodules(superproject!, repoRoots, ["Sub", "Sub/Nested"]));
+    }
+
+    [TestMethod]
+    public void NestedRepoWhichIsNotASubmoduleIsNotPartOfTheSuperproject()
+    {
+        // E.g. a clone inside the working tree, or an uninitialized submodule: the superproject's hashes do not cover its files.
+        string[] repoRoots = [@"X:\Super", @"X:\Super\Clone"];
+
+        Assert.IsFalse(MSBuildCachePluginBase<PluginSettings>.AreInitializedSubmodules(@"X:\Super", repoRoots, ["Sub"]));
+    }
+
+    [TestMethod]
+    [DataRow(@"X:\Repo1", @"Y:\Repo2", DisplayName = "Unrelated repos")]
+    [DataRow(@"X:\Repo", @"X:\Repo2", DisplayName = "Sibling repo whose path starts with the same characters")]
+    public void UnrelatedReposHaveNoOutermostRepoRoot(string repoRoot1, string repoRoot2)
+        => Assert.IsNull(MSBuildCachePluginBase<PluginSettings>.GetOutermostRepoRoot([repoRoot1, repoRoot2]));
+
     private static void CheckForDuplicateOutputs(
         MockPluginLogger logger,
         ConcurrentDictionary<string, NodeContext> outputProducer,
