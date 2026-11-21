@@ -4,6 +4,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Text;
@@ -28,17 +29,17 @@ public class PluginSettings
     private static readonly Dictionary<Type, Func<string, object?>> PrimitiveParsers = new()
     {
         { typeof(bool), s => ParseOrNull<bool>(s, bool.TryParse) },
-        { typeof(byte), s => ParseOrNull<byte>(s, byte.TryParse) },
-        { typeof(sbyte), s => ParseOrNull<sbyte>(s, sbyte.TryParse) },
+        { typeof(byte), s => ParseOrNull<byte>(s, (string value, out byte result) => byte.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out result)) },
+        { typeof(sbyte), s => ParseOrNull<sbyte>(s, (string value, out sbyte result) => sbyte.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out result)) },
         { typeof(char), s => ParseOrNull<char>(s, char.TryParse) },
-        { typeof(int), s => ParseOrNull<int>(s, int.TryParse) },
-        { typeof(uint), s => ParseOrNull<uint>(s, uint.TryParse) },
-        { typeof(short), s => ParseOrNull<short>(s, short.TryParse) },
-        { typeof(ushort), s => ParseOrNull<ushort>(s, ushort.TryParse) },
-        { typeof(long), s => ParseOrNull<long>(s, long.TryParse) },
-        { typeof(float), s => ParseOrNull<float>(s, float.TryParse) },
-        { typeof(double), s => ParseOrNull<double>(s, double.TryParse) },
-        { typeof(decimal), s => ParseOrNull<decimal>(s, decimal.TryParse) },
+        { typeof(int), s => ParseOrNull<int>(s, (string value, out int result) => int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out result)) },
+        { typeof(uint), s => ParseOrNull<uint>(s, (string value, out uint result) => uint.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out result)) },
+        { typeof(short), s => ParseOrNull<short>(s, (string value, out short result) => short.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out result)) },
+        { typeof(ushort), s => ParseOrNull<ushort>(s, (string value, out ushort result) => ushort.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out result)) },
+        { typeof(long), s => ParseOrNull<long>(s, (string value, out long result) => long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out result)) },
+        { typeof(float), s => ParseOrNull<float>(s, (string value, out float result) => float.TryParse(value, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out result)) },
+        { typeof(double), s => ParseOrNull<double>(s, (string value, out double result) => double.TryParse(value, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out result)) },
+        { typeof(decimal), s => ParseOrNull<decimal>(s, (string value, out decimal result) => decimal.TryParse(value, NumberStyles.Number | NumberStyles.AllowExponent | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out result)) },
     };
 
     private delegate bool TryParseFunc<T>(string value, out T result);
