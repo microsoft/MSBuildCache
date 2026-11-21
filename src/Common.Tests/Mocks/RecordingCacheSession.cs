@@ -47,6 +47,8 @@ internal sealed class RecordingCacheSession : ICacheSession
 
     public int AddOrGetContentHashListCallCount { get; private set; }
 
+    public StrongFingerprint LastAddedStrongFingerprint { get; private set; }
+
     public bool StartupCompleted => true;
 
     public bool StartupStarted => true;
@@ -133,6 +135,7 @@ internal sealed class RecordingCacheSession : ICacheSession
     public Task<AddOrGetContentHashListResult> AddOrGetContentHashListAsync(Context context, StrongFingerprint strongFingerprint, ContentHashListWithDeterminism contentHashListWithDeterminism, CancellationToken cts, UrgencyHint urgencyHint = UrgencyHint.Nominal)
     {
         AddOrGetContentHashListCallCount++;
+        LastAddedStrongFingerprint = strongFingerprint;
         return Task.FromResult(new AddOrGetContentHashListResult(default(ContentHashListWithDeterminism)));
     }
 
