@@ -1,6 +1,7 @@
 <Project>
   <PropertyGroup>
     <MSBuildCacheSharedCompilationAssembly Condition="'$(MSBuildRuntimeType)' != 'Core'">$(MSBuildThisFileDirectory)net472\Microsoft.MSBuildCache.SharedCompilation.dll</MSBuildCacheSharedCompilationAssembly>
-    <MSBuildCacheSharedCompilationAssembly Condition="'$(MSBuildRuntimeType)' == 'Core'">$(MSBuildThisFileDirectory)net9.0\Microsoft.MSBuildCache.SharedCompilation.dll</MSBuildCacheSharedCompilationAssembly>
+    <MSBuildCacheSharedCompilationAssembly Condition="'$(MSBuildRuntimeType)' == 'Core'">$(MSBuildThisFileDirectory)net10.0\Microsoft.MSBuildCache.SharedCompilation.dll</MSBuildCacheSharedCompilationAssembly>
+    <MSBuildCacheSharedCompilationAssembly Condition="'$(MSBuildRuntimeType)' == 'Core' and $([System.Environment]::Version.Major) &gt;= 11">$(MSBuildThisFileDirectory)net11.0\Microsoft.MSBuildCache.SharedCompilation.dll</MSBuildCacheSharedCompilationAssembly>
   </PropertyGroup>
 </Project>

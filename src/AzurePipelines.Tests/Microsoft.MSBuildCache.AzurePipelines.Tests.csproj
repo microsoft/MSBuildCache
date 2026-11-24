@@ -3,7 +3,7 @@
     <!-- Only supports x64 due to the RocksDB dependency -->
     <Platform>x64</Platform>
     <Platforms>$(Platform)</Platforms>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFrameworks>net10.0;net11.0</TargetFrameworks>
     <RootNamespace>Microsoft.MSBuildCache.AzurePipelines.Tests</RootNamespace>
     <!-- MSTest requires public test classes even though the test host is an application. -->
     <NoWarn>$(NoWarn);CA1515</NoWarn>
@@ -11,4 +11,13 @@
   <ItemGroup>
     <ProjectReference Include="..\AzurePipelines\Microsoft.MSBuildCache.AzurePipelines.csproj" />
   </ItemGroup>
+  <!-- Tests call internal APIs using dependency types that ILRepack merges into the packaged assembly. -->
+  <Target Name="CopyUnmergedAzurePipelinesAssembly" AfterTargets="Build" Condition="'$(Configuration)' == 'Release' and '$(TargetFramework)' != ''">
+    <MSBuild Projects="..\AzurePipelines\Microsoft.MSBuildCache.AzurePipelines.csproj"
+             Targets="GetUnmergedAssemblyPath"
+             Properties="TargetFramework=$(TargetFramework);Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="_UnmergedAzurePipelinesAssembly" />
+    </MSBuild>
+    <Copy SourceFiles="@(_UnmergedAzurePipelinesAssembly)" DestinationFolder="$(OutputPath)" />
+  </Target>
 </Project>
