@@ -104,12 +104,12 @@ public class ObservationFilterTests
         });
 
         // Must include the file itself plus every ancestor up to drive root.
-        Assert.IsTrue(result.Contains(@"X:\Repo\bin\Debug\net9.0\TestProject.dll"));
-        Assert.IsTrue(result.Contains(@"X:\Repo\bin\Debug\net9.0"));
-        Assert.IsTrue(result.Contains(@"X:\Repo\bin\Debug"));
-        Assert.IsTrue(result.Contains(@"X:\Repo\bin"));
-        Assert.IsTrue(result.Contains(@"X:\Repo"));
-        Assert.IsTrue(result.Contains(@"X:\"));
+        Assert.Contains(@"X:\Repo\bin\Debug\net9.0\TestProject.dll", result);
+        Assert.Contains(@"X:\Repo\bin\Debug\net9.0", result);
+        Assert.Contains(@"X:\Repo\bin\Debug", result);
+        Assert.Contains(@"X:\Repo\bin", result);
+        Assert.Contains(@"X:\Repo", result);
+        Assert.Contains(@"X:\", result);
     }
 
     [TestMethod]
@@ -142,7 +142,7 @@ public class ObservationFilterTests
         // Both files plus shared ancestor chain @ "X:\Repo\BIN\Debug" + "X:\Repo\BIN" + "X:\Repo" + "X:\"
         // First write's ancestors get added with their casing; second write's ancestors are deduped via
         // OrdinalIgnoreCase.
-        Assert.AreEqual(6, result.Count);
+        Assert.HasCount(6, result);
     }
 
     [TestMethod]
@@ -156,19 +156,19 @@ public class ObservationFilterTests
             @"X:\Repo\bin\Debug\net9.0\",
         });
 
-        Assert.IsTrue(result.Contains(@"X:\Repo\bin\Debug\net9.0"));
-        Assert.IsFalse(result.Contains(@"X:\Repo\bin\Debug\net9.0\"));
-        Assert.IsTrue(result.Contains(@"X:\Repo\bin\Debug"));
-        Assert.IsTrue(result.Contains(@"X:\Repo\bin"));
-        Assert.IsTrue(result.Contains(@"X:\Repo"));
-        Assert.IsTrue(result.Contains(@"X:\"));
+        Assert.Contains(@"X:\Repo\bin\Debug\net9.0", result);
+        Assert.DoesNotContain(@"X:\Repo\bin\Debug\net9.0\", result);
+        Assert.Contains(@"X:\Repo\bin\Debug", result);
+        Assert.Contains(@"X:\Repo\bin", result);
+        Assert.Contains(@"X:\Repo", result);
+        Assert.Contains(@"X:\", result);
     }
 
     [TestMethod]
     public void BuildEverWrittenOrAncestorSetEmptyInput()
     {
         HashSet<string> result = FileAccessRepository.BuildEverWrittenOrAncestorSet(new List<string>());
-        Assert.AreEqual(0, result.Count);
+        Assert.IsEmpty(result);
     }
 
     [TestMethod]

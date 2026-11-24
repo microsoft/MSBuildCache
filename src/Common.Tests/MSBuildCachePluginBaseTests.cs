@@ -56,7 +56,7 @@ public sealed class MSBuildCachePluginBaseTests
         Assert.AreSame(currentNode, outputProducer[TrailingUniqueOutputPath]);
         Assert.HasCount(2, logger.LogEntries);
         Assert.AreEqual(PluginLogLevel.Error, logger.LogEntries[1].LogLevel);
-        StringAssert.Contains(logger.LogEntries[1].Message, "with a different hash", StringComparison.Ordinal);
+        Assert.Contains("with a different hash", logger.LogEntries[1].Message, StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -81,7 +81,7 @@ public sealed class MSBuildCachePluginBaseTests
         Assert.AreSame(currentNode, outputProducer[TrailingUniqueOutputPath]);
         Assert.HasCount(2, logger.LogEntries);
         Assert.AreEqual(PluginLogLevel.Message, logger.LogEntries[1].LogLevel);
-        StringAssert.Contains(logger.LogEntries[1].Message, "Allowing as content is the same", StringComparison.Ordinal);
+        Assert.Contains("Allowing as content is the same", logger.LogEntries[1].Message, StringComparison.Ordinal);
     }
 
     [TestMethod]
@@ -106,7 +106,7 @@ public sealed class MSBuildCachePluginBaseTests
         Assert.AreSame(currentNode, outputProducer[TrailingUniqueOutputPath]);
         Assert.HasCount(2, logger.LogEntries);
         Assert.AreEqual(PluginLogLevel.Warning, logger.LogEntries[1].LogLevel);
-        StringAssert.Contains(logger.LogEntries[1].Message, "there is no ordering between the two nodes", StringComparison.Ordinal);
+        Assert.Contains("there is no ordering between the two nodes", logger.LogEntries[1].Message, StringComparison.Ordinal);
     }
 
     private static void CheckForDuplicateOutputs(

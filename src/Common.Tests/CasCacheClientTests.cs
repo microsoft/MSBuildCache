@@ -57,7 +57,7 @@ public class CasCacheClientTests
         Assert.AreEqual(0, remoteSession.PutFileCallCount, "Content must not be uploaded when the remote cache is read-only.");
 
         // The node still needs to be written to the local cache.
-        Assert.IsTrue(localSession.PutStreamCallCount > 0, "The node metadata must still be written to the local cache.");
+        Assert.IsGreaterThan(0, localSession.PutStreamCallCount, "The node metadata must still be written to the local cache.");
         Assert.AreEqual(1, localSession.AddOrGetContentHashListCallCount, "The content hash list must still be added to the local cache.");
     }
 
@@ -71,9 +71,9 @@ public class CasCacheClientTests
             await cacheClient.AddNodeInternalAsync(CreateNodeContext(), pathSet: null, CreateNodeBuildResult(), CancellationToken.None);
         }
 
-        Assert.IsTrue(remoteSession.PinCallCount > 0, "The remote session should be pinned to determine what to upload.");
-        Assert.IsTrue(remoteSession.PutStreamCallCount > 0, "Content should be uploaded when the remote cache is writable.");
-        Assert.IsTrue(localSession.PutStreamCallCount > 0, "The node metadata should be written to the local cache.");
+        Assert.IsGreaterThan(0, remoteSession.PinCallCount, "The remote session should be pinned to determine what to upload.");
+        Assert.IsGreaterThan(0, remoteSession.PutStreamCallCount, "Content should be uploaded when the remote cache is writable.");
+        Assert.IsGreaterThan(0, localSession.PutStreamCallCount, "The node metadata should be written to the local cache.");
     }
 
     private static (CasCacheClient CacheClient, RecordingCacheSession LocalSession, RecordingCacheSession RemoteSession) CreateCacheClient(bool remoteCacheIsReadOnly)

@@ -46,7 +46,7 @@ public class FingerprintFactoryTests
         FingerprintEntry onFlagEntry = entriesOn.Single(e => e.Description.Contains(nameof(PluginSettings.EnableProbeAndEnumerationFingerprinting), StringComparison.Ordinal));
 
         Assert.AreNotEqual(offFlagEntry.Description, onFlagEntry.Description, "Flag descriptions should differ.");
-        CollectionAssert.AreNotEqual(offFlagEntry.Hash, onFlagEntry.Hash, "Flag entry hashes should differ.");
+        Assert.AreNotSequenceEqual(offFlagEntry.Hash, onFlagEntry.Hash, "Flag entry hashes should differ.");
 
         // And no other entry should differ between the two factories — the flag is the only setting toggled.
         List<string> commonOff = entriesOff
@@ -55,7 +55,7 @@ public class FingerprintFactoryTests
         List<string> commonOn = entriesOn
             .Where(e => !e.Description.Contains(nameof(PluginSettings.EnableProbeAndEnumerationFingerprinting), StringComparison.Ordinal))
             .Select(e => e.Description).ToList();
-        CollectionAssert.AreEqual(commonOff, commonOn);
+        Assert.AreSequenceEqual(commonOff, commonOn);
     }
 
     /// <summary>
@@ -74,8 +74,8 @@ public class FingerprintFactoryTests
         FingerprintFactory a = CreateFactory(hasher);
         FingerprintFactory b = CreateFactory(hasher);
 
-        CollectionAssert.AreEqual(a.AbsentFileSentinel, b.AbsentFileSentinel, $"AbsentFileSentinel not deterministic for {hashType}.");
-        CollectionAssert.AreEqual(a.ZeroHash, b.ZeroHash, $"ZeroHash not deterministic for {hashType}.");
+        Assert.AreSequenceEqual(a.AbsentFileSentinel, b.AbsentFileSentinel, $"AbsentFileSentinel not deterministic for {hashType}.");
+        Assert.AreSequenceEqual(a.ZeroHash, b.ZeroHash, $"ZeroHash not deterministic for {hashType}.");
     }
 
     /// <summary>
@@ -91,7 +91,7 @@ public class FingerprintFactoryTests
         using IContentHasher hasher = HashInfoLookup.Find(hashType).CreateContentHasher();
         FingerprintFactory factory = CreateFactory(hasher);
 
-        CollectionAssert.AreNotEqual(factory.AbsentFileSentinel, factory.ZeroHash, "AbsentFileSentinel and ZeroHash must not collide.");
+        Assert.AreNotSequenceEqual(factory.AbsentFileSentinel, factory.ZeroHash, "AbsentFileSentinel and ZeroHash must not collide.");
     }
 
     /// <summary>
@@ -108,8 +108,8 @@ public class FingerprintFactoryTests
         int expectedLength = hasher.Info.ByteLength;
         FingerprintFactory factory = CreateFactory(hasher);
 
-        Assert.AreEqual(expectedLength, factory.AbsentFileSentinel.Length, $"AbsentFileSentinel size mismatch for {hashType}.");
-        Assert.AreEqual(expectedLength, factory.ZeroHash.Length, $"ZeroHash size mismatch for {hashType}.");
+        Assert.HasCount(expectedLength, factory.AbsentFileSentinel, $"AbsentFileSentinel size mismatch for {hashType}.");
+        Assert.HasCount(expectedLength, factory.ZeroHash, $"ZeroHash size mismatch for {hashType}.");
     }
 
     /// <summary>
@@ -132,8 +132,7 @@ public class FingerprintFactoryTests
 
         Assert.IsNotNull(fpAbsent);
         Assert.IsNotNull(fpExisting);
-        CollectionAssert.AreNotEqual(fpAbsent.Hash, fpExisting.Hash,
-            "AbsentPathProbe and ExistingProbe of the same path must produce different strong fingerprints.");
+        Assert.AreNotSequenceEqual(fpAbsent.Hash, fpExisting.Hash, "AbsentPathProbe and ExistingProbe of the same path must produce different strong fingerprints.");
     }
 
     /// <summary>
@@ -169,7 +168,7 @@ public class FingerprintFactoryTests
 
         Assert.IsNotNull(fpProbe);
         Assert.IsNotNull(fpRead);
-        CollectionAssert.AreNotEqual(fpProbe.Hash, fpRead.Hash);
+        Assert.AreNotSequenceEqual(fpProbe.Hash, fpRead.Hash);
     }
 
     /// <summary>
@@ -198,8 +197,7 @@ public class FingerprintFactoryTests
 
         Assert.IsNotNull(fpA);
         Assert.IsNotNull(fpB);
-        CollectionAssert.AreEqual(fpA.Hash, fpB.Hash,
-            "ExistingProbe must NOT incorporate file content into the strong fingerprint.");
+        Assert.AreSequenceEqual(fpA.Hash, fpB.Hash, "ExistingProbe must NOT incorporate file content into the strong fingerprint.");
     }
 
     /// <summary>
@@ -235,8 +233,7 @@ public class FingerprintFactoryTests
 
         Assert.IsNotNull(fpBefore);
         Assert.IsNotNull(fpAfter);
-        CollectionAssert.AreNotEqual(fpBefore.Hash, fpAfter.Hash,
-            "PathSets that differ only in DirectoryEnumeration.Members must produce different strong fingerprints.");
+        Assert.AreNotSequenceEqual(fpBefore.Hash, fpAfter.Hash, "PathSets that differ only in DirectoryEnumeration.Members must produce different strong fingerprints.");
     }
 
     /// <summary>
@@ -269,7 +266,7 @@ public class FingerprintFactoryTests
 
         Assert.IsNotNull(fpBefore);
         Assert.IsNotNull(fpAfter);
-        CollectionAssert.AreNotEqual(fpBefore.Hash, fpAfter.Hash);
+        Assert.AreNotSequenceEqual(fpBefore.Hash, fpAfter.Hash);
     }
 
     /// <summary>
@@ -305,8 +302,7 @@ public class FingerprintFactoryTests
 
         Assert.IsNotNull(fpBefore);
         Assert.IsNotNull(fpAfter);
-        CollectionAssert.AreEqual(fpBefore.Hash, fpAfter.Hash,
-            "DirectoryEnumeration must NOT depend on member file contents — only on the member-name list.");
+        Assert.AreSequenceEqual(fpBefore.Hash, fpAfter.Hash, "DirectoryEnumeration must NOT depend on member file contents — only on the member-name list.");
     }
 
     /// <summary>
@@ -338,7 +334,7 @@ public class FingerprintFactoryTests
         // The two should still differ because the Type tag differs, but the underlying member-hash payload
         // for the missing-directory case is AbsentFileSentinel (same payload bytes as the AbsentPathProbe).
         // Different Type entries → different overall fingerprint.
-        CollectionAssert.AreNotEqual(fpMissingDir.Hash, fpAbsent.Hash);
+        Assert.AreNotSequenceEqual(fpMissingDir.Hash, fpAbsent.Hash);
     }
 
     /// <summary>
@@ -370,8 +366,7 @@ public class FingerprintFactoryTests
 
         Assert.IsNotNull(fp1);
         Assert.IsNotNull(fp2);
-        CollectionAssert.AreEqual(fp1.Hash, fp2.Hash,
-            "Strong fingerprint must be deterministic across factory instances.");
+        Assert.AreSequenceEqual(fp1.Hash, fp2.Hash, "Strong fingerprint must be deterministic across factory instances.");
     }
 
     // =========================================================================================
@@ -457,8 +452,7 @@ public class FingerprintFactoryTests
         Fingerprint? lookupFp = await factoryAtLookup.GetStrongFingerprintAsync(cachedPathSet);
         Assert.IsNotNull(populateFp);
         Assert.IsNotNull(lookupFp);
-        CollectionAssert.AreEqual(populateFp.Hash, lookupFp.Hash,
-            "Cached strong FP must match recomputed FP when state is unchanged.");
+        Assert.AreSequenceEqual(populateFp.Hash, lookupFp.Hash, "Cached strong FP must match recomputed FP when state is unchanged.");
     }
 
     /// <summary>
@@ -496,8 +490,7 @@ public class FingerprintFactoryTests
 
         Assert.IsNotNull(build1Fp);
         Assert.IsNotNull(build3Fp);
-        CollectionAssert.AreEqual(build1Fp.Hash, build3Fp.Hash,
-            "Build 3 (clean again) must produce the Build 1 fingerprint so the cache hit is recovered.");
+        Assert.AreSequenceEqual(build1Fp.Hash, build3Fp.Hash, "Build 3 (clean again) must produce the Build 1 fingerprint so the cache hit is recovered.");
     }
 
     /// <summary>
@@ -771,7 +764,7 @@ public class FingerprintFactoryTests
             FingerprintFactory.EnumerateAndSubtract(tempDir.Path, "*.*", writtenMembersToSubtract: null);
 
         Assert.IsNotNull(result);
-        CollectionAssert.AreEquivalent(new[] { "README", "a.cs" }, result.ToArray());
+        Assert.AreSequenceEqual(new[] { "README", "a.cs" }, result.ToArray(), SequenceOrder.InAnyOrder);
     }
 
     [TestMethod]
@@ -789,7 +782,7 @@ public class FingerprintFactoryTests
             ignoredInputPatterns: new[] { Glob.Parse(ignoredPath) });
 
         Assert.IsNotNull(result);
-        CollectionAssert.AreEqual(new[] { "stable.input" }, result.ToArray());
+        Assert.AreSequenceEqual(new[] { "stable.input" }, result.ToArray());
     }
 
     /// <summary>
@@ -827,7 +820,7 @@ public class FingerprintFactoryTests
         IReadOnlyList<string>? result = FingerprintFactory.EnumerateAndSubtract(tempDir.Path, enumerationPattern: "*.cs", writtenMembersToSubtract: null);
 
         Assert.IsNotNull(result);
-        CollectionAssert.AreEquivalent(new[] { "Foo.CS", "bar.cs" }, result.ToArray());
+        Assert.AreSequenceEqual(new[] { "Foo.CS", "bar.cs" }, result.ToArray(), SequenceOrder.InAnyOrder);
     }
 
     // =========================================================================================
@@ -851,7 +844,7 @@ public class FingerprintFactoryTests
             },
             enableProbeAndEnumeration: false);
 
-        Assert.AreEqual(1, entries.Count);
+        Assert.HasCount(1, entries);
         Assert.AreEqual("a.cs", entries[0].Path);
         Assert.AreEqual(ObservationType.FileContentRead, entries[0].Type);
     }
@@ -870,7 +863,7 @@ public class FingerprintFactoryTests
             },
             enableProbeAndEnumeration: true);
 
-        Assert.AreEqual(1, entries.Count);
+        Assert.HasCount(1, entries);
         Assert.AreEqual(ObservationType.FileContentRead, entries[0].Type);
     }
 
@@ -890,7 +883,7 @@ public class FingerprintFactoryTests
             },
             enableProbeAndEnumeration: true);
 
-        Assert.AreEqual(1, entries.Count);
+        Assert.HasCount(1, entries);
         Assert.AreEqual(ObservationType.FileContentRead, entries[0].Type);
     }
 
@@ -910,10 +903,9 @@ public class FingerprintFactoryTests
             },
             enableProbeAndEnumeration: true);
 
-        Assert.AreEqual(2, entries.Count, "Same-path DirectoryEnumeration with different patterns must produce TWO entries.");
-        CollectionAssert.AreEqual(
-            new[] { "*.cs", "*.dll" },
-            entries.Select(e => e.EnumerationPattern).ToArray());
+        Assert.HasCount(2, entries, "Same-path DirectoryEnumeration with different patterns must produce TWO entries.");
+        Assert.AreSequenceEqual(
+            new[] { "*.cs", "*.dll" }, entries.Select(e => e.EnumerationPattern).ToArray());
         Assert.IsTrue(entries.All(e => e.Type == ObservationType.DirectoryEnumeration));
         Assert.IsTrue(entries.All(e => e.Path == "dir"));
     }
@@ -934,7 +926,7 @@ public class FingerprintFactoryTests
             },
             enableProbeAndEnumeration: true);
 
-        Assert.AreEqual(1, entries.Count);
+        Assert.HasCount(1, entries);
         Assert.AreEqual("*.cs", entries[0].EnumerationPattern);
     }
 
@@ -953,7 +945,7 @@ public class FingerprintFactoryTests
             },
             enableProbeAndEnumeration: true);
 
-        Assert.AreEqual(1, entries.Count);
+        Assert.HasCount(1, entries);
         Assert.AreEqual(ObservationType.FileContentRead, entries[0].Type);
         Assert.IsNull(entries[0].EnumerationPattern);
     }
@@ -974,7 +966,7 @@ public class FingerprintFactoryTests
             },
             enableProbeAndEnumeration: true);
 
-        Assert.AreEqual(1, entries.Count);
+        Assert.HasCount(1, entries);
         Assert.AreEqual(ObservationType.FileContentRead, entries[0].Type);
     }
 
@@ -995,7 +987,7 @@ public class FingerprintFactoryTests
             },
             enableProbeAndEnumeration: true);
 
-        Assert.AreEqual(4, entries.Count);
+        Assert.HasCount(4, entries);
         Assert.AreEqual("alpha", entries[0].Path);
         Assert.AreEqual(ObservationType.ExistingProbe, entries[0].Type);
         Assert.AreEqual("mike", entries[1].Path);
@@ -1031,10 +1023,10 @@ public class FingerprintFactoryTests
             TestNormalizer,
             EmptyIgnoredPatterns);
 
-        Assert.AreEqual(1, included.Count);
+        Assert.HasCount(1, included);
         Assert.AreEqual(@"{RepoRoot}src\foo.cs", included[0].Path);
         Assert.AreEqual(ObservationType.FileContentRead, included[0].Type);
-        Assert.AreEqual(0, excluded.Count);
+        Assert.IsEmpty(excluded);
     }
 
     /// <summary>
@@ -1051,8 +1043,8 @@ public class FingerprintFactoryTests
             TestNormalizer,
             EmptyIgnoredPatterns);
 
-        Assert.AreEqual(0, included.Count);
-        Assert.AreEqual(1, excluded.Count);
+        Assert.IsEmpty(included);
+        Assert.HasCount(1, excluded);
         Assert.AreEqual(@"{RepoRoot}src\foo.cs", excluded[0]);
     }
 
@@ -1069,10 +1061,10 @@ public class FingerprintFactoryTests
             TestNormalizer,
             EmptyIgnoredPatterns);
 
-        Assert.AreEqual(1, included.Count);
+        Assert.HasCount(1, included);
         Assert.AreEqual(@"{RepoRoot}src\foo.cs", included[0].Path);
         Assert.AreEqual(ObservationType.ExistingProbe, included[0].Type);
-        Assert.AreEqual(0, excluded.Count);
+        Assert.IsEmpty(excluded);
     }
 
     /// <summary>
@@ -1088,8 +1080,8 @@ public class FingerprintFactoryTests
             TestNormalizer,
             EmptyIgnoredPatterns);
 
-        Assert.AreEqual(0, included.Count);
-        Assert.AreEqual(0, excluded.Count);
+        Assert.IsEmpty(included);
+        Assert.IsEmpty(excluded);
     }
 
     /// <summary>
@@ -1118,8 +1110,8 @@ public class FingerprintFactoryTests
             TestNormalizer,
             EmptyIgnoredPatterns);
 
-        Assert.AreEqual(0, included.Count);
-        Assert.AreEqual(0, excluded.Count);
+        Assert.IsEmpty(included);
+        Assert.IsEmpty(excluded);
     }
 
     /// <summary>
@@ -1143,11 +1135,11 @@ public class FingerprintFactoryTests
             TestNormalizer,
             EmptyIgnoredPatterns);
 
-        Assert.AreEqual(1, included.Count);
+        Assert.HasCount(1, included);
         Assert.AreEqual(ObservationType.DirectoryEnumeration, included[0].Type);
         Assert.AreEqual("*.cs", included[0].EnumerationPattern);
-        CollectionAssert.AreEqual(new[] { "a.cs", "b.cs" }, included[0].Members?.ToArray());
-        CollectionAssert.AreEqual(new[] { "Foo.dll" }, included[0].WrittenMembers?.ToArray());
+        Assert.AreSequenceEqual(new[] { "a.cs", "b.cs" }, included[0].Members?.ToArray());
+        Assert.AreSequenceEqual(new[] { "Foo.dll" }, included[0].WrittenMembers?.ToArray());
     }
 
     /// <summary>
@@ -1163,8 +1155,8 @@ public class FingerprintFactoryTests
             TestNormalizer,
             EmptyIgnoredPatterns);
 
-        Assert.AreEqual(0, included.Count);
-        Assert.AreEqual(0, excluded.Count);
+        Assert.IsEmpty(included);
+        Assert.IsEmpty(excluded);
     }
 
     /// <summary>
@@ -1193,9 +1185,9 @@ public class FingerprintFactoryTests
             TestNormalizer,
             ignored);
 
-        Assert.AreEqual(1, included.Count);
+        Assert.HasCount(1, included);
         Assert.AreEqual(@"{RepoRoot}src\foo.cs", included[0].Path);
-        Assert.AreEqual(0, excluded.Count, "Ignored paths must not appear in the excluded debug list either.");
+        Assert.IsEmpty(excluded, "Ignored paths must not appear in the excluded debug list either.");
     }
 
     private static FingerprintFactory CreateFactory(IContentHasher hasher, IInputHasher? inputHasher = null, PathNormalizer? pathNormalizer = null)
