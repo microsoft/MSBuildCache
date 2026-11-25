@@ -2,6 +2,10 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
+#if NETFRAMEWORK
+using System.Globalization;
+using System.Text;
+#endif
 
 namespace Microsoft.MSBuildCache;
 
@@ -22,6 +26,24 @@ public static class HexUtilities
         => hex == null
             ? Array.Empty<byte>()
             : HexToBytes(hex.AsSpan());
+
+    /// <summary>
+    /// Formats bytes as an uppercase hexadecimal string without a '0x' prefix, ie the inverse of <see cref="HexToBytes(string?)"/>.
+    /// </summary>
+    public static string BytesToHex(ReadOnlySpan<byte> bytes)
+    {
+#if NETFRAMEWORK
+        StringBuilder result = new(bytes.Length * 2);
+        foreach (byte b in bytes)
+        {
+            result.Append(b.ToString("X2", CultureInfo.InvariantCulture));
+        }
+
+        return result.ToString();
+#else
+        return Convert.ToHexString(bytes);
+#endif
+    }
 
     /// <summary>
     /// Parses hexadecimal strings the form '1234abcd' or '0x9876fedb' into

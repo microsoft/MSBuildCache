@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Only supports x64 due to the RocksDB dependency -->
+    <Platform>x64</Platform>
+    <Platforms>$(Platform)</Platforms>
+    <TargetFrameworks>net472;net9.0</TargetFrameworks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Common\Microsoft.MSBuildCache.Common.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Microsoft.MSBuildCache.S3.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="AWSSDK.S3" />
+    <!-- Need an explicit reference since RocksDbNative doesn't use BuildTransitive, otherwise the native binary is not packaged -->
+    <PackageReference Include="RocksDbNative" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="build\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+      <PackagePath>build\</PackagePath>
+    </None>
+    <None Include="..\Common\build\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+      <PackagePath>build\</PackagePath>
+    </None>
+    <None Include="buildMultiTargeting\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+      <PackagePath>buildMultiTargeting\</PackagePath>
+    </None>
+  </ItemGroup>
+  <!-- Signing -->
+  <ItemGroup>
+    <FilesToSign Include="$(TargetPath)" Authenticode="Microsoft400" StrongName="StrongName" />
+  </ItemGroup>
+  <Import Project="$(RepoRoot)build\MSBuildExtensionPackage.targets" />
+</Project>

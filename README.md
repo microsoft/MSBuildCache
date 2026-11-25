@@ -169,6 +169,45 @@ In the cases where an Azure credential is acquired, the following methods will b
 3. If `$(MSBuildCacheManagedIdentityClientId)` is set, it will be used as a user-assigned [managed identity](https://learn.microsoft.com/en-us/entra/identity/managed-identities-azure-resources/overview). This is recommended for non-interactive scenarios.
 4. If `$(MSBuildCacheAllowInteractiveAuth)` is true, credentials will be obtained interactively. This is recommended for developer scenarios.
 
+### Microsoft.MSBuildCache.S3
+[![NuGet Version](https://img.shields.io/nuget/v/Microsoft.MSBuildCache.S3.svg)](https://www.nuget.org/packages/Microsoft.MSBuildCache.S3)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/Microsoft.MSBuildCache.S3.svg)](https://www.nuget.org/packages/Microsoft.MSBuildCache.S3)
+
+This implementation uses [Amazon S3](https://aws.amazon.com/s3/), or an S3-compatible store such as [MinIO](https://min.io/), as the cache storage.
+
+> [!WARNING]
+> This implementation does not yet have a robust security model. All builds using this will need write access to the bucket, so for example an external contributor could send a PR which would write/overwrite arbitrary content which could then be used by CI builds. Builds using this plugin must be restricted to trusted team members. Use at your own risk.
+
+These settings are available in addition to the [Common Settings](#common-settings):
+
+| MSBuild Property Name | Setting Type | Default value | Description |
+| ------------- | ------------ | ------------- | ----------- |
+| `$(MSBuildCacheS3BucketName)` | `string` | | The bucket used for cache storage. Required. |
+| `$(MSBuildCacheS3Region)` | `string` | "us-east-1" | The AWS region. Also used as the signing region when `$(MSBuildCacheS3ServiceUrl)` is set. |
+| `$(MSBuildCacheS3ServiceUrl)` | `Uri` | | The service url of an S3-compatible store, for example `http://localhost:9000` for MinIO. When unset, the AWS endpoint for the region is used. |
+| `$(MSBuildCacheS3ForcePathStyle)` | `bool` | true when `$(MSBuildCacheS3ServiceUrl)` is set, otherwise false | Whether to use path-style addressing. Most S3-compatible stores require this. |
+| `$(MSBuildCacheS3KeyPrefix)` | `string` | "msbuildcache" | The key prefix under which all cache objects are stored. |
+| `$(MSBuildCacheS3MultipartThresholdBytes)` | `long` | 33554432 (32 MB) | Objects at or above this size are transferred as multiple parts in parallel instead of as a single request. |
+| `$(MSBuildCacheS3MultipartPartSizeBytes)` | `long` | 8388608 (8 MB) | The part size for multipart transfers. Values below S3's 5 MB minimum are raised to it. |
+| `$(MSBuildCacheS3MaxConcurrentPartsPerObject)` | `int` | 8 | How many parts of a single object are transferred concurrently. |
+| `$(MSBuildCacheS3ContentRenewalAgeDays)` | `double` | 0 | Rewrites reused content in place once it reaches this age. Zero rewrites it on every reuse. |
+
+The bucket must already exist. Credentials are resolved in the following order:
+1. If [`AWSCredentials`](https://docs.aws.amazon.com/sdkfornet/v3/apidocs/items/Runtime/TAWSCredentials.html) are provided directly in the plugin's constructor, they are used. This only applies when using the programmatic project cache API.
+2. Otherwise the [default AWS credential chain](https://docs.aws.amazon.com/sdk-for-net/v3/developer-guide/creds-assign.html) is used, for example the `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` environment variables or an instance role.
+
+Example configuration for a local MinIO instance:
+
+```xml
+<ItemGroup>
+  <GlobalPackageReference Include="Microsoft.MSBuildCache.S3" Version="..." />
+</ItemGroup>
+
+<PropertyGroup>
+  <MSBuildCacheS3BucketName>msbuildcache</MSBuildCacheS3BucketName>
+  <MSBuildCacheS3ServiceUrl>http://localhost:9000</MSBuildCacheS3ServiceUrl>
+</PropertyGroup>
+```
 ## Other Packages
 
 ### Microsoft.MSBuildCache.SharedCompilation
