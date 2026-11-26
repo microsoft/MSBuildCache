@@ -262,13 +262,9 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         HashSet<string> globalPropertiesToIgnore = new(Settings.GlobalPropertiesToIgnore, StringComparer.OrdinalIgnoreCase);
         _nodeDescriptorFactory = new NodeDescriptorFactory(globalPropertiesToIgnore);
 
-        ProjectGraph graph = GetProjectGraph(context, logger);
+        (ProjectGraph graph, IReadOnlyDictionary<ProjectGraphNode, ImmutableList<string>> targetListPerNode) = GetProjectGraph(context, logger);
         Parser parser = new(logger, _repoRoot);
         IReadOnlyDictionary<ProjectGraphNode, ParserInfo> parserInfoForNodes = parser.Parse(graph);
-
-        // In practice, the underlying type of the IReadOnlyCollection is a ICollection<string> so attempt to cast first. We're not mutating the collection so still abiding by the readonly-ness.
-        ICollection<string> entryProjectTargets = context.RequestedTargets as ICollection<string> ?? new List<string>(context.RequestedTargets);
-        IReadOnlyDictionary<ProjectGraphNode, ImmutableList<string>> targetListPerNode = graph.GetTargetLists(entryProjectTargets);
 
         _nodeContexts = new(parserInfoForNodes.Count);
         Dictionary<ProjectGraphNode, NodeContext> nodeContextsByNode = new(parserInfoForNodes.Count);
@@ -1154,24 +1150,80 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         return fileHashes;
     }
 
-    private ProjectGraph GetProjectGraph(CacheContext context, PluginLoggerBase logger)
+    internal static (ProjectGraph Graph, IReadOnlyDictionary<ProjectGraphNode, ImmutableList<string>> TargetListPerNode) GetProjectGraph(CacheContext context, PluginLoggerBase logger)
     {
+        // In practice, the underlying type of the IReadOnlyCollection is a ICollection<string> so attempt to cast first. We're not mutating the collection so still abiding by the readonly-ness.
+        ICollection<string> entryProjectTargets = context.RequestedTargets as ICollection<string> ?? new List<string>(context.RequestedTargets);
+
         if (context.Graph != null)
         {
             logger.LogMessage($"Project graph with {context.Graph.ProjectNodes.Count} nodes provided.");
-            return context.Graph;
+            return (context.Graph, context.Graph.GetTargetLists(entryProjectTargets));
         }
 
         if (context.GraphEntryPoints != null)
         {
+            if (GraphBuildRequestInitialization.IsGraphBuildInitializedFromBuildRequest(context)
+                && TryGetSolutionGraph(context, logger) is { } solutionGraph)
+            {
+                return solutionGraph;
+            }
+
             logger.LogMessage($"Constructing project graph using {context.GraphEntryPoints.Count} entry points.");
             Stopwatch stopwatch = Stopwatch.StartNew();
             ProjectGraph graph = new(context.GraphEntryPoints);
             logger.LogMessage($"Constructed project graph with {graph.ProjectNodes.Count} nodes in {stopwatch.Elapsed.TotalSeconds:F2}s.");
-            return graph;
+            return (graph, graph.GetTargetLists(entryProjectTargets));
         }
 
         throw new InvalidOperationException($"{nameof(CacheContext)} did not contain a {nameof(context.Graph)} or {nameof(context.GraphEntryPoints)}");
+    }
+
+    /// <summary>
+    /// When MSBuild initialized the plugin from a build request in a graph build (see <see cref="GraphBuildRequestInitialization"/>),
+    /// rebuilds the graph of the solution being built, with the solution build's targets.
+    /// Returns null when that graph cannot be confirmed: the caller then keeps the graph of the entry points.
+    /// </summary>
+    private static (ProjectGraph Graph, IReadOnlyDictionary<ProjectGraphNode, ImmutableList<string>> TargetListPerNode)? TryGetSolutionGraph(CacheContext context, PluginLoggerBase logger)
+    {
+        string requestedTargets = string.Join(";", context.RequestedTargets);
+        logger.LogMessage(
+            $"MSBuild initialized the project cache from a build request (targets `{requestedTargets}`) instead of the project graph of this graph build. "
+            + "Without a fix, the graph misses the solution's project dependencies, every project gets these targets, and most projects miss the cache.",
+            MessageImportance.High);
+
+        try
+        {
+            ProjectGraphEntryPoint? solutionEntryPoint = GraphBuildRequestInitialization.CreateSolutionEntryPoint(context.GraphEntryPoints!, out string reason);
+            if (solutionEntryPoint is null)
+            {
+                logger.LogMessage($"Cannot rebuild the graph of the build: {reason}. Using the entry points of the build request.", MessageImportance.High);
+                return null;
+            }
+
+            Stopwatch stopwatch = Stopwatch.StartNew();
+            ProjectGraph graph = new(solutionEntryPoint.Value);
+            IReadOnlyDictionary<ProjectGraphNode, ImmutableList<string>> targetListPerNode = graph.GetTargetLists(GraphBuildRequestInitialization.SolutionBuildTargets);
+
+            // The request's targets are a node's target list in the graph MSBuild builds. If no node of this graph has them, it is not that graph.
+            if (!GraphBuildRequestInitialization.ContainsTargetList(targetListPerNode, context.RequestedTargets))
+            {
+                logger.LogMessage(
+                    $"Rebuilt the graph of `{solutionEntryPoint.Value.ProjectFile}`, but no project gets the targets `{requestedTargets}` in it, so it is not the graph being built. Using the entry points of the build request.",
+                    MessageImportance.High);
+                return null;
+            }
+
+            logger.LogMessage(
+                $"Rebuilt the graph of `{solutionEntryPoint.Value.ProjectFile}` with {graph.ProjectNodes.Count} nodes in {stopwatch.Elapsed.TotalSeconds:F2}s, for the targets `{string.Join(";", GraphBuildRequestInitialization.SolutionBuildTargets)}`.",
+                MessageImportance.High);
+            return (graph, targetListPerNode);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogMessage($"Cannot rebuild the graph of the build: {ex.GetType().Name}: {ex.Message}. Using the entry points of the build request.", MessageImportance.High);
+            return null;
+        }
     }
 
     private void LogCacheStats(PluginLoggerBase logger)
