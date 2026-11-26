@@ -72,6 +72,73 @@ public sealed class FileAccessRepositoryTests
         Assert.AreEqual(logAsMessage ? PluginLogLevel.Message : PluginLogLevel.Warning, logger.LogEntries[0].LogLevel);
     }
 
+    [TestMethod]
+    public void LateReadsAreAWarningOnceThenMessages()
+    {
+        string testDirectory = CreateTestDirectory();
+        MockPluginLogger logger = new();
+        using FileAccessRepository repository = new(logger, CreateSettings(testDirectory, new Dictionary<string, string>()));
+        NodeContext nodeContext = CreateNodeContext(testDirectory);
+
+        _ = repository.FinishProject(nodeContext);
+        repository.AddFileAccess(nodeContext, CreateFileAccess(Path.Combine(testDirectory, "a.csproj"), RequestedAccess.Read, error: 0));
+        repository.AddFileAccess(nodeContext, CreateFileAccess(Path.Combine(testDirectory, "b.csproj"), RequestedAccess.Probe, error: 0));
+
+        Assert.HasCount(2, logger.LogEntries);
+        Assert.AreEqual(PluginLogLevel.Warning, logger.LogEntries[0].LogLevel);
+        Assert.AreEqual(PluginLogLevel.Message, logger.LogEntries[1].LogLevel);
+        Assert.AreEqual(0, repository.LateWriteCount);
+    }
+
+    [TestMethod]
+    public void LateWriteIsAnError()
+    {
+        string testDirectory = CreateTestDirectory();
+        MockPluginLogger logger = new();
+        using FileAccessRepository repository = new(logger, CreateSettings(testDirectory, new Dictionary<string, string>()));
+        NodeContext nodeContext = CreateNodeContext(testDirectory);
+
+        _ = repository.FinishProject(nodeContext);
+        repository.AddFileAccess(nodeContext, CreateFileAccess(Path.Combine(testDirectory, "out.dll"), RequestedAccess.Write, error: 0));
+
+        Assert.HasCount(1, logger.LogEntries);
+        Assert.AreEqual(PluginLogLevel.Error, logger.LogEntries[0].LogLevel);
+        Assert.AreEqual(1, repository.LateWriteCount);
+    }
+
+    [TestMethod]
+    public void LateFailedWriteIsAWarning()
+    {
+        string testDirectory = CreateTestDirectory();
+        MockPluginLogger logger = new();
+        using FileAccessRepository repository = new(logger, CreateSettings(testDirectory, new Dictionary<string, string>()));
+        NodeContext nodeContext = CreateNodeContext(testDirectory);
+
+        _ = repository.FinishProject(nodeContext);
+        repository.AddFileAccess(nodeContext, CreateFileAccess(Path.Combine(testDirectory, "out.dll"), RequestedAccess.Write, error: 5));
+
+        Assert.HasCount(1, logger.LogEntries);
+        Assert.AreEqual(PluginLogLevel.Warning, logger.LogEntries[0].LogLevel);
+        Assert.AreEqual(0, repository.LateWriteCount);
+    }
+
+    [TestMethod]
+    public void LateProcessExitIsAWarning()
+    {
+        string testDirectory = CreateTestDirectory();
+        MockPluginLogger logger = new();
+        using FileAccessRepository repository = new(logger, CreateSettings(testDirectory, new Dictionary<string, string>()));
+        NodeContext nodeContext = CreateNodeContext(testDirectory);
+
+        _ = repository.FinishProject(nodeContext);
+        repository.AddProcess(
+            nodeContext,
+            new ProcessData(Path.Combine(testDirectory, "detached.exe"), 123, 1, DateTime.UtcNow, DateTime.UtcNow, 0));
+
+        Assert.HasCount(1, logger.LogEntries);
+        Assert.AreEqual(PluginLogLevel.Warning, logger.LogEntries[0].LogLevel);
+    }
+
     private string CreateTestDirectory()
     {
         string testDirectory = Path.Combine(
@@ -107,14 +174,17 @@ public sealed class FileAccessRepositoryTests
     }
 
     private static FileAccessData CreateFileAccess(string path)
+        => CreateFileAccess(path, RequestedAccess.Read, error: 1);
+
+    private static FileAccessData CreateFileAccess(string path, RequestedAccess requestedAccess, uint error)
         => new(
             ReportedFileOperation.CreateFile,
-            RequestedAccess.Read,
+            requestedAccess,
             processId: 123,
             id: 0,
             correlationId: 0,
-            error: 1,
-            DesiredAccess.GENERIC_READ,
+            error,
+            (requestedAccess & RequestedAccess.Write) != 0 ? DesiredAccess.GENERIC_WRITE : DesiredAccess.GENERIC_READ,
             FlagsAndAttributes.FILE_ATTRIBUTE_NORMAL,
             path,
             processArgs: null,
