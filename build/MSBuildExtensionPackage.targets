@@ -82,16 +82,22 @@
     />
     </ItemGroup>
 
+    <!--
+      ILRepack runs in the output directory and gets the input assemblies by file name: with full paths, the command line of
+      ~100 assemblies exceeds what cmd.exe accepts (8191 characters) under a deep enough directory, and gets mangled.
+    -->
     <PropertyGroup>
+      <IlRepackOutputDirectory>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(OutputPath)'))</IlRepackOutputDirectory>
       <IlRepackCommand>$(ILRepack) /allowduplicateresources /union /parallel /out:&quot;$(TargetPath)&quot; @(LibraryPaths->'/lib:&quot;%(FullPath)\.&quot;', ' ')</IlRepackCommand>
       <IlRepackCommand Condition="'$(IlRepackVerbose)' == 'true'">$(IlRepackCommand) /verbose</IlRepackCommand>
       <IlRepackCommand Condition="'$(DelaySign)' == 'true'">$(IlRepackCommand) /delaysign</IlRepackCommand>
-      <IlRepackCommand Condition="'$(AssemblyOriginatorKeyFile)' != ''">$(IlRepackCommand) /keyfile:$(AssemblyOriginatorKeyFile)</IlRepackCommand>
-      <IlRepackCommand>$(IlRepackCommand) @(InputAssemblies->'%(FullPath)', ' ')</IlRepackCommand>
+      <IlRepackCommand Condition="'$(AssemblyOriginatorKeyFile)' != ''">$(IlRepackCommand) /keyfile:$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(AssemblyOriginatorKeyFile)'))</IlRepackCommand>
+      <IlRepackCommand>$(IlRepackCommand) @(InputAssemblies->'%(Filename)%(Extension)', ' ')</IlRepackCommand>
     </PropertyGroup>
 
     <Exec
       Command="$(IlRepackCommand)"
+      WorkingDirectory="$(IlRepackOutputDirectory)"
       IgnoreStandardErrorWarningFormat="true"
     />
   </Target>
