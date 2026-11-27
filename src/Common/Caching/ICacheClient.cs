@@ -17,6 +17,7 @@ public interface ICacheClient : IAsyncDisposable
         PathSet? pathSet,
         IReadOnlyCollection<string> outputPaths,
         Func<IReadOnlyDictionary<string, ContentHash>, NodeBuildResult> nodeBuildResultBuilder,
+        bool publish,
         CancellationToken cancellationToken);
 
     Task<(PathSet?, NodeBuildResult?)> GetNodeAsync(NodeContext nodeContext, bool materializeOutputs, CancellationToken cancellationToken);

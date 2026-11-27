@@ -212,6 +212,10 @@ internal sealed class FileAccessRepository : IDisposable
         // EnableProbeAndEnumerationFingerprinting is off — AddFileAccess uses null as the signal to short-circuit.
         private List<ObservedAccess>? _observations;
 
+        // Paths probed and found existing, to detect projects using outputs left by a previous build.
+        // Null when SkipNodesWithLeftoverOutputs is off, whatever EnableProbeAndEnumerationFingerprinting is.
+        private HashSet<string>? _existingProbes;
+
         private long _fileAccessCounter;
 
         private bool _isFinished;
@@ -232,6 +236,11 @@ internal sealed class FileAccessRepository : IDisposable
             if (_pluginSettings.EnableProbeAndEnumerationFingerprinting)
             {
                 _observations = new List<ObservedAccess>();
+            }
+
+            if (_pluginSettings.SkipNodesWithLeftoverOutputs)
+            {
+                _existingProbes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             }
 
             string logFilePath = Path.Combine(nodeContext.LogDirectory, "fileAccesses.log");
@@ -338,6 +347,11 @@ internal sealed class FileAccessRepository : IDisposable
 
                 if (observationType.HasValue)
                 {
+                    if (observationType.Value == ObservationType.ExistingProbe)
+                    {
+                        _existingProbes?.Add(path);
+                    }
+
                     // Skip capture entirely when the feature flag is off (probes are the majority of events).
                     if (_observations != null && operation != ReportedFileOperation.RemoveDirectory)
                     {
@@ -440,6 +454,7 @@ internal sealed class FileAccessRepository : IDisposable
             Dictionary<string, FileAccessInfo> fileTable;
             List<RemoveDirectoryOperation> deletedDirectories;
             List<ObservedAccess>? observations;
+            HashSet<string>? existingProbes;
             lock (_stateLock)
             {
                 _isFinished = true;
@@ -448,11 +463,13 @@ internal sealed class FileAccessRepository : IDisposable
                 fileTable = _fileTable!;
                 deletedDirectories = _deletedDirectories!;
                 observations = _observations;
+                existingProbes = _existingProbes;
 
                 // Allow memory to be reclaimed
                 _fileTable = null;
                 _deletedDirectories = null;
                 _observations = null;
+                _existingProbes = null;
 
                 if (_pluginSettings.AllowFileAccessAfterProjectFinishFilePatterns.Count == 0 &&
                     _pluginSettings.AllowFileAccessAfterProjectFinishProcessPatterns.Count == 0 &&
@@ -466,6 +483,7 @@ internal sealed class FileAccessRepository : IDisposable
                 fileTable,
                 deletedDirectories,
                 observations,
+                existingProbes,
                 _pluginSettings.IgnoredInputPatterns);
         }
 
@@ -482,6 +500,7 @@ internal sealed class FileAccessRepository : IDisposable
             Dictionary<string, FileAccessInfo> fileTable,
             List<RemoveDirectoryOperation> deletedDirectories,
             List<ObservedAccess>? observations,
+            HashSet<string>? existingProbes,
             IReadOnlyCollection<Glob> ignoredInputPatterns)
         {
             var outputs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -602,7 +621,12 @@ internal sealed class FileAccessRepository : IDisposable
                 }
             }
 
-            return new FileAccesses(allObservations, outputs);
+            // Existing probes of paths the project wrote reflect its own writes, not the state it started from.
+            List<string> existingProbesNotWritten = existingProbes?
+                .Where(path => !(fileTable.TryGetValue(path, out FileAccessInfo? fileInfo) && EverWritten(fileInfo)))
+                .ToList() ?? new List<string>();
+
+            return new FileAccesses(allObservations, outputs, existingProbesNotWritten);
         }
 
         /// <summary>
