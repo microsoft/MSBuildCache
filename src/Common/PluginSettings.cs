@@ -120,8 +120,9 @@ public class PluginSettings
     /// <c>IntermediateOutputPath</c>) by a previous build without writing them, e.g. an incremental build whose targets were up to date.
     /// Outputs are the files a project writes, so such a project's outputs would miss the files it skipped, and a cache hit
     /// in another clone would not place them. The project's result is still used by its dependents in this build.
+    /// On by default: set it to false only to cache such projects anyway.
     /// </summary>
-    public bool SkipNodesWithLeftoverOutputs { get; init; }
+    public bool SkipNodesWithLeftoverOutputs { get; init; } = true;
 
     /// <summary>
     /// Enables probe and directory-enumeration tracking in fingerprints. When false, only file content
