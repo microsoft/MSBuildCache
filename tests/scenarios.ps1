@@ -16,6 +16,10 @@
 #                                 still hit, across both clean and incremental rebuilds
 #   SourceFileChangeMiss      — Editing a source file must miss, and rebuilding must then hit
 #   ThirdBuildAllHits         — Three builds, no change: builds 2 AND 3 must both be 100% hits
+#   OutsideGraphWriteHit      — A file a project outside the graph writes in the node's obj, which the
+#                                 node only reads, is not a leftover output: the node is added and hits
+#   OutsideGraphLeftoverSkipped— The same file left by a previous build, which nothing writes in this
+#                                 build, is a leftover output: the node is not added
 #
 # These exercise the scenarios at the build-system level (the unit tests pin the
 # strong-FP behavior in isolation; these prove the feature delivers in real MSBuild builds).
@@ -686,6 +690,111 @@ public static class Initial { public static int Value => 1; }
     Reset-OutputDirectories -ProjectDir $sandbox.ProjectDir -PreservePaths @("$dynamicRel\Initial.cs")
     $third = Invoke-ScenarioBuild -Sandbox $sandbox -Step 'third'
     Assert-CacheStats -Result $third -ExpectedHits 1 -ExpectedMisses 0 -ScenarioName 'ThirdBuildAllHits' -Step 'third'
+}
+
+function Add-OutsideGraphGeneratorTarget
+{
+    # Mimics WPF markup compilation, which builds a temporary project (`*_wpftmp.csproj`) in the
+    # project's intermediate output directory. That project is not a node of the graph, and it writes
+    # files there, e.g. the target framework moniker attribute file, so the project's own target
+    # producing the file is then skipped as up to date and the project only reads it.
+    # Here generator\Generator.proj, built with the MSBuild task, writes obj\...\Generated.cs, incrementally
+    # like GenerateTargetFrameworkMonikerAttribute, and the project compiles it without writing it.
+    param(
+        [Parameter(Mandatory = $true)] [string] $ProjectDir
+    )
+
+    # In a subdirectory: a second project file next to TestProject.csproj would make MSBuild ask which one to build.
+    $generatorDir = Join-Path $ProjectDir "generator"
+    New-Item -ItemType Directory -Path $generatorDir -Force > $null
+    Set-Content -Path (Join-Path $generatorDir "Generator.proj") -NoNewline -Value @"
+<Project>
+    <Target Name="Generate" Inputs="`$(MSBuildThisFileFullPath)" Outputs="`$(GeneratedFile)">
+        <WriteLinesToFile File="`$(GeneratedFile)" Lines="public static class Generated { public static int Value => 1%3B }" Overwrite="true" />
+    </Target>
+</Project>
+"@
+
+    Set-Content -Path (Join-Path $ProjectDir "Directory.Build.targets") -NoNewline -Value @"
+<Project>
+    <Target Name="GenerateOutsideGraph" BeforeTargets="CoreCompile">
+        <MSBuild Projects="`$(MSBuildProjectDirectory)\generator\Generator.proj" Targets="Generate" Properties="GeneratedFile=`$(MSBuildProjectDirectory)\`$(IntermediateOutputPath)Generated.cs" />
+        <ItemGroup>
+            <Compile Include="`$(IntermediateOutputPath)Generated.cs" />
+        </ItemGroup>
+    </Target>
+</Project>
+"@
+
+    Push-Location $ProjectDir
+    & git add . *> $null
+    & git commit -m "add a generator project outside the graph" *> $null
+    Pop-Location
+}
+
+function Assert-LeftoverOutputsSkipCount
+{
+    param(
+        [Parameter(Mandatory = $true)] [pscustomobject] $Result,
+        [Parameter(Mandatory = $true)] [int] $Expected,
+        [Parameter(Mandatory = $true)] [string] $Context
+    )
+
+    $match = [regex]::Match((Get-Content (Join-Path $Result.LogDir 'stdout.txt') -Raw), 'Not Added \(leftover outputs\): (?<Value>\d+)')
+    $actual = if ($match.Success) { [int] $match.Groups['Value'].Value } else { 0 }
+    if ($actual -ne $Expected) {
+        throw "[$Context] expected $Expected node(s) not added as using leftover outputs, got $actual."
+    }
+}
+
+# Scenario — A project outside the graph, built by a task of the node, writes a file in the node's
+# intermediate output directory, and the node only reads it. The file was written by this build, so
+# it is not a leftover output: the node is added to the cache and the next build hits.
+$ScenarioFunctions['OutsideGraphWriteHit'] = {
+    $sandbox = New-ScenarioSandbox -ScenarioName 'OutsideGraphWriteHit'
+    Add-OutsideGraphGeneratorTarget -ProjectDir $sandbox.ProjectDir
+    $properties = @{ MSBuildCacheSkipNodesWithLeftoverOutputs = 'true' }
+
+    $cold = Invoke-ScenarioBuild -Sandbox $sandbox -Step 'cold' -ExtraProperties $properties
+    Assert-CacheStats -Result $cold -ExpectedHits 0 -ExpectedMisses 1 -ScenarioName 'OutsideGraphWriteHit' -Step 'cold'
+    Assert-LeftoverOutputsSkipCount -Result $cold -Expected 0 -Context 'OutsideGraphWriteHit :: cold'
+
+    Reset-OutputDirectories -ProjectDir $sandbox.ProjectDir
+    $warm = Invoke-ScenarioBuild -Sandbox $sandbox -Step 'warm' -ExtraProperties $properties
+    Assert-CacheStats -Result $warm -ExpectedHits 1 -ExpectedMisses 0 -ScenarioName 'OutsideGraphWriteHit' -Step 'warm'
+}
+
+# Scenario — The same file, left in the intermediate output directory by a previous build: after a
+# source edit, a build over empty output directories except that file skips the generator as up to
+# date, so nothing writes the file in this build and the node only reads it. It is a leftover output,
+# and the node is not added.
+$ScenarioFunctions['OutsideGraphLeftoverSkipped'] = {
+    $sandbox = New-ScenarioSandbox -ScenarioName 'OutsideGraphLeftoverSkipped'
+    Add-OutsideGraphGeneratorTarget -ProjectDir $sandbox.ProjectDir
+    $properties = @{ MSBuildCacheSkipNodesWithLeftoverOutputs = 'true' }
+
+    $cold = Invoke-ScenarioBuild -Sandbox $sandbox -Step 'cold' -ExtraProperties $properties
+    Assert-CacheStats -Result $cold -ExpectedHits 0 -ExpectedMisses 1 -ScenarioName 'OutsideGraphLeftoverSkipped' -Step 'cold'
+    Assert-LeftoverOutputsSkipCount -Result $cold -Expected 0 -Context 'OutsideGraphLeftoverSkipped :: cold'
+
+    # Keep only the generated file, so that it is the one leftover output.
+    $generated = Get-ChildItem -Path (Join-Path $sandbox.ProjectDir 'obj') -Recurse -Filter 'Generated.cs' | Select-Object -First 1
+    if (-not $generated) {
+        throw "[OutsideGraphLeftoverSkipped :: cold] the generator project did not write Generated.cs."
+    }
+    $generatedRel = $generated.FullName.Substring($sandbox.ProjectDir.Length + 1)
+    Reset-OutputDirectories -ProjectDir $sandbox.ProjectDir -PreservePaths @($generatedRel)
+    Add-Content -Path (Join-Path $sandbox.ProjectDir 'Program.cs') -Value @"
+
+public static class ScenarioEdit { public static int Value => 42; }
+"@
+
+    $leftover = Invoke-ScenarioBuild -Sandbox $sandbox -Step 'leftover' -ExtraProperties $properties
+    Assert-CacheStats -Result $leftover -ExpectedHits 0 -ExpectedMisses 1 -ScenarioName 'OutsideGraphLeftoverSkipped' -Step 'leftover'
+    Assert-LeftoverOutputsSkipCount -Result $leftover -Expected 1 -Context 'OutsideGraphLeftoverSkipped :: leftover'
+    if ((Get-Content (Join-Path $leftover.LogDir 'stdout.txt') -Raw) -notmatch [regex]::Escape("$generatedRel`` in its output directories")) {
+        throw "[OutsideGraphLeftoverSkipped :: leftover] the leftover output reported is not $generatedRel."
+    }
 }
 
 # ----------------------------------------------------------------------------------------
