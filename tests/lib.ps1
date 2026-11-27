@@ -108,7 +108,8 @@ function Invoke-MSBuildCacheBuild
     $output = Get-Content $stdout -Raw
     $hitMatch = [regex]::Match($output, 'Cache Hit Count: (?<Value>\d+)')
     $missMatch = [regex]::Match($output, 'Cache Miss Count: (?<Value>\d+)')
-    $ratioMatch = [regex]::Match($output, 'Cache Hit Ratio: (?<Value>\d+\.\d+%)')
+    # The plugin formats the ratio with the current culture, e.g. "50.0%" in en-US and "50,0 %" in fr-FR.
+    $ratioMatch = [regex]::Match($output, 'Cache Hit Ratio: (?<Value>\d+[.,]\d+\s?%)')
     if (-not ($hitMatch.Success -and $missMatch.Success -and $ratioMatch.Success))
     {
         throw "[$Context] could not parse cache statistics from $stdout."
