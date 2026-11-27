@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Microsoft.Build.Execution;
 using Microsoft.Build.Experimental.FileAccess;
 using Microsoft.MSBuildCache.FileAccess;
@@ -72,6 +73,35 @@ public sealed class FileAccessRepositoryTests
         Assert.AreEqual(logAsMessage ? PluginLogLevel.Message : PluginLogLevel.Warning, logger.LogEntries[0].LogLevel);
     }
 
+    [TestMethod]
+    [DataRow(false, false)]
+    [DataRow(true, false)]
+    [DataRow(false, true)]
+    [DataRow(true, true)]
+    public void ExistingProbesOfPathsNotWrittenAreCapturedOnlyToSkipLeftoverOutputs(bool skipNodesWithLeftoverOutputs, bool probeFingerprinting)
+    {
+        string testDirectory = CreateTestDirectory();
+        string leftoverPath = Path.Combine(testDirectory, "leftover.dll");
+        string writtenPath = Path.Combine(testDirectory, "written.dll");
+        PluginSettings settings = CreateSettings(
+            testDirectory,
+            new Dictionary<string, string>
+            {
+                [nameof(PluginSettings.SkipNodesWithLeftoverOutputs)] = skipNodesWithLeftoverOutputs.ToString(),
+                [nameof(PluginSettings.EnableProbeAndEnumerationFingerprinting)] = probeFingerprinting.ToString(),
+            });
+
+        using FileAccessRepository repository = new(NullPluginLogger.Instance, settings);
+        NodeContext nodeContext = CreateNodeContext(testDirectory);
+
+        repository.AddFileAccess(nodeContext, CreateAccess(leftoverPath, RequestedAccess.Probe));
+        repository.AddFileAccess(nodeContext, CreateAccess(writtenPath, RequestedAccess.Probe));
+        repository.AddFileAccess(nodeContext, CreateAccess(writtenPath, RequestedAccess.Write));
+        FileAccesses fileAccesses = repository.FinishProject(nodeContext);
+
+        CollectionAssert.AreEqual(skipNodesWithLeftoverOutputs ? new[] { leftoverPath } : Array.Empty<string>(), fileAccesses.ExistingProbes.ToArray());
+    }
+
     private string CreateTestDirectory()
     {
         string testDirectory = Path.Combine(
@@ -115,6 +145,20 @@ public sealed class FileAccessRepositoryTests
             correlationId: 0,
             error: 1,
             DesiredAccess.GENERIC_READ,
+            FlagsAndAttributes.FILE_ATTRIBUTE_NORMAL,
+            path,
+            processArgs: null,
+            isAnAugmentedFileAccess: false);
+
+    private static FileAccessData CreateAccess(string path, RequestedAccess requestedAccess)
+        => new(
+            ReportedFileOperation.CreateFile,
+            requestedAccess,
+            processId: 123,
+            id: 0,
+            correlationId: 0,
+            error: 0,
+            requestedAccess == RequestedAccess.Write ? DesiredAccess.GENERIC_WRITE : DesiredAccess.GENERIC_READ,
             FlagsAndAttributes.FILE_ATTRIBUTE_NORMAL,
             path,
             processArgs: null,

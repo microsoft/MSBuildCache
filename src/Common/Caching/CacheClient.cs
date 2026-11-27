@@ -260,11 +260,17 @@ public abstract class CacheClient : ICacheClient
         PathSet? pathSet,
         IReadOnlyCollection<string> outputPaths,
         Func<IReadOnlyDictionary<string, ContentHash>, NodeBuildResult> nodeBuildResultBuilder,
+        bool publish,
         CancellationToken cancellationToken)
     {
         // Even when publishing async, we still need to capture the outputs synchronously - before they are overwritten
         IReadOnlyDictionary<string, ContentHash> hashedOutputs = await AddContentAsync(outputPaths, cancellationToken);
         NodeBuildResult nodeBuildResult = nodeBuildResultBuilder(hashedOutputs);
+        if (!publish)
+        {
+            // The result is still needed by dependents in this build.
+            return nodeBuildResult;
+        }
 
         Func<CancellationToken, Task> addNodeAsync = (ct) => AddNodeInternalAsync(nodeContext, pathSet, nodeBuildResult, ct);
         if (EnableAsyncPublishing)

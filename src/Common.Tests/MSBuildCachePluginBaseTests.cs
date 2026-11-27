@@ -284,6 +284,7 @@ public sealed class MSBuildCachePluginBaseTests
             PathSet? pathSet,
             IReadOnlyCollection<string> outputPaths,
             Func<IReadOnlyDictionary<string, ContentHash>, NodeBuildResult> nodeBuildResultBuilder,
+            bool publish,
             CancellationToken cancellationToken)
             => throw new NotSupportedException();
 

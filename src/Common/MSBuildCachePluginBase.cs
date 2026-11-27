@@ -72,6 +72,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     private int _cacheHitCount;
     private long _cacheHitDurationMilliseconds;
     private int _cacheMissCount;
+    private int _leftoverOutputsSkipCount;
 
     static MSBuildCachePluginBase() =>
         AppDomain.CurrentDomain.AssemblyResolve += (sender, args) =>
@@ -744,6 +745,18 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             return;
         }
 
+        bool publish = true;
+        if (Settings!.SkipNodesWithLeftoverOutputs)
+        {
+            string? leftoverOutput = FindLeftoverOutput(nodeContext, fileAccesses);
+            if (leftoverOutput != null)
+            {
+                logger.LogMessage($"Not adding {nodeContext.Id} to the cache: it used `{leftoverOutput}`, left in its output directories by a previous build, without writing it, so its outputs are incomplete.");
+                Interlocked.Increment(ref _leftoverOutputsSkipCount);
+                publish = false;
+            }
+        }
+
         // TODO dfederm: Handle CHL races
         NodeBuildResult nodeBuildResult = await _cacheClient.AddNodeAsync(
             nodeContext,
@@ -774,6 +787,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
                 return NodeBuildResult.FromBuildResult(relativeOutputPaths, packageFilesToCopy, buildResult, nodeContext.StartTimeUtc!.Value, nodeContext.EndTimeUtc!.Value, _buildId, _pathNormalizer);
             },
+            publish,
             cancellationToken);
 
         await FinishNodeAsync(logger, nodeContext, pathSet, nodeBuildResult);
@@ -1215,7 +1229,62 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         sb.Append("  Cache Hit Ratio: ");
         sb.AppendFormat("{0:P1}", cacheHitRatio);
         sb.AppendLine();
+        if (_leftoverOutputsSkipCount > 0)
+        {
+            sb.Append("  Not Added (leftover outputs): ");
+            sb.Append(_leftoverOutputsSkipCount);
+            sb.AppendLine();
+        }
+
         logger.LogMessage(sb.ToString(), MessageImportance.High);
+    }
+
+    /// <summary>
+    /// Finds a file the project used (read or probed as existing) in its output directories without writing it, and which no other project produced in this build:
+    /// a file left by a previous build, e.g. because the targets producing it were up to date.
+    /// </summary>
+    private string? FindLeftoverOutput(NodeContext nodeContext, FileAccesses fileAccesses)
+    {
+        List<string> outputDirectories = new(2);
+        foreach (string propertyName in new[] { "OutDir", "IntermediateOutputPath" })
+        {
+            string value = nodeContext.ProjectInstance.GetPropertyValue(propertyName);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                outputDirectories.Add(Path.GetFullPath(Path.Combine(nodeContext.ProjectInstance.Directory, value)));
+            }
+        }
+
+        if (outputDirectories.Count == 0)
+        {
+            return null;
+        }
+
+        HashSet<string> outputs = new(fileAccesses.Outputs, StringComparer.OrdinalIgnoreCase);
+        IEnumerable<string> usedPaths = fileAccesses.ExistingProbes.Concat(
+            fileAccesses.Observations.Where(observation => observation.Type == ObservationType.FileContentRead).Select(observation => observation.Path));
+        foreach (string path in usedPaths)
+        {
+            if (outputs.Contains(path) || !outputDirectories.Any(directory => path.IsUnderDirectory(directory)))
+            {
+                continue;
+            }
+
+            // Produced by another project of this build (e.g. the inner builds of a multi-targeting project), or not cached anyway.
+            string? relativePath = path.MakePathRelativeTo(_repoRoot!);
+            if ((relativePath != null && _outputProducer.TryGetValue(relativePath, out NodeContext? producer) && producer != nodeContext)
+                || (_ignoredOutputPatterns != null && _ignoredOutputPatterns.Any(pattern => pattern.IsMatch(path))))
+            {
+                continue;
+            }
+
+            if (File.Exists(path))
+            {
+                return path;
+            }
+        }
+
+        return null;
     }
 
     private bool IsDuplicateIdenticalOutputPath(PluginLoggerBase logger, string absolutePath)
