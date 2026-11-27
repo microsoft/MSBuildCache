@@ -688,6 +688,53 @@ public static class Initial { public static int Value => 1; }
     Assert-CacheStats -Result $third -ExpectedHits 1 -ExpectedMisses 0 -ScenarioName 'ThirdBuildAllHits' -Step 'third'
 }
 
+# Scenario — A project with a culture-specific resx and GenerateSatelliteAssembliesForCore compiles
+# its satellite assembly with Csc through the compiler server, then copies it to the output
+# directory. Unless SharedCompilation reports that compilation, the satellite assembly in obj is not
+# an output of the node: with probe fingerprinting the next build from empty output directories
+# misses, and without it the cache hit does not restore the satellite assembly in obj.
+$ScenarioFunctions['SatelliteAssemblyHit'] = {
+    $sandbox = New-ScenarioSandbox -ScenarioName 'SatelliteAssemblyHit'
+    $resx = @"
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="Greeting" xml:space="preserve"><value>GREETING</value></data>
+</root>
+"@
+    Set-Content -Path (Join-Path $sandbox.ProjectDir 'Strings.resx') -NoNewline -Value $resx.Replace('GREETING', 'Bonjour')
+    Set-Content -Path (Join-Path $sandbox.ProjectDir 'Strings.en-US.resx') -NoNewline -Value $resx.Replace('GREETING', 'Hello')
+
+    Push-Location $sandbox.ProjectDir
+    & git add . *> $null
+    & git commit -m "add culture-specific resources" *> $null
+    Pop-Location
+
+    $properties = @{ GenerateSatelliteAssembliesForCore = 'true' }
+
+    $cold = Invoke-ScenarioBuild -Sandbox $sandbox -Step 'cold' -ExtraProperties $properties
+    Assert-CacheStats -Result $cold -ExpectedHits 0 -ExpectedMisses 1 -ScenarioName 'SatelliteAssemblyHit' -Step 'cold'
+
+    Reset-OutputDirectories -ProjectDir $sandbox.ProjectDir
+    $warm = Invoke-ScenarioBuild -Sandbox $sandbox -Step 'warm' -ExtraProperties $properties
+    Assert-CacheStats -Result $warm -ExpectedHits 1 -ExpectedMisses 0 -ScenarioName 'SatelliteAssemblyHit' -Step 'warm'
+
+    $satellite = Get-ChildItem -Path (Join-Path $sandbox.ProjectDir 'bin') -Recurse -Filter 'TestProject.resources.dll' -ErrorAction SilentlyContinue |
+        Where-Object { $_.Directory.Name -eq 'en-US' }
+    if (-not $satellite) {
+        throw "[SatelliteAssemblyHit :: warm] the cache hit did not restore bin\...\en-US\TestProject.resources.dll."
+    }
+
+    $intermediateSatellite = Get-ChildItem -Path (Join-Path $sandbox.ProjectDir 'obj') -Recurse -Filter 'TestProject.resources.dll' -ErrorAction SilentlyContinue |
+        Where-Object { $_.Directory.Name -eq 'en-US' }
+    if (-not $intermediateSatellite) {
+        throw "[SatelliteAssemblyHit :: warm] the cache hit did not restore obj\...\en-US\TestProject.resources.dll."
+    }
+}
+
 # ----------------------------------------------------------------------------------------
 # Run scenarios
 # ----------------------------------------------------------------------------------------

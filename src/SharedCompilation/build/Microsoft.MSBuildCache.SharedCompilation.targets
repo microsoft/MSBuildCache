@@ -39,6 +39,32 @@
     </ItemGroup>
   </Target>
 
+  <UsingTask TaskName="ReportFileAccesses" AssemblyFile="$(MSBuildCacheSharedCompilationAssembly)" />
+
+  <!--
+    The SDK compiles satellite assemblies with Csc when GenerateSatelliteAssembliesForCore is true, through the compiler server,
+    but that Csc call does not return its command line arguments. Report its inputs and outputs as the target computes them;
+    otherwise the satellite assembly is used later in the project (copied to the output directory) without being seen as written.
+  -->
+  <Target Name="ResolveSatelliteAssembliesFileAccesses" AfterTargets="CoreGenerateSatelliteAssemblies" Condition="'$(DesignTimeBuild)' != 'true' and '$(UseSharedCompilation)' != 'false' and '$(GenerateSatelliteAssembliesForCore)' == 'true' and '@(_SatelliteAssemblyResourceInputs)' != ''">
+    <ItemGroup>
+      <_SatelliteAssemblyFileAccessInputs Include="@(_SatelliteAssemblyResourceInputs)" />
+      <_SatelliteAssemblyFileAccessInputs Include="@(_SatelliteAssemblyResourceInputs->'$(IntermediateOutputPath)%(Culture)\$(TargetName).resources.cs')" />
+      <_SatelliteAssemblyFileAccessInputs Include="@(_SatelliteAssemblyReferences)" />
+      <_SatelliteAssemblyFileAccessInputs Include="$(KeyOriginatorFile)" Condition="'$(KeyOriginatorFile)' != ''" />
+      <_SatelliteAssemblyFileAccessOutputs Include="@(_SatelliteAssemblyResourceInputs->'$(IntermediateOutputPath)%(Culture)\$(TargetName).resources.dll')" />
+    </ItemGroup>
+
+    <ReportFileAccesses Inputs="@(_SatelliteAssemblyFileAccessInputs->Distinct())"
+                        Outputs="@(_SatelliteAssemblyFileAccessOutputs->Distinct())"
+                        ProjectFile="$(MSBuildProjectFullPath)" />
+
+    <ItemGroup>
+      <_SatelliteAssemblyFileAccessInputs Remove="@(_SatelliteAssemblyFileAccessInputs)" />
+      <_SatelliteAssemblyFileAccessOutputs Remove="@(_SatelliteAssemblyFileAccessOutputs)" />
+    </ItemGroup>
+  </Target>
+
   <Target Name="ResolveRazorCompileComponentDeclarationFileAccesses" AfterTargets="RazorCompileComponentDeclaration" Condition="'$(DesignTimeBuild)' != 'true' and '$(UseSharedCompilation)' != 'false'">
     <ResolveFileAccesses Condition="'@(CscCommandLineArgs)' != ''"
                          Language="C#"
