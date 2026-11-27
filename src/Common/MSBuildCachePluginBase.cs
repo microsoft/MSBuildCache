@@ -51,6 +51,10 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     // Keys are relative file paths
     private readonly ConcurrentDictionary<string, NodeContext> _outputProducer = new(StringComparer.OrdinalIgnoreCase);
 
+    // Files written in this build by projects which are not nodes of the graph, e.g. the temporary project WPF markup compilation builds in the same intermediate output directory.
+    // Only tracked when SkipNodesWithLeftoverOutputs is on.
+    private readonly ConcurrentDictionary<string, byte> _pathsWrittenOutsideGraph = new(StringComparer.OrdinalIgnoreCase);
+
     private string? _repoRoot;
     private string? _buildId;
 
@@ -72,6 +76,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
     private int _cacheHitCount;
     private long _cacheHitDurationMilliseconds;
     private int _cacheMissCount;
+    private int _leftoverOutputsSkipCount;
 
     static MSBuildCachePluginBase() =>
         AppDomain.CurrentDomain.AssemblyResolve += (sender, args) =>
@@ -157,6 +162,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         }
 
         _outputProducer.Clear();
+        _pathsWrittenOutsideGraph.Clear();
         _localCacheDirectoryLock?.Dispose();
         _singlePluginInstanceMutex?.Release();
     }
@@ -513,6 +519,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         NodeContext? nodeContext = GetNodeContext(fileAccessContext);
         if (nodeContext is null)
         {
+            RecordWriteOutsideGraph(fileAccessData);
             return;
         }
 
@@ -522,6 +529,26 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         }
 
         _fileAccessRepository!.AddFileAccess(nodeContext, fileAccessData);
+    }
+
+    /// <summary>
+    /// Records a file written by a project which is not a node of the graph. Such a project is built by a task of a node, e.g. the temporary project of WPF
+    /// markup compilation, which writes the target framework moniker attribute file in the node's intermediate output directory, so that the node's own
+    /// target is skipped as up to date and the node only reads it. The file was written by this build, so it is not a leftover output of the node.
+    /// </summary>
+    private void RecordWriteOutsideGraph(FileAccessData fileAccessData)
+    {
+        if (Settings is not { SkipNodesWithLeftoverOutputs: true }
+            || (fileAccessData.RequestedAccess & RequestedAccess.Write) == 0
+            || fileAccessData.Error != 0
+            || fileAccessData.Operation == ReportedFileOperation.Process)
+        {
+            return;
+        }
+
+        // Augmented file accesses may not be in a canonical form (may have "..\..\").
+        string path = fileAccessData.IsAnAugmentedFileAccess ? Path.GetFullPath(fileAccessData.Path) : fileAccessData.Path;
+        _pathsWrittenOutsideGraph.TryAdd(path, 0);
     }
 
     public override void HandleProcess(FileAccessContext fileAccessContext, ProcessData processData)
@@ -744,6 +771,27 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             return;
         }
 
+        bool publish = true;
+        if (Settings!.SkipNodesWithLeftoverOutputs)
+        {
+            string? leftoverOutput = FindLeftoverOutput(nodeContext, fileAccesses);
+            if (leftoverOutput != null)
+            {
+                string notAddedMessage = $"Not adding {nodeContext.Id} to the cache: it used `{leftoverOutput}` in its output directories without being seen writing it, so its outputs are incomplete. "
+                    + "The file was left by a previous build, or written by a process whose file accesses are not reported (e.g. the compiler server).";
+
+                // High importance: the summary only counts these nodes, and each one makes its dependents miss in every build.
+                logger.LogMessage(notAddedMessage, MessageImportance.High);
+                using (StreamWriter notAddedWriter = new(Path.Combine(nodeContext.LogDirectory, "notAdded.txt")))
+                {
+                    await notAddedWriter.WriteLineAsync(notAddedMessage);
+                }
+
+                Interlocked.Increment(ref _leftoverOutputsSkipCount);
+                publish = false;
+            }
+        }
+
         // TODO dfederm: Handle CHL races
         NodeBuildResult nodeBuildResult = await _cacheClient.AddNodeAsync(
             nodeContext,
@@ -774,6 +822,7 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
 
                 return NodeBuildResult.FromBuildResult(relativeOutputPaths, packageFilesToCopy, buildResult, nodeContext.StartTimeUtc!.Value, nodeContext.EndTimeUtc!.Value, _buildId, _pathNormalizer);
             },
+            publish,
             cancellationToken);
 
         await FinishNodeAsync(logger, nodeContext, pathSet, nodeBuildResult);
@@ -1215,7 +1264,63 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
         sb.Append("  Cache Hit Ratio: ");
         sb.AppendFormat("{0:P1}", cacheHitRatio);
         sb.AppendLine();
+        if (_leftoverOutputsSkipCount > 0)
+        {
+            sb.Append("  Not Added (leftover outputs): ");
+            sb.Append(_leftoverOutputsSkipCount);
+            sb.AppendLine();
+        }
+
         logger.LogMessage(sb.ToString(), MessageImportance.High);
+    }
+
+    /// <summary>
+    /// Finds a file the project used (read or probed as existing) in its output directories without writing it, and which no other project, in the graph or not,
+    /// wrote in this build: a file left by a previous build, e.g. because the targets producing it were up to date.
+    /// </summary>
+    private string? FindLeftoverOutput(NodeContext nodeContext, FileAccesses fileAccesses)
+    {
+        List<string> outputDirectories = new(2);
+        foreach (string propertyName in new[] { "OutDir", "IntermediateOutputPath" })
+        {
+            string value = nodeContext.ProjectInstance.GetPropertyValue(propertyName);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                outputDirectories.Add(Path.GetFullPath(Path.Combine(nodeContext.ProjectInstance.Directory, value)));
+            }
+        }
+
+        if (outputDirectories.Count == 0)
+        {
+            return null;
+        }
+
+        HashSet<string> outputs = new(fileAccesses.Outputs, StringComparer.OrdinalIgnoreCase);
+        IEnumerable<string> usedPaths = fileAccesses.ExistingProbes.Concat(
+            fileAccesses.Observations.Where(observation => observation.Type == ObservationType.FileContentRead).Select(observation => observation.Path));
+        foreach (string path in usedPaths)
+        {
+            if (outputs.Contains(path) || !outputDirectories.Any(directory => path.IsUnderDirectory(directory)))
+            {
+                continue;
+            }
+
+            // Produced by another project of this build (e.g. the inner builds of a multi-targeting project, or the temporary project of WPF markup compilation), or not cached anyway.
+            string? relativePath = path.MakePathRelativeTo(_repoRoot!);
+            if ((relativePath != null && _outputProducer.TryGetValue(relativePath, out NodeContext? producer) && producer != nodeContext)
+                || _pathsWrittenOutsideGraph.ContainsKey(path)
+                || (_ignoredOutputPatterns != null && _ignoredOutputPatterns.Any(pattern => pattern.IsMatch(path))))
+            {
+                continue;
+            }
+
+            if (File.Exists(path))
+            {
+                return path;
+            }
+        }
+
+        return null;
     }
 
     private bool IsDuplicateIdenticalOutputPath(PluginLoggerBase logger, string absolutePath)

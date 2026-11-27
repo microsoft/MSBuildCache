@@ -103,6 +103,18 @@ public sealed class PluginSettingsTests
             pluginSettings => pluginSettings.LocalCacheSizeInMegabytes,
             new[] { 123u, 456u, 789u });
 
+    [TestMethod]
+    public void SkipNodesWithLeftoverOutputsIsOnByDefault()
+    {
+        PluginSettings pluginSettings = PluginSettings.Create<PluginSettings>(
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+            new MockPluginLogger(),
+            RepoRoot,
+            supportsProbeAndEnumerationCapture: true);
+
+        Assert.IsTrue(pluginSettings.SkipNodesWithLeftoverOutputs);
+    }
+
     // =========================================================================================
     // EnableProbeAndEnumerationFingerprinting capability clamp.
     //
