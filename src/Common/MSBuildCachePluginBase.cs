@@ -751,7 +751,16 @@ public abstract class MSBuildCachePluginBase<TPluginSettings> : ProjectCachePlug
             string? leftoverOutput = FindLeftoverOutput(nodeContext, fileAccesses);
             if (leftoverOutput != null)
             {
-                logger.LogMessage($"Not adding {nodeContext.Id} to the cache: it used `{leftoverOutput}`, left in its output directories by a previous build, without writing it, so its outputs are incomplete.");
+                string notAddedMessage = $"Not adding {nodeContext.Id} to the cache: it used `{leftoverOutput}` in its output directories without being seen writing it, so its outputs are incomplete. "
+                    + "The file was left by a previous build, or written by a process whose file accesses are not reported (e.g. the compiler server).";
+
+                // High importance: the summary only counts these nodes, and each one makes its dependents miss in every build.
+                logger.LogMessage(notAddedMessage, MessageImportance.High);
+                using (StreamWriter notAddedWriter = new(Path.Combine(nodeContext.LogDirectory, "notAdded.txt")))
+                {
+                    await notAddedWriter.WriteLineAsync(notAddedMessage);
+                }
+
                 Interlocked.Increment(ref _leftoverOutputsSkipCount);
                 publish = false;
             }
