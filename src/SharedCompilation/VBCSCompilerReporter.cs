@@ -234,7 +234,7 @@ internal static class VBCSCompilerReporter
     /// <summary>
     /// Resolves all relative path registrations against a base path.
     /// </summary>
-    private sealed class AccessRegistrar
+    internal sealed class AccessRegistrar
     {
         private delegate void ReportFileAccessFn(FileAccessData fileAccessData);
 
